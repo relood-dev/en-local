@@ -1,0 +1,44 @@
+{
+  "productName": "En Local",
+  "version": "0.1.31",
+  "identifier": "fr.lelocal.enlocal",
+  "bundle": {
+    "active": true,
+    "targets": [
+      "nsis"
+    ],
+    "publisher": "Le Local",
+    "shortDescription": "Les jeux du Local, ensemble",
+    "icon": [
+      "icons/icon.ico"
+    ],
+    "resources": {
+      "../../dist/emu/": "emu/"
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": [
+          "French"
+        ],
+        "displayLanguageSelector": false,
+        "installerIcon": "icons/icon.ico",
+        "sidebarImage": "icons/installeur-cote.bmp",
+        "headerImage": "icons/installeur-entete.bmp"
+      }
+    },
+    "createUpdaterArtifacts": true
+  },
+  "mainBinaryName": "En Local",
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IERCN0I4MzhFRjUyODNDNkMKUldSc1BDajFqb043MjhCVEZIaXBwYVh4N1ZGdzhnUnM5NWxlU0RlbVBXWWtuTk9HK0hZUXBmN3gK",
+      "endpoints": [
+        "https://loc-lab.fr/enlocal/maj/{{current_version}}"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  }
+}

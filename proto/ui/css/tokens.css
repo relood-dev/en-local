@@ -1,0 +1,133 @@
+/* Variables du thème. L'interface est noire et blanche, la couleur vient des jeux et des avatars. */
+:root {
+  /* Couleurs (thème sombre) */
+  --fond: #0a0a0b;
+  --surface-1: #121214;
+  --surface-2: #1a1a1d;
+  --surface-3: #242428;
+  --trait: rgba(255, 255, 255, .08);
+  --trait-fort: rgba(255, 255, 255, .14);
+  --texte: #f5f5f7;
+  --doux: #a1a1a8;
+  --discret: #6b6b73;
+  /* L'accent est le blanc. */
+  --accent: #f5f5f7;
+  --sur-accent: #0a0a0b;
+  --halo: rgba(255, 255, 255, .14);
+  --bouton: rgba(255, 255, 255, .07);
+  --bouton-survol: rgba(255, 255, 255, .13);
+  --pastille: rgba(255, 255, 255, .08);
+  --champ: rgba(0, 0, 0, .35);
+  --reflet: rgba(255, 255, 255, .16);
+  --av-fond: #23232a;
+  --av-bord: #18181d;
+  --cadre-icone: #2c2c31;
+  --verre: linear-gradient(180deg, rgba(255, 255, 255, .085), rgba(255, 255, 255, .025));
+  --verre-bord: rgba(255, 255, 255, .13);
+  --verre-ombre: inset 0 1px 0 rgba(255, 255, 255, .22), 0 20px 50px rgba(0, 0, 0, .45);
+  --ombre-1: 0 10px 24px rgba(0, 0, 0, .35);
+  --ombre-2: 0 30px 60px rgba(0, 0, 0, .55);
+  --cadre-photo: inset 0 0 0 1px rgba(255, 255, 255, .15), 0 20px 40px rgba(0, 0, 0, .5);
+  --art-opacite: .16;
+  --art-opacite-jeux: .38;
+  --art-fondu: linear-gradient(90deg, var(--fond) 22%, rgba(10, 10, 11, .55) 60%, rgba(10, 10, 11, .2)), linear-gradient(0deg, var(--fond), transparent 45%);
+
+  /* Sur une image de jeu : toujours clair. */
+  --sur-image: #fff;
+  --sur-image-doux: rgba(255, 255, 255, .72);
+  --image-ombre: linear-gradient(0deg, rgba(8, 8, 10, .92), rgba(8, 8, 10, .15) 62%);
+  --image-tag: rgba(10, 10, 12, .6);
+  --image-chip: rgba(255, 255, 255, .14);
+  --voile: rgba(5, 5, 7, .6);
+
+  /* Typographie */
+  --police: Inter, "Segoe UI", sans-serif;
+  --t-ecran: 56px;
+  --t-titre: 30px;
+  --t-section: 26px;
+  --t-sous: 17px;
+  --t-corps: 15px;
+  --t-petit: 13px;
+  --t-legende: 11.5px;
+
+  /* Espacements (grille de 4) */
+  --e-1: 4px; --e-2: 8px; --e-3: 12px; --e-4: 16px; --e-5: 24px; --e-6: 32px; --e-7: 48px; --e-8: 64px; --e-9: 96px;
+
+  /* Arrondis */
+  --r-xs: 8px; --r-s: 14px; --r-m: 20px; --r-l: 28px; --r-rond: 999px;
+
+  /* Focus */
+  --focus-anneau: 3px;
+  --focus-ecart: 3px;
+  --focus-echelle: 1.02;
+
+  /* Mouvement */
+  --d-1: 120ms;
+  --d-2: 200ms;
+  --d-3: 320ms;
+  --d-4: 480ms;
+  --cascade: 35ms; /* décalage entre deux éléments qui entrent */
+  --sortie: cubic-bezier(.2, .8, .2, 1);
+  --rebond: cubic-bezier(.34, 1.56, .64, 1);
+}
+
+/* Thème clair */
+body.clair {
+  --fond: #f4f4f5;
+  --surface-1: #ffffff;
+  --surface-2: #ffffff;
+  --surface-3: #ececee;
+  --trait: rgba(10, 10, 11, .08);
+  --trait-fort: rgba(10, 10, 11, .14);
+  --texte: #0b0b0c;
+  --doux: #55555c;
+  --discret: #8c8c94;
+  --accent: #0b0b0c;
+  --sur-accent: #ffffff;
+  --halo: rgba(10, 10, 11, .12);
+  --bouton: rgba(10, 10, 11, .05);
+  --bouton-survol: rgba(10, 10, 11, .09);
+  --pastille: rgba(255, 255, 255, .85);
+  --champ: rgba(10, 10, 11, .05);
+  --reflet: rgba(255, 255, 255, .35);
+  --av-fond: #e2e2e5;
+  --av-bord: #ffffff;
+  --cadre-icone: #ffffff;
+  --verre: linear-gradient(180deg, rgba(255, 255, 255, .92), rgba(255, 255, 255, .74));
+  --verre-bord: rgba(255, 255, 255, .9);
+  --verre-ombre: 0 1px 0 #fff inset, 0 0 0 1px rgba(10, 10, 11, .06), 0 14px 34px rgba(30, 30, 40, .12);
+  --ombre-1: 0 8px 20px rgba(30, 30, 40, .12);
+  --ombre-2: 0 30px 60px rgba(30, 30, 40, .28);
+  --cadre-photo: 0 0 0 4px #fff, 0 20px 40px rgba(30, 30, 40, .2);
+  --art-opacite: .1;
+  --art-opacite-jeux: .5;
+  --art-fondu: linear-gradient(90deg, var(--fond) 24%, rgba(244, 244, 245, .75) 58%, rgba(244, 244, 245, .35)), linear-gradient(0deg, var(--fond), transparent 45%);
+}
+
+/* OLED : noir pur, les surfaces se distinguent par un fin contour. */
+body.oled {
+  --fond: #000;
+  --surface-1: #000;
+  --surface-2: #000;
+  --surface-3: #0c0c0d;
+  --trait: rgba(255, 255, 255, .1);
+  --trait-fort: rgba(255, 255, 255, .17);
+  --bouton: #000;
+  --bouton-survol: rgba(255, 255, 255, .08);
+  --pastille: #000;
+  --champ: #000;
+  --av-fond: #0c0c0d;
+  --av-bord: #000;
+  --cadre-icone: #1c1c1e;
+  --voile: rgba(0, 0, 0, .85);
+  --verre: #000;
+  --verre-bord: rgba(255, 255, 255, .16);
+  --verre-ombre: none;
+  --ombre-1: none;
+  --ombre-2: none;
+  --image-tag: rgba(0, 0, 0, .8);
+  --art-fondu: linear-gradient(90deg, #000 22%, rgba(0, 0, 0, .6) 60%, rgba(0, 0, 0, .25)), linear-gradient(0deg, #000, transparent 45%);
+}
+
+/* Réduire les animations : seulement le réglage d'En Local, pas celui de Windows. */
+body.reduit { --d-1: 1ms; --d-2: 1ms; --d-3: 1ms; --d-4: 1ms; --cascade: 0ms; --focus-echelle: 1; }

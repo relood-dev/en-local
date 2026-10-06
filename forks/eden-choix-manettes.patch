@@ -1,0 +1,22 @@
+diff --git a/src/yuzu/main_window.cpp b/src/yuzu/main_window.cpp
+index 18fb874..65969bf 100644
+--- a/src/yuzu/main_window.cpp
++++ b/src/yuzu/main_window.cpp
+@@ -888,6 +888,17 @@ void MainWindow::AmiiboSettingsRequestExit() {
+ 
+ void MainWindow::ControllerSelectorReconfigureControllers(
+     const Core::Frontend::ControllerParameters& parameters) {
++    // En Local : pas de fenêtre de choix des manettes. Fenêtre principale cachée, elle restait
++    // invisible derrière l'app et le jeu l'attendait (la manette ne répondait plus, en session
++    // surtout). La manette déjà donnée au joueur 1 est gardée, comme un « OK ».
++    if (embed_parent) {
++        QtCommon::system->HIDCore().DisableAllControllerConfiguration();
++        QtCommon::system->ApplySettings();
++        config->SaveAllValues();
++        LOG_INFO(Frontend, "En Local : choix des manettes validé sans fenêtre");
++        emit ControllerSelectorReconfigureFinished(true);
++        return;
++    }
+     controller_applet =
+         new QtControllerSelectorDialog(this, parameters, input_subsystem.get(), *QtCommon::system);
+     SCOPE_EXIT {

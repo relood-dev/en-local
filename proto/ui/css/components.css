@@ -1,0 +1,89 @@
+/* Composants partagés : verre, touches, boutons, avatars, étiquettes, fenêtres. */
+
+/* Verre dépoli, seulement pour ce qui flotte. */
+.glass {
+  background: var(--verre);
+  border: 1px solid var(--verre-bord);
+  box-shadow: var(--verre-ombre);
+  backdrop-filter: blur(24px);
+}
+
+/* Touches de manette et de clavier. */
+.k { display: inline-grid; place-items: center; min-width: 22px; height: 22px; padding: 0 6px; border-radius: var(--r-rond); background: var(--texte); color: var(--fond); font-size: 11px; font-weight: 700; vertical-align: middle; }
+.k svg { width: 12px; height: 12px; }
+.k.mot { border-radius: 7px; font-size: 10.5px; letter-spacing: .02em; }
+.k.sq { border-radius: 6px; background: var(--bouton-survol); color: var(--doux); box-shadow: inset 0 0 0 1px var(--trait-fort); }
+
+/* Boutons : l'action principale et le focus prennent l'accent. */
+.btn { border: 0; font: inherit; font-size: var(--t-corps); font-weight: 700; padding: 14px 18px; border-radius: var(--r-s); text-align: left; color: var(--texte); background: var(--bouton); cursor: pointer; outline: none; transition: background var(--d-1), color var(--d-1); }
+.btn:hover { background: var(--bouton-survol); }
+.btn.focus { background: var(--accent); color: var(--sur-accent); }
+.btn.volume { display: flex; justify-content: space-between; align-items: center; gap: 14px; }
+.btn.volume #menu-volume { display: flex; align-items: center; gap: 8px; font-weight: 600; opacity: .85; }
+.jauge { display: inline-block; width: 90px; height: 6px; border-radius: 3px; background: color-mix(in srgb, currentColor 22%, transparent); margin-right: 10px; vertical-align: middle; overflow: hidden; }
+.jauge i { display: block; height: 100%; background: currentColor; border-radius: 3px; }
+.login { border: 0; font: inherit; font-size: var(--t-petit); font-weight: 700; height: 36px; padding: 0 14px; border-radius: var(--r-rond); background: var(--accent); color: var(--sur-accent); cursor: pointer; }
+
+/* Avatars Discord. */
+.av { width: 30px; height: 30px; border-radius: 50%; object-fit: cover; background: var(--av-fond); flex: none; }
+.stack { display: flex; }
+.stack .av { border: 2px solid var(--av-bord); margin-right: -9px; }
+.me { width: 38px; height: 38px; border-radius: 50%; object-fit: cover; background: var(--av-fond); box-shadow: 0 0 0 2px var(--accent); }
+
+/* Étiquettes : claires sur fond sombre quand elles sont sur une image. */
+.tag { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; font-size: var(--t-legende); font-weight: 700; padding: 5px 10px; border-radius: var(--r-rond); background: var(--image-tag); backdrop-filter: blur(10px); color: var(--sur-image); }
+/* « En direct » : un point qui respire. */
+.tag.live { background: var(--accent); color: var(--sur-accent); }
+.tag.live::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: respire 1.6s ease-in-out infinite; }
+.chip { font-size: var(--t-legende); font-weight: 600; padding: 4px 9px; border-radius: var(--r-rond); background: var(--image-chip); color: var(--sur-image); }
+@keyframes respire { 50% { opacity: .45; } }
+
+/* Icônes des consoles. */
+.ico { width: 18px; height: 18px; flex: none; }
+
+/* Message bref en bas de l'écran. */
+#status { position: absolute; left: 50%; bottom: 104px; transform: translateX(-50%); padding: 9px 16px; border-radius: var(--r-rond); font-size: var(--t-petit); font-weight: 600; z-index: 6; white-space: nowrap; max-width: 760px; overflow: hidden; text-overflow: ellipsis; }
+#status:empty { display: none; }
+
+/* Aide des touches. */
+.hints { position: absolute; bottom: 30px; display: flex; flex-direction: column; gap: 7px; font-size: var(--t-petit); font-weight: 600; color: var(--doux); z-index: 4; }
+.hints div { display: flex; align-items: center; gap: 8px; }
+.hint { display: flex; gap: 14px; color: var(--doux); font-size: 12.5px; margin-top: 8px; }
+.hint > span { display: inline-flex; align-items: center; gap: 6px; }
+
+/* Fenêtres par-dessus : fond voilé, léger rebond à l'ouverture. */
+.overlay { position: fixed; inset: 0; z-index: 75; display: none; place-items: center; background: var(--voile); backdrop-filter: blur(6px); }
+.overlay .panel { position: relative; width: 420px; max-height: 86vh; overflow-y: auto; scrollbar-width: none; border-radius: var(--r-l); padding: 26px; display: flex; flex-direction: column; gap: 10px; }
+#sheet-btns .btn { flex: none; }
+.overlay[style*="grid"] { animation: voile var(--d-3) var(--sortie) both; }
+.overlay[style*="grid"] .panel { animation: pop var(--d-3) var(--rebond) both; }
+.overlay.sortie { animation: voile var(--d-2) ease-in reverse both; }
+.overlay.sortie .panel { animation: pop var(--d-2) ease-in reverse both; }
+@keyframes voile { from { background: transparent; backdrop-filter: blur(0); } }
+@keyframes pop { from { opacity: 0; transform: scale(.92) translateY(8px); } }
+.overlay h2 { font-size: 20px; margin-bottom: 2px; }
+.overlay p { color: var(--doux); font-size: var(--t-petit); margin-bottom: 8px; line-height: 1.5; }
+#sheet-btns { display: flex; flex-direction: column; gap: 10px; }
+#sheet input { font: inherit; font-size: 24px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; text-align: center; padding: 12px 16px; margin-bottom: 8px; border-radius: var(--r-s); border: 1px solid var(--trait-fort); background: var(--champ); color: var(--texte); outline: none; width: 100%; }
+#sheet input:focus { border-color: var(--accent); }
+#sheet input::placeholder { color: var(--discret); }
+
+/* Menu en jeu : codes ami (DS). */
+#menu-joueurs { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+#menu-joueurs .fc-titre { margin: 0 0 2px; font-size: 12.5px; color: var(--doux); }
+#menu-joueurs .fc { display: flex; justify-content: space-between; gap: 12px; padding: 9px 12px; border-radius: 12px; background: var(--bouton); font-size: 14px; }
+#menu-joueurs .fc span { font-variant-numeric: tabular-nums; letter-spacing: .04em; color: var(--doux); }
+#menu p .k { margin: 0 3px; }
+
+/* Jeu en cours : l'image du jeu ou sa dernière image sous le menu. */
+#jeu { position: fixed; inset: 0; display: none; place-items: center; background: #000; }
+#jeu canvas { image-rendering: pixelated; height: 100%; max-width: 100%; object-fit: contain; }
+#jeu canvas.photo { image-rendering: auto; width: 100%; height: 100%; object-fit: fill; }
+#chargement { position: absolute; bottom: 48px; color: #8a8a90; font-size: 14px; letter-spacing: .02em; animation: respire 1.6s ease-in-out infinite; }
+#jeu canvas.lisse { image-rendering: auto; }
+/* DS avec habillage : même marge que le trou de l'habillage. */
+#jeu.habille { padding: clamp(12px, calc(100vh / 30), 40px); }
+
+/* OLED : tout est noir, les éléments gardent un fin contour. */
+body.oled :is(.btn, .act, .choix, .bv-btn, .bv-choix, .touche, .prof-bouton, .joueur, .bv-b, .tile, .ctx-act, .roue, .salle-code, .bv-manette, .bv-pc span, .prof-chiffres > div):not(.focus):not(.choisi):not(.sel) { box-shadow: inset 0 0 0 1px var(--trait-fort); }
+body.oled .bienvenue::before { display: none; }

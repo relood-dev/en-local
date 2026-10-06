@@ -1,0 +1,57 @@
+/* Base : police, page, scène 1280×800 mise à l'échelle, fond. */
+@font-face { font-family: Inter; src: url(../fonts/Inter-Regular.ttf); font-weight: 400; }
+@font-face { font-family: Inter; src: url(../fonts/Inter-SemiBold.ttf); font-weight: 600; }
+@font-face { font-family: Inter; src: url(../fonts/Inter-Bold.ttf); font-weight: 700 800; }
+
+* { box-sizing: border-box; margin: 0; }
+html, body {
+  height: 100%;
+  background: var(--fond);
+  color: var(--texte);
+  font-family: var(--police);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+  user-select: none;
+}
+
+/*
+ * Écran dessiné pour 1280×800, agrandi par zoom (voir echelle()).
+ * overflow: clip empêche tout défilement de l'écran entier.
+ */
+#stage { position: fixed; inset: 0; display: grid; place-items: center; overflow: clip; }
+.screen { width: var(--w, 1280px); height: var(--h, 800px); position: relative; flex: none; zoom: var(--s, 1); overflow: clip; }
+
+/* Transitions : l'écran qui part s'efface, celui qui arrive entre par morceaux (--i : rang). */
+.entree { animation: entree var(--d-3) var(--sortie) both; }
+@keyframes entree { from { opacity: 0; transform: translateY(16px); } }
+.monte { animation: monte var(--d-2) var(--sortie) both; }
+.descend { animation: descend var(--d-2) var(--sortie) both; }
+@keyframes monte { from { opacity: 0; transform: translateY(18px); } }
+@keyframes descend { from { opacity: 0; transform: translateY(-18px); } }
+.sort { animation: sort var(--d-2) ease-in both; }
+@keyframes sort { to { opacity: 0; transform: translateY(-10px) scale(.985); } }
+.apparait > *, .apparait .tile { animation: arrive var(--d-4) var(--sortie) both; animation-delay: calc(var(--i, 0) * var(--cascade)); }
+@keyframes arrive { from { opacity: 0; transform: translateY(22px) scale(.96); } }
+.apparait .consoles { animation-name: depuis-gauche; }
+.apparait .reel, .apparait .arrow { animation-name: depuis-gauche; --i: 1; }
+.apparait .info { animation-name: depuis-droite; --i: 2; }
+.apparait .media { animation-name: depuis-droite; --i: 4; }
+.apparait .actions { --i: 5; }
+.apparait-seul { animation: depuis-droite var(--d-3) var(--sortie) both; animation-delay: calc(var(--i, 0) * var(--cascade)); }
+@keyframes depuis-gauche { from { opacity: 0; transform: translateX(-36px); } }
+@keyframes depuis-droite { from { opacity: 0; transform: translateX(36px); } }
+#fond-art.nouveau { animation: fondu-art var(--d-4) ease-out both; }
+@keyframes fondu-art { from { opacity: 0; } }
+/* Thème clair : léger dégradé et trame de points. */
+.clair #stage { background: radial-gradient(90% 70% at 70% 0%, #fff, transparent 70%), var(--fond); }
+.clair #stage::before { content: ''; position: absolute; inset: 0; background-image: radial-gradient(var(--trait) 1px, transparent 1.2px); background-size: 14px 14px; pointer-events: none; }
+
+/* Fond : image de partie ou jaquette, très floutée. */
+#fond-art { position: absolute; inset: -40px; width: calc(100% + 80px); height: calc(100% + 80px); object-fit: cover; opacity: var(--art-opacite); filter: blur(30px) saturate(1.3); transition: opacity var(--d-3); }
+#fond-fade { position: absolute; inset: 0; opacity: 0; transition: opacity var(--d-3); background: var(--art-fondu); }
+.jeux #fond-art { opacity: var(--art-opacite-jeux); filter: saturate(1.1); }
+.jeux #fond-art.jaquette { opacity: calc(var(--art-opacite-jeux) * .8); filter: blur(40px) saturate(1.4); }
+.jeux #fond-fade { opacity: 1; }
+/* Thèmes sombre et OLED : pas d'image floue derrière les menus. */
+body:not(.clair) #fond-art { filter: none; opacity: 0; }
+body:not(.clair) .jeux #fond-art:not(.jaquette) { opacity: var(--art-opacite-jeux); filter: saturate(1.1); }

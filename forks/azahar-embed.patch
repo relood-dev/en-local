@@ -1,0 +1,253 @@
+From 3d27c1953ad44cc87f42b80f4d666f464926d589 Mon Sep 17 00:00:00 2001
+From: relood <relood@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 14:26:09 +0200
+Subject: [PATCH 1/4]  En Local : option --parent
+
+---
+ src/citra_qt/citra_qt.cpp | 28 ++++++++++++++++++++++++++--
+ src/citra_qt/citra_qt.h   |  7 +++++++
+ 2 files changed, 33 insertions(+), 2 deletions(-)
+
+diff --git a/src/citra_qt/citra_qt.cpp b/src/citra_qt/citra_qt.cpp
+index 783a40e..64e9c41 100644
+--- a/src/citra_qt/citra_qt.cpp
++++ b/src/citra_qt/citra_qt.cpp
+@@ -13,6 +13,7 @@
+ #include <QIcon>
+ #include <QLabel>
+ #include <QMessageBox>
++#include <QWindow>
+ #include <QPalette>
+ #include <QSysInfo>
+ #include <QtConcurrent/QtConcurrentMap>
+@@ -1489,6 +1490,14 @@ GMainWindow::GMainWindow(Core::System& system_)
+             exit(0);
+         }
+ 
++        // Render inside a native window owned by a frontend (e.g. En Local)
++        if (args[i] == QStringLiteral("--parent")) {
++            if (i < args.size() - 1) {
++                embed_parent = static_cast<WId>(args[++i].toULongLong());
++            }
++            continue;
++        }
++
+         // Launch game in windowed mode
+         if (args[i] == QStringLiteral("--windowed") || args[i] == QStringLiteral("-w")) {
+             fullscreen_override = false;
+@@ -1599,7 +1608,20 @@ GMainWindow::GMainWindow(Core::System& system_)
+     render_window->setWindowIcon(azahar_icon);
+     secondary_window->setWindowIcon(azahar_icon);
+ 
+-    show();
++    if (embed_parent) {
++        // The render window becomes a native child of the frontend's window:
++        // Qt knows it has no frame, and follows the size the host gives it.
++        ui->action_Single_Window_Mode->setChecked(false);
++        ui->action_Fullscreen->setChecked(false);
++        ui->horizontalLayout->removeWidget(render_window);
++        render_window->setParent(nullptr);
++        render_window->setWindowFlags(Qt::Window | Qt::FramelessWindowHint);
++        render_window->winId();
++        render_window->windowHandle()->setParent(QWindow::fromWinId(embed_parent));
++        render_window->move(0, 0);
++    } else {
++        show();
++    }
+ 
+ #ifdef __APPLE__
+     if (AppleUtils::IsRunningFromTerminal()) {
+@@ -6068,7 +6090,9 @@ int LaunchQtFrontend(int argc, char* argv[]) {
+     system.RegisterMicPermissionCheck(&AppleAuthorization::CheckAuthorizationForMicrophone);
+ #endif
+ 
+-    main_window.show();
++    if (!main_window.IsEmbedded()) {
++        main_window.show();
++    }
+ 
+     QObject::connect(&app, &QGuiApplication::applicationStateChanged, &main_window,
+                      &GMainWindow::OnAppFocusStateChanged);
+diff --git a/src/citra_qt/citra_qt.h b/src/citra_qt/citra_qt.h
+index 449413b..6a8c79b 100644
+--- a/src/citra_qt/citra_qt.h
++++ b/src/citra_qt/citra_qt.h
+@@ -108,6 +108,11 @@ public:
+     explicit GMainWindow(Core::System& system);
+     ~GMainWindow();
+ 
++    /// Lancé par un frontend (--parent) : pas de fenêtre principale visible.
++    bool IsEmbedded() const {
++        return embed_parent != 0;
++    }
++
+     GameList* game_list;
+     std::unique_ptr<PlayTime::PlayTimeManager> play_time_manager;
+ #ifdef USE_DISCORD_PRESENCE
+@@ -394,6 +399,8 @@ private:
+ 
+     // Whether emulation is currently running in Citra.
+     bool emulation_running = false;
++    // Native window that hosts the render window (--parent), 0 when standalone.
++    WId embed_parent = 0;
+     std::unique_ptr<EmuThread> emu_thread;
+     // The title of the game currently running
+     QString game_title;
+-- 
+2.55.0.windows.5
+
+
+From 97c7f7a9a715261b11350d6335ff6041660dbfbe Mon Sep 17 00:00:00 2001
+From: relood <relood@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 15:24:12 +0200
+Subject: [PATCH 2/4]  En Local : option --join
+
+---
+ src/citra_qt/citra_qt.cpp | 36 ++++++++++++++++++++++++++++++++++++
+ src/citra_qt/citra_qt.h   |  4 ++++
+ 2 files changed, 40 insertions(+)
+
+diff --git a/src/citra_qt/citra_qt.cpp b/src/citra_qt/citra_qt.cpp
+index 64e9c41..32dc905 100644
+--- a/src/citra_qt/citra_qt.cpp
++++ b/src/citra_qt/citra_qt.cpp
+@@ -111,6 +111,8 @@
+ #include "core/hle/service/nfc/nfc.h"
+ #include "core/loader/loader.h"
+ #include "core/loader/ncch.h"
++#include "core/hle/service/cfg/cfg.h"
++#include "network/network.h"
+ #include "core/movie.h"
+ #include "core/savestate.h"
+ #include "core/system_titles.h"
+@@ -1490,6 +1492,23 @@ GMainWindow::GMainWindow(Core::System& system_)
+             exit(0);
+         }
+ 
++        // Join a multiplayer room on start: --join <host:port> --nickname <name>
++        // --room-password <password> (sessions of a frontend such as En Local)
++        if (args[i] == QStringLiteral("--join") || args[i] == QStringLiteral("--nickname") ||
++            args[i] == QStringLiteral("--room-password")) {
++            if (i < args.size() - 1) {
++                const QString value = args[++i];
++                if (args[i - 1] == QStringLiteral("--join")) {
++                    join_room = value;
++                } else if (args[i - 1] == QStringLiteral("--nickname")) {
++                    join_nickname = value;
++                } else {
++                    join_password = value;
++                }
++            }
++            continue;
++        }
++
+         // Render inside a native window owned by a frontend (e.g. En Local)
+         if (args[i] == QStringLiteral("--parent")) {
+             if (i < args.size() - 1) {
+@@ -1672,6 +1691,23 @@ GMainWindow::GMainWindow(Core::System& system_)
+     if (!game_path.isEmpty()) {
+         BootGame(game_path);
+     }
++
++    if (!join_room.isEmpty()) {
++        const int sep = join_room.lastIndexOf(QLatin1Char(':'));
++        const std::string host = join_room.left(sep).toStdString();
++        const u16 port = sep < 0 ? Network::DefaultRoomPort
++                                 : static_cast<u16>(join_room.mid(sep + 1).toUInt());
++        const std::string nickname = join_nickname.toStdString();
++        const std::string password = join_password.toStdString();
++        const std::string console_id = Service::CFG::GetConsoleIdHash(system);
++        const auto mac = Service::CFG::GetConsoleMacAddress(system);
++        // Join blocks while it connects: same as the Direct Connect dialog, off the UI thread.
++        (void)QtConcurrent::run([=] {
++            if (auto member = Network::GetRoomMember().lock()) {
++                member->Join(nickname, console_id, host.c_str(), port, 0, mac, password);
++            }
++        });
++    }
+ }
+ 
+ GMainWindow::~GMainWindow() {
+diff --git a/src/citra_qt/citra_qt.h b/src/citra_qt/citra_qt.h
+index 6a8c79b..0720150 100644
+--- a/src/citra_qt/citra_qt.h
++++ b/src/citra_qt/citra_qt.h
+@@ -401,6 +401,10 @@ private:
+     bool emulation_running = false;
+     // Native window that hosts the render window (--parent), 0 when standalone.
+     WId embed_parent = 0;
++    // Room given by --join, joined once the window is set up.
++    QString join_room;
++    QString join_nickname;
++    QString join_password;
+     std::unique_ptr<EmuThread> emu_thread;
+     // The title of the game currently running
+     QString game_title;
+-- 
+2.55.0.windows.5
+
+
+From c9f632fd4fb615eb59643c91fbdae1b3682e3761 Mon Sep 17 00:00:00 2001
+From: relood <relood@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 15:28:52 +0200
+Subject: [PATCH 3/4]  En Local : options longues sans outil de compression
+
+---
+ src/citra_meta/main.cpp | 11 ++++++++++-
+ 1 file changed, 10 insertions(+), 1 deletion(-)
+
+diff --git a/src/citra_meta/main.cpp b/src/citra_meta/main.cpp
+index 4965ca2..8e213c7 100644
+--- a/src/citra_meta/main.cpp
++++ b/src/citra_meta/main.cpp
+@@ -60,7 +60,16 @@ int main(int argc, char* argv[]) {
+     }
+ #endif
+ 
+-    if (CitraCLI::CheckForOptions(CitraCLI::cli_capture_optstring, argc, argv)) {
++    // A frontend (--parent) passes long options such as --nickname: getopt would read them as
++    // clusters of short options (-n -i -c kname) and start the compression tool instead.
++    bool embedded = false;
++    for (int i = 1; i < argc; i++) {
++        if (strcmp(argv[i], "--parent") == 0) {
++            embedded = true;
++        }
++    }
++
++    if (!embedded && CitraCLI::CheckForOptions(CitraCLI::cli_capture_optstring, argc, argv)) {
+         return CitraCLI::ParseCommand(argc, argv);
+     }
+ 
+-- 
+2.55.0.windows.5
+
+
+From 70525d431032b5040db62c969f1de1db88e68206 Mon Sep 17 00:00:00 2001
+From: relood <relood@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 15:47:54 +0200
+Subject: [PATCH 4/4]  En Local : pas de fenetre de salon avec --parent
+
+---
+ src/citra_qt/multiplayer/state.cpp | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/src/citra_qt/multiplayer/state.cpp b/src/citra_qt/multiplayer/state.cpp
+index 09e81fd..68afa1e 100644
+--- a/src/citra_qt/multiplayer/state.cpp
++++ b/src/citra_qt/multiplayer/state.cpp
+@@ -120,7 +120,11 @@ void MultiplayerState::OnNetworkStateChanged(const Network::RoomMember::State& s
+     if (state == Network::RoomMember::State::Joined ||
+         state == Network::RoomMember::State::Moderator) {
+ 
+-        OnOpenNetworkRoom();
++        // Launched by a frontend (--parent): the main window is never shown, and neither is the
++        // room window; the frontend has its own interface.
++        if (parentWidget()->isVisible()) {
++            OnOpenNetworkRoom();
++        }
+         status_icon->setPixmap(QIcon::fromTheme(QStringLiteral("connected")).pixmap(16));
+         status_text->setText(tr("Connected"));
+         leave_room->setEnabled(true);
+-- 
+2.55.0.windows.5
+

@@ -1,0 +1,6 @@
+{
+  "name": "en-local-proto",
+  "private": true,
+  "scripts": { "build": "tauri build --no-bundle" },
+  "devDependencies": { "@tauri-apps/cli": "^2" }
+}

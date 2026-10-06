@@ -1,0 +1,25 @@
+# Dépendances et builds
+node_modules/
+proto/src-tauri/target/
+proto/src-tauri/gen/
+*.log
+.DS_Store
+graphify-out/
+
+# Jamais de jeux, clés, firmwares ni émulateurs compilés
+*.nds
+*.3ds
+*.cci
+*.cia
+*.iso
+*.rvz
+*.wbfs
+*.wua
+*.wux
+*.nsp
+*.xci
+*.nca
+*.keys
+emu/
+Jeux/
+data/

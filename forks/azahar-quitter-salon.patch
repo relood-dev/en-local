@@ -1,0 +1,32 @@
+From 8b193f3de4bf6cf7ad8af80186518f8d945b4cc2 Mon Sep 17 00:00:00 2001
+From: relood <relood@users.noreply.github.com>
+Date: Tue, 6 Oct 2026 18:10:39 +0200
+Subject: [PATCH] En Local : quitter le salon en cours de partie
+
+---
+ src/citra_qt/citra_qt.cpp | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/src/citra_qt/citra_qt.cpp b/src/citra_qt/citra_qt.cpp
+index da9795e..4af2425 100644
+--- a/src/citra_qt/citra_qt.cpp
++++ b/src/citra_qt/citra_qt.cpp
+@@ -1726,6 +1726,15 @@ GMainWindow::GMainWindow(Core::System& system_)
+             if (l.size() < 3)
+                 return;
+             const int sep = l[0].lastIndexOf(QLatin1Char(':'));
++            if (sep <= 0) {
++                // Empty host: the session was left, the game goes on without a room.
++                LOG_INFO(Frontend, "En Local: room left");
++                (void)QtConcurrent::run([] {
++                    if (auto member = Network::GetRoomMember().lock(); member && member->IsConnected())
++                        member->Leave();
++                });
++                return;
++            }
+             const std::string host = l[0].left(sep).toStdString();
+             const u16 port = static_cast<u16>(l[0].mid(sep + 1).toUInt());
+             const std::string nickname = l[1].toStdString();
+-- 
+2.55.0.windows.5
+

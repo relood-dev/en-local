@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>En Local</title>
+<link rel="stylesheet" href="css/tokens.css">
+<link rel="stylesheet" href="css/base.css">
+<link rel="stylesheet" href="css/components.css">
+<link rel="stylesheet" href="css/ecrans.css">
+</head>
+<body>
+<div id="stage">
+  <img id="fond-art" alt="">
+  <div id="fond-fade"></div>
+  <section class="screen" id="accueil">
+    <div class="top">
+      <div class="pill glass" id="pill-local"></div>
+      <div class="pill glass title-pill" id="titre">En Local</div>
+      <div class="pill glass" style="padding-right:6px"><button class="cloche" id="cloche" title="Notifications (R2)"></button><span class="clock" id="horloge"></span><span id="moi"></span></div>
+    </div>
+    <div class="bubble glass" id="bulle"></div>
+    <img class="loc" src="img/hang-coucou.png" alt="">
+    <div class="board" id="board"></div>
+    <div class="pages" id="pages"></div>
+    <div id="carrousel">
+      <div class="consoles" id="consoles"></div>
+      <i class="arrow"></i>
+      <div class="reel" id="reel"></div>
+      <div class="info" id="info"></div>
+      <div class="media" id="media"></div>
+      <div class="actions glass" id="actions"></div>
+    </div>
+    <div class="hints" style="left:30px" id="aide-g"></div>
+    <section class="section" id="section"></section>
+    <nav class="dock" id="dock" aria-label="Sections"></nav>
+    <div class="splash" id="splash"></div>
+    <div class="contexte glass" id="contexte"></div>
+    <aside class="membres" id="membres" aria-label="Membres du Local"></aside>
+    <div class="hints" style="right:30px;align-items:flex-end" id="aide-d"></div>
+    <div id="status" class="glass"></div>
+  </section>
+</div>
+
+<section id="jeu"><canvas id="ecran"></canvas><p id="chargement"></p></section>
+
+<section id="menu" class="overlay">
+  <div class="panel glass">
+    <h2 id="menu-titre">En pause</h2>
+    <p id="menu-aide"></p>
+    <div id="menu-joueurs"></div>
+    <button class="btn" data-act="resume">Reprendre</button>
+    <button class="btn" data-act="relaunch" style="display:none">Relancer avec eux</button>
+    <button class="btn" data-act="fc" style="display:none">Mon code ami</button>
+    <button class="btn" data-act="capturer">Capturer (photo ou clip)</button>
+    <button class="btn" data-act="session">Session en ligne</button>
+    <button class="btn" data-act="chasse" style="display:none">Chasse aux chromatiques</button>
+    <button class="btn" data-act="reset" style="display:none">Relancer le jeu (reset)</button>
+    <button class="btn" data-act="zero" style="display:none">Compteur à zéro</button>
+    <button class="btn volume" data-act="volume"><span>Volume du jeu</span><span id="menu-volume"></span></button>
+    <button class="btn" data-act="quit">Quitter le jeu</button>
+    <div class="hint" id="menu-touches"></div>
+  </div>
+</section>
+
+<section id="salle" class="salle"></section>
+<div id="defi-notif" class="defi-notif glass"></div>
+<section id="bienvenue" class="bienvenue"></section>
+<section id="saisie" class="salle saisie-ecran"></section>
+<button id="lecteur" class="lecteur glass"></button>
+<section id="vue" class="vue"></section>
+
+<section id="sheet" class="overlay">
+  <div class="panel glass">
+    <h2 id="sheet-titre"></h2>
+    <p id="sheet-texte"></p>
+    <div id="sheet-corps"></div>
+    <div id="sheet-btns"></div>
+  </div>
+</section>
+
+<script src="js/journal.js"></script>
+<script src="js/icones.js"></script>
+<script src="js/glyphes.js"></script>
+<script src="js/sons.js"></script>
+<script src="js/focus.js"></script>
+<script src="js/navigation.js"></script>
+<script src="js/accueil.js"></script>
+<script src="js/membres.js"></script>
+<script src="js/notifs.js"></script>
+<script src="js/pokedex.js"></script>
+<script src="js/medias.js"></script>
+<script src="js/salle.js"></script>
+<script src="js/collections.js"></script>
+<script src="js/tournois.js"></script>
+<script src="js/recherche.js"></script>
+<script src="js/dossier.js"></script>
+<script src="js/consoles.js"></script>
+<script src="js/manettes.js"></script>
+<script src="js/reglages.js"></script>
+<script src="js/profil.js"></script>
+<script src="js/saisie.js"></script>
+<script src="js/trophees.js"></script>
+<script src="js/bienvenue.js"></script>
+<script src="js/app.js"></script>
+<script src="js/musique-menu.js"></script>
+
+</body>
+</html>

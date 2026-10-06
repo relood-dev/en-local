@@ -1,0 +1,87 @@
+diff --git a/src/yuzu/main_window.cpp b/src/yuzu/main_window.cpp
+index 846e1d2..18fb874 100644
+--- a/src/yuzu/main_window.cpp
++++ b/src/yuzu/main_window.cpp
+@@ -17,6 +17,9 @@
+ #include "main_window.h"
+ #include "network/network.h"
+ #include <QRegularExpression>
++#include <thread>
++#include "network/room.h"
++#include "network/verify_user.h"
+ #include <QWindow>
+ #include <QTimer>
+ #include "input_common/main.h"
+@@ -575,6 +578,11 @@ MainWindow::MainWindow(bool has_broken_vulkan)
+                     return nom.contains(QRegularExpression(QStringLiteral("xbox|xinput"), QRegularExpression::CaseInsensitiveOption));
+                 return false;
+             };
++            if (mapped.empty()) {
++                LOG_INFO(Frontend, "En Local : manette utilisée dans l'app : {}", genre.toStdString());
++                for (const auto& d : devices)
++                    LOG_INFO(Frontend, "En Local : périphérique {} ({})", d.Get("display", ""), d.Get("engine", ""));
++            }
+             std::vector<Common::ParamPackage> manettes;
+             for (const auto& d : devices)
+                 if (d.Get("engine", "") == "sdl" || d.Get("engine", "") == "joycon")
+@@ -757,7 +765,7 @@ MainWindow::MainWindow(bool has_broken_vulkan)
+             }
+         } else if ((args[i] == QStringLiteral("--parent") || args[i] == QStringLiteral("--join") ||
+                     args[i] == QStringLiteral("--nickname") ||
+-                    args[i] == QStringLiteral("--room-password")) &&
++                    args[i] == QStringLiteral("--room-password") || args[i] == QStringLiteral("--host-room")) &&
+                    i < args.size() - 1) {
+             // En Local : options du frontend (--parent est lu plus haut).
+             const QString option = args[i];
+@@ -768,6 +776,8 @@ MainWindow::MainWindow(bool has_broken_vulkan)
+                 join_nickname = value;
+             else if (option == QStringLiteral("--room-password"))
+                 join_password = value;
++            else if (option == QStringLiteral("--host-room"))
++                host_room_places = value.toInt();
+         } else if (args[i] == QStringLiteral("-g") && i < args.size() - 1) {
+             // Launch game at path
+             game_path = args[++i];
+@@ -793,9 +803,29 @@ MainWindow::MainWindow(bool has_broken_vulkan)
+                                  : static_cast<u16>(join_room.mid(sep + 1).toUInt());
+         const std::string nickname = join_nickname.toStdString();
+         const std::string password = join_password.toStdString();
++        // En Local, « Sur mon PC » : ce jeu héberge le salon lui-même (comme « Host Room »),
++        // sans programme à part entre le jeu et le réseau.
++        if (host_room_places > 0) {
++            if (auto room = Network::GetRoom().lock()) {
++                const bool cree = room->Create("En Local", "", "", port, password,
++                    static_cast<u32>(host_room_places), nickname, {},
++                    std::make_unique<Network::VerifyUser::NullBackend>(), {});
++                LOG_INFO(Network, "En Local : salon héberge par le jeu sur le port {} : {}", port, cree);
++            }
++        }
+         (void)QtConcurrent::run([=] {
+-            if (auto member = Network::GetRoomMember().lock())
++            // Le salon de l'hôte n'existe qu'une fois son jeu lancé : on réessaie pendant 2 min.
++            for (int essai = 0; essai < 40; ++essai) {
++                auto member = Network::GetRoomMember().lock();
++                if (!member || member->IsConnected())
++                    return;
+                 member->Join(nickname, host.c_str(), port, 0, Network::NoPreferredIP, password);
++                for (int k = 0; k < 50 && member->GetState() == Network::RoomMember::State::Joining; ++k)
++                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
++                if (member->IsConnected())
++                    return;
++                std::this_thread::sleep_for(std::chrono::seconds(3));
++            }
+         });
+     }
+ 
+diff --git a/src/yuzu/main_window.h b/src/yuzu/main_window.h
+index 5e83e56..32daf64 100644
+--- a/src/yuzu/main_window.h
++++ b/src/yuzu/main_window.h
+@@ -179,6 +179,7 @@ public:
+     // Fenêtre native qui accueille le rendu (--parent), 0 sinon ; salon de --join.
+     WId embed_parent = 0;
+     QString join_room, join_nickname, join_password;
++    int host_room_places = 0; // En Local : places du salon hébergé par ce jeu (--host-room)
+     ~MainWindow() override;
+ 
+     bool DropAction(QDropEvent* event);

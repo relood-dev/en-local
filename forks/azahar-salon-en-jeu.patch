@@ -1,0 +1,66 @@
+From 81fe0e939f175d36db7e8d742ae88e48880c98c3 Mon Sep 17 00:00:00 2001
+From: relood <relood@users.noreply.github.com>
+Date: Tue, 6 Oct 2026 17:30:21 +0200
+Subject: [PATCH] En Local : salon en cours de partie (fichier ENLOCAL_SALON)
+
+---
+ src/citra_qt/citra_qt.cpp | 36 ++++++++++++++++++++++++++++++++++++
+ 1 file changed, 36 insertions(+)
+
+diff --git a/src/citra_qt/citra_qt.cpp b/src/citra_qt/citra_qt.cpp
+index 32dc905..da9795e 100644
+--- a/src/citra_qt/citra_qt.cpp
++++ b/src/citra_qt/citra_qt.cpp
+@@ -8,6 +8,7 @@
+ #include <optional>
+ #include <thread>
+ #include <unordered_map>
++#include <QFile>
+ #include <QFileDialog>
+ #include <QFutureWatcher>
+ #include <QIcon>
+@@ -1708,6 +1709,41 @@ GMainWindow::GMainWindow(Core::System& system_)
+             }
+         });
+     }
++
++    // En Local: a session started mid-game writes its room to the ENLOCAL_SALON file
++    // (host:port, nickname, password). The current room is left, then the new one joined.
++    if (const char* file = std::getenv("ENLOCAL_SALON")) {
++        auto* const salon_timer = new QTimer(this);
++        connect(salon_timer, &QTimer::timeout, this, [this, path = QString::fromUtf8(file), seen = QString{}]() mutable {
++            QFile f(path);
++            if (!f.open(QIODevice::ReadOnly))
++                return;
++            const QString text = QString::fromUtf8(f.readAll());
++            if (text == seen)
++                return;
++            seen = text;
++            const QStringList l = text.split(QLatin1Char('\n'));
++            if (l.size() < 3)
++                return;
++            const int sep = l[0].lastIndexOf(QLatin1Char(':'));
++            const std::string host = l[0].left(sep).toStdString();
++            const u16 port = static_cast<u16>(l[0].mid(sep + 1).toUInt());
++            const std::string nickname = l[1].toStdString();
++            const std::string password = l[2].toStdString();
++            const std::string console_id = Service::CFG::GetConsoleIdHash(system);
++            const auto mac = Service::CFG::GetConsoleMacAddress(system);
++            LOG_INFO(Frontend, "En Local: room joined mid-game, {}", l[0].toStdString());
++            (void)QtConcurrent::run([=] {
++                auto member = Network::GetRoomMember().lock();
++                if (!member)
++                    return;
++                if (member->IsConnected())
++                    member->Leave();
++                member->Join(nickname, console_id, host.c_str(), port, 0, mac, password);
++            });
++        });
++        salon_timer->start(1000);
++    }
+ }
+ 
+ GMainWindow::~GMainWindow() {
+-- 
+2.55.0.windows.5
+

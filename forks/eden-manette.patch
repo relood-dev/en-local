@@ -1,0 +1,87 @@
+diff --git a/src/yuzu/main_window.cpp b/src/yuzu/main_window.cpp
+index 5e7dd30..846e1d2 100644
+--- a/src/yuzu/main_window.cpp
++++ b/src/yuzu/main_window.cpp
+@@ -16,7 +16,10 @@
+ #include "common/fs/ryujinx_compat.h"
+ #include "main_window.h"
+ #include "network/network.h"
++#include <QRegularExpression>
+ #include <QWindow>
++#include <QTimer>
++#include "input_common/main.h"
+ #include "qt_common/discord/discord.h"
+ #include "ui_main.h"
+ 
+@@ -553,6 +556,71 @@ MainWindow::MainWindow(bool has_broken_vulkan)
+         render_window->winId();
+         render_window->windowHandle()->setParent(QWindow::fromWinId(embed_parent));
+         render_window->move(0, 0);
++        // Manette : la première manette SDL devient le joueur 1, aussi après un
++        // branchement ; Guide reste au frontend (son menu), pas de HOME Switch.
++        auto* const pad_timer = new QTimer(this);
++        connect(pad_timer, &QTimer::timeout, this, [this, mapped = std::string{}]() mutable {
++            const auto devices = input_subsystem->GetInputDevices();
++            // La manette que le joueur utilise dans En Local (ENLOCAL_MANETTE : nintendo,
++            // playstation, xbox…) d'abord ; sinon la première. SDL, ou le pilote Joy-Con
++            // d'Eden (qui prend les manettes Pro et les Joy-Con).
++            const QString genre = QString::fromUtf8(std::getenv("ENLOCAL_MANETTE") ? std::getenv("ENLOCAL_MANETTE") : "");
++            const auto du_genre = [&](const Common::ParamPackage& d) {
++                const QString nom = QString::fromStdString(d.Get("display", "")) + QStringLiteral(" ") + QString::fromStdString(d.Get("engine", ""));
++                if (genre == QStringLiteral("nintendo"))
++                    return nom.contains(QRegularExpression(QStringLiteral("pro controller|joy-?con|nintendo|switch|joycon"), QRegularExpression::CaseInsensitiveOption));
++                if (genre == QStringLiteral("playstation"))
++                    return nom.contains(QRegularExpression(QStringLiteral("dualsense|dualshock|ps[345]|sony|wireless controller"), QRegularExpression::CaseInsensitiveOption));
++                if (genre == QStringLiteral("xbox"))
++                    return nom.contains(QRegularExpression(QStringLiteral("xbox|xinput"), QRegularExpression::CaseInsensitiveOption));
++                return false;
++            };
++            std::vector<Common::ParamPackage> manettes;
++            for (const auto& d : devices)
++                if (d.Get("engine", "") == "sdl" || d.Get("engine", "") == "joycon")
++                    manettes.push_back(d);
++            std::stable_partition(manettes.begin(), manettes.end(), du_genre);
++            if (mapped.empty())
++                LOG_INFO(Frontend, "En Local : {} périphériques d'entrée", devices.size());
++            for (const auto& device : manettes) {
++                if (device.Serialize() == mapped)
++                    return;
++                mapped = device.Serialize();
++                LOG_INFO(Frontend, "En Local : manette {} au joueur 1", device.Get("display", ""));
++                // Mode portable : la console en main (Joy-Con attachés), que tous les jeux
++                // acceptent (Pokémon Let's Go refuse la manette Pro) ; sinon le joueur 1.
++                const bool portable = !Settings::IsDockedMode();
++                auto* const pad = QtCommon::system->HIDCore().GetEmulatedController(
++                    portable ? Core::HID::NpadIdType::Handheld : Core::HID::NpadIdType::Player1);
++                std::unordered_map<int, Common::ParamPackage> d_office;
++                for (const auto& [index, param] : input_subsystem->GetButtonMappingForDevice(device)) {
++                    d_office[static_cast<int>(index)] = param;
++                    pad->SetButtonParam(index, param);
++                }
++                if (const char* touches = std::getenv("ENLOCAL_TOUCHES")) {
++                    for (const auto& paire : QString::fromUtf8(touches).split(QLatin1Char(','), Qt::SkipEmptyParts)) {
++                        const auto ij = paire.split(QLatin1Char('='));
++                        if (ij.size() == 2 && d_office.contains(ij[1].toInt()))
++                            pad->SetButtonParam(ij[0].toInt(), d_office[ij[1].toInt()]);
++                    }
++                    LOG_INFO(Frontend, "En Local : touches {}", touches);
++                }
++                for (const auto& [index, param] : input_subsystem->GetAnalogMappingForDevice(device))
++                    pad->SetStickParam(index, param);
++                for (const auto& [index, param] : input_subsystem->GetMotionMappingForDevice(device))
++                    pad->SetMotionParam(index, param);
++                pad->SetButtonParam(Settings::NativeButton::Home, {});
++                pad->SaveCurrentConfig();
++                if (portable) {
++                    QtCommon::system->HIDCore().GetEmulatedController(Core::HID::NpadIdType::Player1)->Disconnect();
++                    pad->SetNpadStyleIndex(Core::HID::NpadStyleIndex::Handheld);
++                    pad->Connect();
++                    LOG_INFO(Frontend, "En Local : manette en console portable");
++                }
++                return;
++            }
++        });
++        pad_timer->start(1000);
+     } else {
+         show();
+     }

@@ -1,0 +1,47 @@
+/* Habillage : décor autour du jeu (voir js/habillage.js). */
+@font-face { font-family: Inter; src: url(../fonts/Inter-SemiBold.ttf); font-weight: 600; }
+@font-face { font-family: Inter; src: url(../fonts/Inter-Bold.ttf); font-weight: 700 800; }
+* { box-sizing: border-box; margin: 0; }
+html, body { height: 100%; overflow: hidden; background: transparent; color: #f2f2f4; font-family: Inter, system-ui, sans-serif; -webkit-font-smoothing: antialiased; user-select: none; }
+
+/* Le décor couvre la fenêtre sauf le jeu (clip-path posé par le script). */
+#decor { position: fixed; inset: 0; background: #0d0d0f; opacity: 0; }
+body.pret #decor { opacity: 1; animation: apparait .5s ease-out; }
+@keyframes apparait { from { opacity: 0; } }
+#decor::before { content: ''; position: absolute; inset: 0;
+  background-image: radial-gradient(circle, rgba(255, 255, 255, .13) 1.6px, transparent 2px), radial-gradient(circle, rgba(255, 255, 255, .07) 1.6px, transparent 2px);
+  background-size: 9px 9px, 9px 9px; background-position: 0 0, 4.5px 4.5px;
+  -webkit-mask-image: radial-gradient(ellipse at center, rgba(0, 0, 0, .25) 35%, #000 85%); mask-image: radial-gradient(ellipse at center, rgba(0, 0, 0, .25) 35%, #000 85%); }
+#cadres svg { position: absolute; inset: 0; overflow: visible; }
+#cadres path { fill: none; stroke-linejoin: round; }
+#cadres .ombre { stroke: rgba(0, 0, 0, .75); stroke-width: 60px; filter: blur(22px); }
+#cadres .trait { stroke: rgba(255, 255, 255, .14); stroke-width: 2px; }
+body.oled #decor { background: #000; }
+body.oled #decor::before { opacity: .55; }
+
+/* Avatar en haut à gauche, joueurs et bulles en bas à droite. */
+.moi { position: fixed; top: 30px; left: 30px; width: 64px; height: 64px; border-radius: 50%; object-fit: cover; box-shadow: 0 0 0 4px #f2f2f4, 0 6px 18px rgba(0, 0, 0, .6); opacity: 0; transition: opacity .4s .2s; }
+body.pret .moi[src] { opacity: 1; }
+#bas { position: fixed; right: 26px; bottom: 26px; display: flex; flex-direction: column; align-items: flex-end; gap: 14px; }
+.bulles { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
+.bulle { display: flex; align-items: center; gap: 12px; animation: bulle 5s ease forwards; }
+.bulle span { max-width: 340px; padding: 12px 20px; border-radius: 999px; background: #8be3b4; color: #0e3b26; font-weight: 700; font-size: 17px; box-shadow: 0 6px 20px rgba(0, 0, 0, .45); }
+.bulle.part span { background: #e7e7ec; color: #303036; }
+.bulle img { width: 52px; height: 52px; border-radius: 50%; object-fit: cover; box-shadow: 0 0 0 3px #f2f2f4; }
+@keyframes bulle { 0% { opacity: 0; transform: translateX(30px); } 8%, 85% { opacity: 1; transform: none; } 100% { opacity: 0; transform: translateY(-6px); } }
+.joueurs { display: flex; flex-direction: row-reverse; padding-left: 16px; }
+.joueurs img { width: 56px; height: 56px; border-radius: 50%; object-fit: cover; margin-left: -16px; box-shadow: 0 0 0 3px #0d0d0f, 0 0 0 5px rgba(255, 255, 255, .85); }
+.joueurs img.nouveau { animation: arrive .7s cubic-bezier(.2, 1.4, .4, 1); }
+@keyframes arrive { from { transform: scale(0); } }
+.code { font-size: 13px; font-weight: 700; letter-spacing: .08em; color: rgba(255, 255, 255, .55); }
+
+/* Jeu en plein écran : seulement les bulles. */
+.plein .joueurs, .plein .code { display: none; }
+
+/* Chasse aux chromatiques : compteur de resets en haut à droite. */
+#chasse { position: fixed; top: 14px; right: 14px; display: flex; align-items: center; gap: 8px; padding: 7px 14px 7px 10px; border-radius: 999px;
+  background: rgba(12, 12, 16, .78); box-shadow: inset 0 0 0 1px rgba(255, 203, 5, .45), 0 6px 18px rgba(0, 0, 0, .4); color: #fff; font: 700 14px/1 system-ui, sans-serif; font-variant-numeric: tabular-nums; }
+#chasse[hidden] { display: none; }
+#chasse b { color: #ffcb05; font-size: 16px; text-shadow: 0 0 8px rgba(255, 203, 5, .8); }
+#chasse.plus { animation: chasse .5s ease; }
+@keyframes chasse { 30% { transform: scale(1.15); } }

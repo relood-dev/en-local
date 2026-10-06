@@ -1,0 +1,15 @@
+diff --git a/src/yuzu/main_window.cpp b/src/yuzu/main_window.cpp
+index 65969bf..6be59d0 100644
+--- a/src/yuzu/main_window.cpp
++++ b/src/yuzu/main_window.cpp
+@@ -597,7 +597,9 @@ MainWindow::MainWindow(bool has_broken_vulkan)
+                 LOG_INFO(Frontend, "En Local : manette {} au joueur 1", device.Get("display", ""));
+                 // Mode portable : la console en main (Joy-Con attachés), que tous les jeux
+                 // acceptent (Pokémon Let's Go refuse la manette Pro) ; sinon le joueur 1.
+-                const bool portable = !Settings::IsDockedMode();
++                // Seulement pour les jeux qui refusent la manette Pro (En Local passe ENLOCAL_EN_MAIN) :
++                // ailleurs (Smash en session…), changer de type de manette la faisait décrocher.
++                const bool portable = !Settings::IsDockedMode() && std::getenv("ENLOCAL_EN_MAIN");
+                 auto* const pad = QtCommon::system->HIDCore().GetEmulatedController(
+                     portable ? Core::HID::NpadIdType::Handheld : Core::HID::NpadIdType::Player1);
+                 std::unordered_map<int, Common::ParamPackage> d_office;

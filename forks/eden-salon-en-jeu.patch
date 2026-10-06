@@ -1,0 +1,109 @@
+diff --git a/src/yuzu/main_window.cpp b/src/yuzu/main_window.cpp
+index 6be59d0..557ce70 100644
+--- a/src/yuzu/main_window.cpp
++++ b/src/yuzu/main_window.cpp
+@@ -16,6 +16,7 @@
+ #include "common/fs/ryujinx_compat.h"
+ #include "main_window.h"
+ #include "network/network.h"
++#include <QFile>
+ #include <QRegularExpression>
+ #include <thread>
+ #include "network/room.h"
+@@ -419,6 +420,37 @@ inline static bool isDarkMode() {
+ }
+ #endif // _WIN32
+ 
++// En Local : entre dans un salon (au lancement avec --join, ou en cours de partie par le fichier
++// ENLOCAL_SALON). `places` > 0 : ce jeu héberge le salon lui-même (« Sur mon PC », comme Host Room).
++// L'ancien salon est quitté d'abord. Le salon de l'hôte n'existe qu'une fois son jeu lancé : on
++// réessaie d'y entrer pendant 2 min.
++static void EnLocalSalon(std::string host, u16 port, std::string nickname, std::string password, int places) {
++    if (auto member = Network::GetRoomMember().lock(); member && member->IsConnected())
++        member->Leave();
++    if (auto room = Network::GetRoom().lock(); room && room->GetState() == Network::Room::State::Open)
++        room->Destroy();
++    if (places > 0) {
++        if (auto room = Network::GetRoom().lock()) {
++            const bool cree = room->Create("En Local", "", "", port, password, static_cast<u32>(places), nickname, {},
++                                           std::make_unique<Network::VerifyUser::NullBackend>(), {});
++            LOG_INFO(Network, "En Local : salon hébergé par le jeu sur le port {} : {}", port, cree);
++        }
++    }
++    (void)QtConcurrent::run([=] {
++        for (int essai = 0; essai < 40; ++essai) {
++            auto member = Network::GetRoomMember().lock();
++            if (!member || member->IsConnected())
++                return;
++            member->Join(nickname, host.c_str(), port, 0, Network::NoPreferredIP, password);
++            for (int k = 0; k < 50 && member->GetState() == Network::RoomMember::State::Joining; ++k)
++                std::this_thread::sleep_for(std::chrono::milliseconds(100));
++            if (member->IsConnected())
++                return;
++            std::this_thread::sleep_for(std::chrono::seconds(3));
++        }
++    });
++}
++
+ MainWindow::MainWindow(bool has_broken_vulkan)
+     : ui{std::make_unique<Ui::MainWindow>()},
+       input_subsystem{std::make_shared<InputCommon::InputSubsystem>()}, user_data_migrator{this} {
+@@ -631,6 +663,26 @@ MainWindow::MainWindow(bool has_broken_vulkan)
+             }
+         });
+         pad_timer->start(1000);
++        // Session lancée en pleine partie : En Local écrit le salon dans le fichier ENLOCAL_SALON.
++        if (const char* fichier = std::getenv("ENLOCAL_SALON")) {
++            auto* const salon_timer = new QTimer(this);
++            connect(salon_timer, &QTimer::timeout, this, [chemin = QString::fromUtf8(fichier), vu = QString{}]() mutable {
++                QFile f(chemin);
++                if (!f.open(QIODevice::ReadOnly))
++                    return;
++                const QString texte = QString::fromUtf8(f.readAll());
++                if (texte == vu)
++                    return;
++                vu = texte;
++                const QStringList l = texte.split(QLatin1Char('\n'));
++                if (l.size() < 4)
++                    return;
++                const int sep = l[0].lastIndexOf(QLatin1Char(':'));
++                LOG_INFO(Frontend, "En Local : salon en cours de partie, {}", l[0].toStdString());
++                EnLocalSalon(l[0].left(sep).toStdString(), static_cast<u16>(l[0].mid(sep + 1).toUInt()), l[1].toStdString(), l[2].toStdString(), l[3].trimmed().toInt());
++            });
++            salon_timer->start(1000);
++        }
+     } else {
+         show();
+     }
+@@ -805,30 +857,7 @@ MainWindow::MainWindow(bool has_broken_vulkan)
+                                  : static_cast<u16>(join_room.mid(sep + 1).toUInt());
+         const std::string nickname = join_nickname.toStdString();
+         const std::string password = join_password.toStdString();
+-        // En Local, « Sur mon PC » : ce jeu héberge le salon lui-même (comme « Host Room »),
+-        // sans programme à part entre le jeu et le réseau.
+-        if (host_room_places > 0) {
+-            if (auto room = Network::GetRoom().lock()) {
+-                const bool cree = room->Create("En Local", "", "", port, password,
+-                    static_cast<u32>(host_room_places), nickname, {},
+-                    std::make_unique<Network::VerifyUser::NullBackend>(), {});
+-                LOG_INFO(Network, "En Local : salon héberge par le jeu sur le port {} : {}", port, cree);
+-            }
+-        }
+-        (void)QtConcurrent::run([=] {
+-            // Le salon de l'hôte n'existe qu'une fois son jeu lancé : on réessaie pendant 2 min.
+-            for (int essai = 0; essai < 40; ++essai) {
+-                auto member = Network::GetRoomMember().lock();
+-                if (!member || member->IsConnected())
+-                    return;
+-                member->Join(nickname, host.c_str(), port, 0, Network::NoPreferredIP, password);
+-                for (int k = 0; k < 50 && member->GetState() == Network::RoomMember::State::Joining; ++k)
+-                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+-                if (member->IsConnected())
+-                    return;
+-                std::this_thread::sleep_for(std::chrono::seconds(3));
+-            }
+-        });
++        EnLocalSalon(host, port, nickname, password, host_room_places);
+     }
+ 
+     // Override fullscreen setting if gamepath or argument is provided

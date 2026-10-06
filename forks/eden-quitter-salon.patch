@@ -1,0 +1,32 @@
+From 67f21d0b273819d44716d6bf0bd7cd596f7fe400 Mon Sep 17 00:00:00 2001
+From: relood <relood@users.noreply.github.com>
+Date: Tue, 6 Oct 2026 18:10:39 +0200
+Subject: [PATCH] En Local : quitter le salon en cours de partie
+
+---
+ src/yuzu/main_window.cpp | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/src/yuzu/main_window.cpp b/src/yuzu/main_window.cpp
+index 557ce70..7d7edda 100644
+--- a/src/yuzu/main_window.cpp
++++ b/src/yuzu/main_window.cpp
+@@ -678,6 +678,15 @@ MainWindow::MainWindow(bool has_broken_vulkan)
+                 if (l.size() < 4)
+                     return;
+                 const int sep = l[0].lastIndexOf(QLatin1Char(':'));
++                if (sep <= 0) {
++                    // Hôte vide : la session est quittée, la partie continue sans salon.
++                    LOG_INFO(Frontend, "En Local : salon quitté");
++                    if (auto member = Network::GetRoomMember().lock(); member && member->IsConnected())
++                        member->Leave();
++                    if (auto room = Network::GetRoom().lock(); room && room->GetState() == Network::Room::State::Open)
++                        room->Destroy();
++                    return;
++                }
+                 LOG_INFO(Frontend, "En Local : salon en cours de partie, {}", l[0].toStdString());
+                 EnLocalSalon(l[0].left(sep).toStdString(), static_cast<u16>(l[0].mid(sep + 1).toUInt()), l[1].toStdString(), l[2].toStdString(), l[3].trimmed().toInt());
+             });
+-- 
+2.55.0.windows.5
+
