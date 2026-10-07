@@ -960,7 +960,7 @@ function drawHome() {
   // Loc ne parle que s'il a quelque chose à dire.
   $('#bulle').innerHTML = invit
     ? `${esc(invit.host?.name || 'Quelqu\'un')} joue à <b>${esc(invit.game)}</b>. On y va ?<div class="row">${glyphs.x}Rejoindre la session</div>`
-    : !games.length ? `Ajoute tes jeux, ils apparaîtront ici.<div class="row">${glyphs.a}Ouvrir le dossier</div>` : '';
+    : !games.length ? `Ajoute tes jeux, ils apparaîtront ici.<div class="row">${glyphs.a}Ajouter des jeux</div>` : '';
   $('#bulle').classList.toggle('vide', !$('#bulle').innerHTML);
 
   $('#accueil').classList.toggle('mode-jeux', onglet === 'jeux' && games.length > 0);

@@ -12,6 +12,7 @@ mod presence;
 mod pseudo;
 mod clips;
 mod dossier;
+mod importer;
 mod medias;
 mod nsz;
 mod reglages;
@@ -499,6 +500,28 @@ fn classer(p: &std::path::Path) -> Option<(&'static str, bool, Option<u64>)> {
     }
 }
 
+/// Ajouter des jeux : fichiers, dossiers ou archives, rangés dans le dossier de leur console.
+/// La progression va à l'interface (événement « import »).
+#[tauri::command]
+async fn importer_jeux(app: AppHandle, chemins: Vec<String>) -> importer::Bilan {
+    tauri::async_runtime::spawn_blocking(move || {
+        let b = importer::importer(&chemins, &classer, &|t| {
+            let _ = app.emit("import", t);
+        });
+        menage_mac(&dossier::jeux());
+        b
+    })
+    .await
+    .unwrap_or_default()
+}
+
+/// Fenêtre Windows pour choisir des jeux ou des archives (plusieurs à la fois).
+#[tauri::command]
+async fn choisir_jeux(app: AppHandle) -> Vec<String> {
+    let Ok(owner) = main_hwnd(&app) else { return Vec::new() };
+    tauri::async_runtime::spawn_blocking(move || dossier::selectionner_plusieurs(owner, "Ajouter des jeux")).await.unwrap_or_default()
+}
+
 /// Range le dossier des jeux. simuler : rend seulement la liste.
 #[tauri::command]
 async fn ranger_jeux(simuler: bool) -> serde_json::Value {
@@ -751,7 +774,9 @@ fn habillage_ds(app: AppHandle, format: f64, visible: bool) {
 fn journal(texte: String) {
     let f = format!("{ROOT}\\data\\ui.log", ROOT = root());
     let ancien = std::fs::read_to_string(&f).unwrap_or_default();
-    let garde = if ancien.len() > 50_000 { &ancien[ancien.len() - 25_000..] } else { &ancien[..] };
+    // Coupé sur une limite de caractère (un accent coupé en deux ferait planter).
+    let debut = if ancien.len() > 50_000 { (ancien.len() - 25_000..ancien.len()).find(|&i| ancien.is_char_boundary(i)).unwrap_or(0) } else { 0 };
+    let garde = &ancien[debut..];
     let ligne: String = texte.chars().filter(|c| !c.is_control()).take(600).collect();
     let _ = std::fs::write(&f, format!("{garde}{ligne}\n"));
 }
@@ -928,7 +953,8 @@ async fn cemu_packs_maj() -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(|| {
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        let dest = format!("{CEMU}\\portable\\graphicPacks\\downloadedGraphicPacks", CEMU = cemu());
+        // Apostrophes doublées : le chemin passe entre guillemets simples dans PowerShell.
+        let dest = format!("{CEMU}\\portable\\graphicPacks\\downloadedGraphicPacks", CEMU = cemu()).replace('\'', "''");
         let script = format!(
             "$ErrorActionPreference='Stop'; [Net.ServicePointManager]::SecurityProtocol='Tls12'; \
              $r = Invoke-RestMethod -UseBasicParsing 'https://api.github.com/repos/cemu-project/cemu_graphic_packs/releases/latest'; \
@@ -1398,7 +1424,7 @@ fn main() {
                 embed::stop();
             }
         })
-        .invoke_handler(tauri::generate_handler![verifier_maj, installer_maj, ouvrir_site, oublier_jaquettes, jaquette, journal, habillage_ds, switch_etat, switch_poser, volume_jeux, list_games, medias_liste, ouvrir_medias, dossiers_medias, choisir_dossier_media, creer_dossier_media, dossier_jeux, definir_dossier_jeux, choisir_dossier, creer_dossier_jeux, ranger_jeux, contenus_jeux, ra_connexion, ouvrir_ra, mode_ecran, materiel, switch_updates, cemu_packs, cemu_packs_maj, dolphin_mods, eden_mods, open_folder, open_games_folder, ouvrir_saves, reset_jeu, salon_en_jeu, pokedex, sprite, perf::performances, trois_ds_etat, trois_ds_poser, clips::clip, clips::miniature, garder_photo, nsz::preparer_switch, salon::salon_preparer, salon::salon_sonde, salon::salon_lancer, salon::salon_fermer, pad_info, open_discord_user, game_icon, save_image, capture, list_captures, load_stats, save_stats, game_infos, play, login, menu_shown, resume, quit_game, quit_app, home, snapshot, game_shot, autoplay, lien_initial, ds_friend_code, netplay, netplay_launch, netplay_stop, netplay_message, netplay_cancel, presence, presence_clear, pointer])
+        .invoke_handler(tauri::generate_handler![verifier_maj, installer_maj, ouvrir_site, importer_jeux, choisir_jeux, oublier_jaquettes, jaquette, journal, habillage_ds, switch_etat, switch_poser, volume_jeux, list_games, medias_liste, ouvrir_medias, dossiers_medias, choisir_dossier_media, creer_dossier_media, dossier_jeux, definir_dossier_jeux, choisir_dossier, creer_dossier_jeux, ranger_jeux, contenus_jeux, ra_connexion, ouvrir_ra, mode_ecran, materiel, switch_updates, cemu_packs, cemu_packs_maj, dolphin_mods, eden_mods, open_folder, open_games_folder, ouvrir_saves, reset_jeu, salon_en_jeu, pokedex, sprite, perf::performances, trois_ds_etat, trois_ds_poser, clips::clip, clips::miniature, garder_photo, nsz::preparer_switch, salon::salon_preparer, salon::salon_sonde, salon::salon_lancer, salon::salon_fermer, pad_info, open_discord_user, game_icon, save_image, capture, list_captures, load_stats, save_stats, game_infos, play, login, menu_shown, resume, quit_game, quit_app, home, snapshot, game_shot, autoplay, lien_initial, ds_friend_code, netplay, netplay_launch, netplay_stop, netplay_message, netplay_cancel, presence, presence_clear, pointer])
         .run(tauri::generate_context!())
         .expect("En Local n'a pas pu démarrer");
 }

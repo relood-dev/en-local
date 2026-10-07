@@ -880,3 +880,6 @@ button.trn-duel { cursor: pointer; }
 .trn-boutons .choix { border: 0; font: inherit; font-weight: 700; padding: 12px 20px; border-radius: var(--r-s); color: var(--texte); background: var(--bouton); cursor: pointer; outline: none; transition: background var(--d-1), color var(--d-1), transform var(--d-2) var(--rebond); }
 .trn-boutons .choix:hover { background: var(--bouton-survol); }
 .trn-boutons .choix.focus { background: var(--accent); color: var(--sur-accent); box-shadow: none; }
+
+/* Glisser-déposer de jeux : l'app s'entoure d'un cadre pendant le survol */
+body.depot::after { content: 'Dépose tes jeux ou archives : ils se rangent tout seuls'; position: fixed; inset: 14px; z-index: 9999; display: grid; place-items: center; border-radius: var(--r-l); box-shadow: inset 0 0 0 3px var(--accent); background: rgba(10, 10, 12, .72); color: var(--texte); font-size: 24px; font-weight: 800; pointer-events: none; }

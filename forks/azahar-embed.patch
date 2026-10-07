@@ -1,5 +1,5 @@
 From 3d27c1953ad44cc87f42b80f4d666f464926d589 Mon Sep 17 00:00:00 2001
-From: relood <relood@users.noreply.github.com>
+From: Relood <147659633+relood-dev@users.noreply.github.com>
 Date: Thu, 1 Oct 2026 14:26:09 +0200
 Subject: [PATCH 1/4]  En Local : option --parent
 
@@ -98,7 +98,7 @@ index 449413b..6a8c79b 100644
 
 
 From 97c7f7a9a715261b11350d6335ff6041660dbfbe Mon Sep 17 00:00:00 2001
-From: relood <relood@users.noreply.github.com>
+From: Relood <147659633+relood-dev@users.noreply.github.com>
 Date: Thu, 1 Oct 2026 15:24:12 +0200
 Subject: [PATCH 2/4]  En Local : option --join
 
@@ -188,7 +188,7 @@ index 6a8c79b..0720150 100644
 
 
 From c9f632fd4fb615eb59643c91fbdae1b3682e3761 Mon Sep 17 00:00:00 2001
-From: relood <relood@users.noreply.github.com>
+From: Relood <147659633+relood-dev@users.noreply.github.com>
 Date: Thu, 1 Oct 2026 15:28:52 +0200
 Subject: [PATCH 3/4]  En Local : options longues sans outil de compression
 
@@ -223,7 +223,7 @@ index 4965ca2..8e213c7 100644
 
 
 From 70525d431032b5040db62c969f1de1db88e68206 Mon Sep 17 00:00:00 2001
-From: relood <relood@users.noreply.github.com>
+From: Relood <147659633+relood-dev@users.noreply.github.com>
 Date: Thu, 1 Oct 2026 15:47:54 +0200
 Subject: [PATCH 4/4]  En Local : pas de fenetre de salon avec --parent
 

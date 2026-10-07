@@ -197,7 +197,8 @@ function itemHtml(x, n) {
   }
   if (x.t === 'reprendre') {
     const r = dernier();
-    if (!r) return `<div ${base('dossier', 'Ajouter des jeux')}><img class="w-loc" src="img/loc/loc_dossier.gif" alt=""><div class="in plat"><span class="tag">Reprendre</span><h3>Ajoute tes jeux pour commencer</h3></div>${poignee}</div>`;
+    // Pas encore de partie : le widget sert à ajouter des jeux (fichiers ou archives, déposés ou choisis).
+    if (!r) return `<div ${base('dossier', 'Ajouter des jeux')}><img class="w-loc" src="img/loc/loc_dossier.gif" alt=""><div class="in plat"><span class="tag">Ajouter des jeux</span><h3>Dépose un jeu ou un .zip ici</h3><span class="s">Avec ses mises à jour et DLC, tout se range tout seul</span></div>${poignee}</div>`;
     const titre = fiche(r.g)?.title || r.g.name;
     const st = stats[r.g.path];
     const fond = derniereImage(r.g);
@@ -417,7 +418,7 @@ function activer(el) {
   if (a === 'captures') ouvrirCapture(el.dataset.c === undefined ? -1 : +el.dataset.c);
   if (a === 'capture') ouvrirCapture(capturesListe.findIndex((c) => el.dataset.src === c.path));
   if (a === 'image' || a === 'loc') { /* décoratifs : rien à lancer */ }
-  if (a === 'dossier') invoke('open_games_folder');
+  if (a === 'dossier') menuAjouterJeux();
   if (a === 'code') ouvrirCode();
   if (a === 'login') login();
 }

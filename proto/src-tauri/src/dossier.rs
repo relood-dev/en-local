@@ -92,17 +92,24 @@ pub fn a_ranger(racine: &Path, classer: Classer) -> Vec<Rangement> {
     let mut fichiers = Vec::new();
     lister(racine, 4, &mut fichiers);
     let switch = racine.join("Switch");
-    // Dossier du jeu : celui où il est déjà, sinon Switch\<son nom>.
-    let dossier_jeu = |f: &Path| match f.parent() {
-        Some(p) if p.parent() == Some(switch.as_path()) && p.file_name().is_some_and(|n| n != MAJ) => p.to_path_buf(),
-        _ => switch.join(nom_jeu(f)),
-    };
     let classes: Vec<_> = fichiers.into_iter().filter_map(|f| classer(&f).map(|c| (f, c))).collect();
-    // Title ID du jeu -> son dossier (les MAJ et DLC ont les mêmes bits hauts).
-    let dossiers: std::collections::HashMap<u64, PathBuf> = classes.iter()
-        .filter(|(_, (c, maj, _))| *c == "Switch" && !maj)
-        .filter_map(|(f, (_, _, id))| Some(((*id)? & !0x1FFF, dossier_jeu(f))))
+    // Dossier de jeu Switch (Switch\<jeu>) qui contient déjà ce fichier, s'il y en a un.
+    let deja_dans = |f: &Path| f.ancestors().skip(1).find(|a| a.parent() == Some(switch.as_path()) && a.file_name().is_some_and(|n| n != MAJ)).map(Path::to_path_buf);
+    // Title ID du jeu -> son dossier (les MAJ et DLC ont les mêmes bits hauts). D'abord les dossiers
+    // qui existent déjà (créés par une MAJ ou un DLC arrivé avant le jeu), puis ceux des jeux.
+    let mut dossiers: std::collections::HashMap<u64, PathBuf> = classes.iter()
+        .filter(|(_, (c, _, _))| *c == "Switch")
+        .filter_map(|(f, (_, _, id))| Some(((*id)? & !0x1FFF, deja_dans(f)?)))
         .collect();
+    for (f, (c, maj, id)) in &classes {
+        if *c == "Switch" && !maj {
+            if let Some(id) = id {
+                dossiers.entry(id & !0x1FFF).or_insert_with(|| switch.join(nom_jeu(f)));
+            }
+        }
+    }
+    // Dossier d'un jeu : celui où il est déjà, celui de ses MAJ et DLC, sinon Switch\<son nom>.
+    let dossier_jeu = |f: &Path, id: Option<u64>| deja_dans(f).or_else(|| id.and_then(|x| dossiers.get(&(x & !0x1FFF)).cloned())).unwrap_or_else(|| switch.join(nom_jeu(f)));
     for (f, (console, maj, id)) in classes {
         let Some((_, nom)) = CONSOLES.iter().find(|(id, _)| *id == console) else { continue };
         let parent = f.parent().unwrap_or(racine);
@@ -114,11 +121,12 @@ pub fn a_ranger(racine: &Path, classer: Classer) -> Vec<Rangement> {
             }
             dest
         } else if !maj {
-            dossier_jeu(&f)
+            dossier_jeu(&f, id)
         } else {
-            // MAJ ou DLC : dans un sous-dossier de son jeu.
-            let jeu = id.and_then(|x| dossiers.get(&(x & !0x1FFF))).unwrap_or(&switch);
-            if parent.starts_with(jeu) && parent != jeu {
+            // MAJ ou DLC : dans un sous-dossier de son jeu. Jeu pas encore là : son dossier est créé
+            // (au nom du fichier), et le jeu le rejoindra en arrivant.
+            let jeu = dossier_jeu(&f, id);
+            if parent.starts_with(&jeu) && parent != jeu {
                 continue;
             }
             jeu.join(MAJ)
@@ -190,6 +198,39 @@ fn choisir(owner: isize, titre: &str, filtre: Option<(&str, &str)>) -> Option<St
     }
 }
 
+/// Fenêtre Windows de choix de plusieurs fichiers (jeux et archives). Rend la liste, vide si annulé.
+pub fn selectionner_plusieurs(owner: isize, titre: &str) -> Vec<String> {
+    use windows::core::{HSTRING, PCWSTR};
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CoTaskMemFree, CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED};
+    use windows::Win32::UI::Shell::Common::COMDLG_FILTERSPEC;
+    use windows::Win32::UI::Shell::{FileOpenDialog, IFileOpenDialog, FOS_ALLOWMULTISELECT, FOS_FILEMUSTEXIST, FOS_FORCEFILESYSTEM, SIGDN_FILESYSPATH};
+    let mut out = Vec::new();
+    unsafe {
+        let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+        let Ok(d) = CoCreateInstance::<_, IFileOpenDialog>(&FileOpenDialog, None, CLSCTX_INPROC_SERVER) else { return out };
+        let Ok(o) = d.GetOptions() else { return out };
+        let _ = d.SetOptions(o | FOS_ALLOWMULTISELECT | FOS_FILEMUSTEXIST | FOS_FORCEFILESYSTEM);
+        let (n, m) = (HSTRING::from("Jeux et archives"), HSTRING::from("*.zip;*.7z;*.rar;*.nsp;*.nsz;*.xci;*.xcz;*.3ds;*.cci;*.cia;*.nds;*.iso;*.rvz;*.wbfs;*.gcm;*.wua;*.wud;*.wux"));
+        let (n2, m2) = (HSTRING::from("Tous les fichiers"), HSTRING::from("*.*"));
+        let _ = d.SetFileTypes(&[COMDLG_FILTERSPEC { pszName: PCWSTR(n.as_ptr()), pszSpec: PCWSTR(m.as_ptr()) }, COMDLG_FILTERSPEC { pszName: PCWSTR(n2.as_ptr()), pszSpec: PCWSTR(m2.as_ptr()) }]);
+        let _ = d.SetTitle(&HSTRING::from(titre));
+        if d.Show(HWND(owner as _)).is_err() {
+            return out;
+        }
+        let Ok(items) = d.GetResults() else { return out };
+        for i in 0..items.GetCount().unwrap_or(0) {
+            if let Ok(p) = items.GetItemAt(i).and_then(|it| it.GetDisplayName(SIGDN_FILESYSPATH)) {
+                if let Ok(t) = p.to_string() {
+                    out.push(t);
+                }
+                CoTaskMemFree(Some(p.0 as _));
+            }
+        }
+    }
+    out
+}
+
 /// Disques du PC (lettre, Go libres, Go au total).
 #[derive(serde::Serialize)]
 pub struct Disque {
@@ -259,10 +300,14 @@ mod tests {
             ("/Smash [01006A800016E800].nsp".into(), format!("/Switch/Smash/{MAJ}/Smash [01006A800016E800].nsp")),
             ("/Switch/Kart/Pack [0100152000023001].nsp".into(), format!("/Switch/Kart/{MAJ}/Pack [0100152000023001].nsp")),
             ("/Switch/Zelda (v0).nsp".into(), "/Switch/Zelda/Zelda (v0).nsp".into()),
-            // Jeu sans title ID connu : dans « MAJ et DLC » de Switch.
-            ("/Switch/Zelda [01007EF00011E800].nsp".into(), format!("/Switch/{MAJ}/Zelda [01007EF00011E800].nsp")),
+            // MAJ sans son jeu : le dossier du jeu est créé.
+            ("/Switch/Zelda [01007EF00011E800].nsp".into(), format!("/Switch/Zelda/{MAJ}/Zelda [01007EF00011E800].nsp")),
         ]);
         assert_eq!(ranger(&l), 7);
         assert!(a_ranger(&r, &classer).is_empty());
+        // Le jeu arrive après sa MAJ, sous un autre nom : il rejoint le dossier créé pour elle.
+        std::fs::write(r.join("Breath of the Wild [01007EF00011E000].nsp"), b"x").unwrap();
+        let l = a_ranger(&r, &classer);
+        assert_eq!(l.iter().map(|x| court(&x.vers)).collect::<Vec<_>>(), ["/Switch/Zelda/Breath of the Wild [01007EF00011E000].nsp"]);
     }
 }

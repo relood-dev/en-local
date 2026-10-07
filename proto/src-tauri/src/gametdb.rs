@@ -50,7 +50,8 @@ fn xml(name: &str) -> Option<PathBuf> {
             "$ErrorActionPreference='Stop'; $z = Join-Path $env:TEMP 'enlocal-{name}.zip'; \
              Invoke-WebRequest -UseBasicParsing 'https://www.gametdb.com/{name}.zip?LANG=FR{extra}' -OutFile $z; \
              Expand-Archive -Force $z '{}'; Remove-Item $z",
-            dir().display()
+            // Apostrophes doublées : le chemin passe entre guillemets simples.
+            dir().display().to_string().replace('\'', "''")
         );
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;

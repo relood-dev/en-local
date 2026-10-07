@@ -7,7 +7,7 @@ if (-not (Test-Path eden-src)) {
 }
 Set-Location C:\EnLocal\eden-src
 python C:\EnLocal\eden-embed.py C:\EnLocal\eden-src
-git -c user.name=relood -c user.email=relood@users.noreply.github.com commit -qam "En Local : --parent et --join" 2>$null
+git -c user.name=Relood -c user.email=147659633+relood-dev@users.noreply.github.com commit -qam "En Local : --parent et --join" 2>$null
 $vc = "$vs\VC\Auxiliary\Build\vcvars64.bat"
 cmd /c "`"$vc`" >nul && cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DYUZU_TESTS=OFF -DENABLE_UPDATE_CHECKER=OFF -DUSE_DISCORD_PRESENCE=OFF > C:\EnLocal\eden-cmake.log 2>&1 && cmake --build build --target yuzu yuzu_room_standalone > C:\EnLocal\eden-build.log 2>&1"
 "exit $LASTEXITCODE"

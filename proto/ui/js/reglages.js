@@ -245,6 +245,7 @@ function pageDossier() {
   return [
     ['Dossier des jeux', [
       { label: 'Emplacement', valeur: i?.chemin || '…', aide: i ? `${nbJeuxDossier(i)} jeu${nbJeuxDossier(i) > 1 ? 'x' : ''}${resumeDossier(i) ? ` : ${resumeDossier(i)}` : ''}. Un dossier par console ; Switch : un dossier par jeu, avec ses MAJ et DLC.` : '' },
+      { label: 'Ajouter des jeux', aide: 'Un jeu, ses mises à jour et DLC, ou une archive (.zip, .7z, .rar) : tout se range tout seul. Tu peux aussi les déposer n\'importe où sur En Local.', fn: () => menuAjouterJeux() },
       { label: 'Ouvrir dans l\'Explorateur', aide: 'Pour y copier tes jeux.', fn: () => invoke('open_games_folder') },
       { label: 'Ranger mes jeux', aide: 'Met chaque jeu dans le dossier de sa console (Switch : un dossier par jeu) et chaque mise à jour ou DLC avec son jeu (même posés en vrac). Tu vois la liste avant ; rien n\'est supprimé.', fn: rangerDossier },
     ]],
