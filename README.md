@@ -12,15 +12,20 @@ En Local réunit six consoles dans une seule app pour Windows, pensée comme le 
 
 - **DS, 3DS, GameCube, Wii, Wii U et Switch** : les jeux se lancent dans la fenêtre d'En Local, sans ouvrir d'émulateur à part.
 - **Sessions avec un code** : on crée une session, les autres la rejoignent avec un code à 6 caractères, même en pleine partie.
+- **Tournois** : un membre organise, les autres s'inscrivent, chaque match se joue dans une session avec son code.
+- **Ajouter des jeux** : dépose un jeu ou une archive (.zip, .7z, .rar) sur l'app, il se range tout seul avec ses mises à jour et DLC.
 - **Le Local intégré** : qui est en ligne, qui joue à quoi, les jeux de chacun, les invitations et les défis dans un centre de notifications.
-- **Profil** : temps de jeu, défis, jeux les plus joués, et un Pokédex qui suit tout ce qui est attrapé dans les jeux Pokémon.
+- **Profil** : temps de jeu, 49 défis, jeux les plus joués, et un Pokédex qui suit tout ce qui est attrapé dans les jeux Pokémon.
 - **Captures et clips** : photo ou clip des dernières secondes avec le bouton de partage de la manette.
 - **Réglages simples** : graphismes recommandés selon le PC, touches de la manette, langue, son, par console ou par jeu.
 
 <p align="center">
-<img src="docs/bienvenue.jpg" width="270" alt="Premier lancement">
-<img src="docs/salle.jpg" width="270" alt="Une session">
-<img src="docs/profil.jpg" width="270" alt="Le profil">
+<img src="docs/jeux.jpg" width="410" alt="La bibliothèque">
+<img src="docs/tournois.jpg" width="410" alt="Un tournoi">
+</p>
+<p align="center">
+<img src="docs/depot.jpg" width="410" alt="Ajouter des jeux par glisser-déposer">
+<img src="docs/profil.jpg" width="410" alt="Le profil">
 </p>
 
 ## Installer
