@@ -1,0 +1,39 @@
+From f30ba14887fb66b250ccf22a8203ccc84cd83850 Mon Sep 17 00:00:00 2001
+From: Relood <147659633+relood-dev@users.noreply.github.com>
+Date: Fri, 9 Oct 2026 17:16:52 +0200
+Subject: [PATCH] En Local : pause du jeu quand le menu est ouvert en session
+
+---
+ src/yuzu/main_window.cpp | 16 ++++++++++++++++
+ 1 file changed, 16 insertions(+)
+
+diff --git a/src/yuzu/main_window.cpp b/src/yuzu/main_window.cpp
+index 7d7edda..a022c3b 100644
+--- a/src/yuzu/main_window.cpp
++++ b/src/yuzu/main_window.cpp
+@@ -663,6 +663,22 @@ MainWindow::MainWindow(bool has_broken_vulkan)
+             }
+         });
+         pad_timer->start(1000);
++        // En Local : menu ouvert pendant une session (fichier ENLOCAL_MENU) : le jeu est en pause,
++        // la manette ne le touche plus, le salon reste connecté.
++        if (const char* menu = std::getenv("ENLOCAL_MENU")) {
++            auto* const menu_timer = new QTimer(this);
++            connect(menu_timer, &QTimer::timeout, this, [this, chemin = QString::fromUtf8(menu), en_pause = false]() mutable {
++                const bool ouvert = QFile::exists(chemin);
++                if (!emulation_running || !emu_thread || ouvert == en_pause)
++                    return;
++                en_pause = ouvert;
++                if (ouvert && emu_thread->IsRunning())
++                    OnPauseGame();
++                else if (!ouvert && !emu_thread->IsRunning())
++                    OnStartGame();
++            });
++            menu_timer->start(50);
++        }
+         // Session lancée en pleine partie : En Local écrit le salon dans le fichier ENLOCAL_SALON.
+         if (const char* fichier = std::getenv("ENLOCAL_SALON")) {
+             auto* const salon_timer = new QTimer(this);
+-- 
+2.55.0.windows.5
+

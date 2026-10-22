@@ -152,7 +152,7 @@ function modeleProfil() {
     const top = joues().sort((a, b) => stats[b.path].secs - stats[a.path].secs).slice(0, 5);
     return {
       moi: true,
-      avatar: me?.avatar, nom: me ? (me.username ? `@${me.username}` : me.name) : 'Profil',
+      avatar: me?.avatar, nom: me ? (me.username ? `@${me.username}` : me.name) : 'Profil', mii: monMii() ? studioMii(monMii()) : '',
       lignes: me ? [`Pseudo consoles : ${pseudoConsoles()}`] : ['Connecte-toi avec Discord pour ton nom et ton avatar.'],
       total: tempsTotal(), joues: joues().length, consoles: new Set(joues().map((g) => g.console)).size, captures: capturesListe.length,
       defis: ds, faits: ds.filter((d) => d.fait).length,
@@ -170,7 +170,7 @@ function modeleProfil() {
   const consoles = s?.consoles && typeof s.consoles === 'object' ? s.consoles : {};
   return {
     moi: false,
-    avatar: m.avatar, nom: m.username ? `@${m.username}` : m.name,
+    avatar: m.avatar, nom: m.username ? `@${m.username}` : m.name, mii: /^[0-9a-f]{92}$/.test(s?.mii) ? s.mii : '',
     lignes: [s?.pseudo ? `Pseudo consoles : ${s.pseudo}` : '', activiteDe(m).long].filter(Boolean),
     total: n(s?.secs), joues: n(s?.joues), consoles: Object.keys(consoles).length, captures: n(s?.captures),
     defis: sesDefis, faits: sesDefis ? sesDefis.filter((d) => d.fait).length : n(s?.defis), defisTotal: n(s?.defisTotal) || ds.length,
@@ -182,6 +182,7 @@ function modeleProfil() {
 }
 
 function drawProfil() {
+  if (miiEdition && !profilVu) return drawMii();
   if (pokedexOuvert && !profilVu) {
     profActions = [];
     const actionPd = (fn) => (profActions.push(fn), profActions.length - 1);
@@ -200,6 +201,10 @@ function drawProfil() {
   const vignette = (it) => (it.g ? iconeHtml(it.g, true) : it.id ? coverImg(jeuDeMembre(it.c, it.titre, it.id), 'icone-img', true) || `<span class="r-ic">${iconeConsole(it.c)}</span>` : `<span class="r-ic">${iconeConsole(it.c)}</span>`);
   const totalDefis = p.defis ? p.defis.length : p.defisTotal;
   const chiffres = [[heures(p.total), 'de jeu'], [p.joues, `jeu${p.joues > 1 ? 'x' : ''} lancé${p.joues > 1 ? 's' : ''}`], [p.consoles, 'consoles'], [p.captures, 'captures'], [`${p.faits}/${totalDefis}`, 'défis']];
+  // Les actions suivent l'ordre de l'écran : le Mii avant le bouton.
+  const mii = p.moi
+    ? `<button class="prof-el prof-mii" data-n="${action(ouvrirMii)}">${p.mii ? `<img src="${imageMii(p.mii, false, 270)}" alt="">` : '<span>+</span>'}<small>${p.mii ? 'Mon Mii' : 'Créer mon Mii'}</small></button>`
+    : p.mii ? `<div class="prof-mii"><img src="${imageMii(p.mii, false, 270)}" alt=""><small>Son Mii</small></div>` : '';
   const bouton = p.moi
     ? `<button class="prof-el prof-bouton" data-n="${action(me ? () => allerA('reglages') : login)}">${me ? 'Réglages du compte' : 'Se connecter'}</button>`
     : `<button class="prof-el prof-bouton" data-n="${action(() => invoke('open_discord_user', { id: profilVu.m.id }))}">Lui écrire sur Discord</button>`;
@@ -208,6 +213,7 @@ function drawProfil() {
     <div class="prof-tete">
       <img class="av" src="${esc(p.avatar || 'img/hang-coucou.png')}" alt="">
       <div><h1>${esc(p.nom)}</h1>${p.lignes.map((l) => `<p>${esc(l)}</p>`).join('')}</div>
+      ${mii}
       ${bouton}
     </div>
     ${p.vide ? '<p class="prof-vide">Pas encore de chiffres : ils arrivent quand ce membre ouvre En Local, si « Partager ma liste de jeux » est sur Oui.</p>' : `<div class="prof-chiffres">${chiffres.map(([v, l]) => `<div><b>${esc(v)}</b><span>${l}</span></div>`).join('')}</div>`}
@@ -238,6 +244,7 @@ function focusProfil(n) {
   $('#aide-d').innerHTML = `<div>${glyphs.a}${els[profFocus]?.matches('.prof-jeu, .mon-jeu') ? 'Voir le jeu' : els[profFocus]?.classList.contains('defi') ? 'Détails' : 'Ouvrir'}</div>`;
 }
 function navProfil(k) {
+  if (miiEdition) return navMii(k);
   const els = [...$('#section').querySelectorAll('.prof-el')];
   if (['up', 'down', 'left', 'right'].includes(k)) {
     const n = voisin(els, profFocus, k);

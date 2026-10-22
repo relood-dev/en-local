@@ -51,7 +51,7 @@ pub fn performances(mode: String) {
         "economie" => (BELOW_NORMAL_PRIORITY_CLASS, true),
         _ => (NORMAL_PRIORITY_CLASS, false),
     };
-    let emus = ["eden.exe", "azahar.exe", "dolphin.exe", "cemu.exe", "ffmpeg.exe", "nsz.exe", "eden-room.exe"];
+    let emus = ["eden.exe", "azahar.exe", "dolphin.exe", "cemu.exe", "ffmpeg.exe", "nsz.exe", "eden-room.exe", "enlocal-3ds.exe", "enlocal-switch.exe", "enlocal-gc-wii.exe", "enlocal-wiiu.exe"];
     for pid in processus() {
         unsafe {
             let Ok(h) = OpenProcess(PROCESS_SET_INFORMATION | PROCESS_QUERY_LIMITED_INFORMATION, false, pid) else { continue };

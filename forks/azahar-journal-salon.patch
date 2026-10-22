@@ -1,0 +1,37 @@
+From 0df4cb8139ce6a49570f151b689cfb08c574eb02 Mon Sep 17 00:00:00 2001
+From: Relood <147659633+relood-dev@users.noreply.github.com>
+Date: Wed, 7 Oct 2026 23:26:14 +0200
+Subject: [PATCH] En Local : evenements du salon dans le journal
+
+---
+ src/citra_qt/citra_qt.cpp | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+diff --git a/src/citra_qt/citra_qt.cpp b/src/citra_qt/citra_qt.cpp
+index 4af2425..f00bae6 100644
+--- a/src/citra_qt/citra_qt.cpp
++++ b/src/citra_qt/citra_qt.cpp
+@@ -1710,6 +1710,20 @@ GMainWindow::GMainWindow(Core::System& system_)
+         });
+     }
+ 
++    // En Local: room events in the log (join result, who arrives or leaves), to understand why two
++    // players do not see each other.
++    if (auto member = Network::GetRoomMember().lock()) {
++        member->BindOnStateChanged([](const Network::RoomMember::State& state) {
++            LOG_INFO(Frontend, "En Local: room state {}", static_cast<int>(state));
++        });
++        member->BindOnError([](const Network::RoomMember::Error& error) {
++            LOG_ERROR(Frontend, "En Local: room error {}", static_cast<int>(error));
++        });
++        member->BindOnStatusMessageReceived([](const Network::StatusMessageEntry& entry) {
++            LOG_INFO(Frontend, "En Local: room message {} {}", static_cast<int>(entry.type), entry.nickname);
++        });
++    }
++
+     // En Local: a session started mid-game writes its room to the ENLOCAL_SALON file
+     // (host:port, nickname, password). The current room is left, then the new one joined.
+     if (const char* file = std::getenv("ENLOCAL_SALON")) {
+-- 
+2.55.0.windows.5
+

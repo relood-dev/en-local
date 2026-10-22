@@ -1,0 +1,35 @@
+From 8dc6b3c14ea2e732b2374456a81df863996a5ae5 Mon Sep 17 00:00:00 2001
+From: Relood <147659633+relood-dev@users.noreply.github.com>
+Date: Mon, 19 Oct 2026 16:19:14 +0200
+Subject: [PATCH] En Local : Joy-Con tourne : haut et bas dans le bon sens
+
+---
+ src/yuzu/main_window.cpp | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/src/yuzu/main_window.cpp b/src/yuzu/main_window.cpp
+index aa84cdd..6eb96c2 100644
+--- a/src/yuzu/main_window.cpp
++++ b/src/yuzu/main_window.cpp
+@@ -342,7 +342,8 @@ static void EnLocalTourner(Core::HID::EmulatedController* pad, Core::HID::NpadSt
+         mettre(B::X, B::A), mettre(B::A, B::B), mettre(B::Y, B::X), mettre(B::B, B::Y);
+         mettre(B::SLRight, B::L), mettre(B::SRRight, B::R), mettre(B::RStick, B::LStick);
+     }
+-    // Quart de tour : Joy-Con gauche (x, y) = (haut, -droite), droit (x, y) = (-haut, droite).
++    // Quart de tour, v├®rifi├® en jeu (Super Mario Party) : Joy-Con gauche (x, y) = (-haut, -droite),
++    // droit (x, y) = (haut, droite).
+     const auto u = pad->GetStickParam(A::LStick);
+     const auto inverse = [](const std::string& s) { return std::string(s == "-" ? "+" : "-"); };
+     const std::string ix = u.Get("invert_x", "+"), iy = u.Get("invert_y", "+");
+@@ -351,7 +352,7 @@ static void EnLocalTourner(Core::HID::EmulatedController* pad, Core::HID::NpadSt
+     t.Set("axis_y", u.Get("axis_x", 0));
+     t.Set("offset_x", u.Get("offset_y", 0.0f));
+     t.Set("offset_y", u.Get("offset_x", 0.0f));
+-    t.Set("invert_x", gauche ? iy : inverse(iy));
++    t.Set("invert_x", gauche ? inverse(iy) : iy);
+     t.Set("invert_y", gauche ? inverse(ix) : ix);
+     t.Set("enlocal_tourne", 1);
+     pad->SetStickParam(gauche ? A::LStick : A::RStick, t);
+-- 
+2.55.0.windows.5
+

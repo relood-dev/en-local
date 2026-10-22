@@ -1,0 +1,62 @@
+From 0f0901323c28dd8a18e9e135388f5947f800b0fa Mon Sep 17 00:00:00 2001
+From: Relood <147659633+relood-dev@users.noreply.github.com>
+Date: Mon, 12 Oct 2026 19:52:54 +0200
+Subject: [PATCH] En Local : choix des manettes sans fenetre, joueurs
+ rebranches dans un type accepte par le jeu
+
+---
+ src/yuzu/main_window.cpp | 38 +++++++++++++++++++++++++++++++++++++-
+ 1 file changed, 37 insertions(+), 1 deletion(-)
+
+diff --git a/src/yuzu/main_window.cpp b/src/yuzu/main_window.cpp
+index 211181c..6df80d0 100644
+--- a/src/yuzu/main_window.cpp
++++ b/src/yuzu/main_window.cpp
+@@ -1002,7 +1002,43 @@ void MainWindow::ControllerSelectorReconfigureControllers(
+     // invisible derrière l'app et le jeu l'attendait (la manette ne répondait plus, en session
+     // surtout). La manette déjà donnée au joueur 1 est gardée, comme un « OK ».
+     if (embed_parent) {
+-        QtCommon::system->HIDCore().DisableAllControllerConfiguration();
++        auto& hid = QtCommon::system->HIDCore();
++        hid.DisableAllControllerConfiguration();
++        // Un jeu peut refuser la manette Pro et la débrancher (Mario Party Jamboree : Joy-Con) :
++        // chaque joueur présent (le joueur 1, les invités à distance) est rebranché dans un type
++        // accepté, dans l'ordre de la fenêtre : Pro, paire de Joy-Con, Joy-Con seul.
++        LOG_INFO(Frontend, "En Local : choix des manettes, {} à {} joueurs, pro {} paire {} gauche {} droit {} seul {}",
++                 parameters.min_players, parameters.max_players, parameters.allow_pro_controller, parameters.allow_dual_joycons,
++                 parameters.allow_left_joycon, parameters.allow_right_joycon, parameters.enable_single_mode);
++        const auto devices = input_subsystem->GetInputDevices();
++        const std::size_t joueurs = parameters.enable_single_mode ? 1 : std::clamp<int>(parameters.max_players, 1, 8);
++        for (std::size_t i = 0; i < joueurs; ++i) {
++            auto* const pad = hid.GetEmulatedControllerByIndex(i);
++            const bool present = i == 0 ? !hid.GetEmulatedController(Core::HID::NpadIdType::Handheld)->IsConnected()
++                : std::getenv("ENLOCAL_DISTANCE") && std::any_of(devices.begin(), devices.end(), [i](const Common::ParamPackage& d) {
++                      return d.Get("engine", "") == "cemuhookudp" && d.Get("pad", -1) == static_cast<int>(i - 1);
++                  });
++            if (!present || pad->IsConnected())
++                continue;
++            // Joy-Con seuls : gauche aux joueurs impairs, droit aux pairs, comme l'applet d'Eden.
++            const bool gauche = parameters.allow_left_joycon && (i % 2 == 0 || !parameters.allow_right_joycon);
++            const std::pair<bool, Core::HID::NpadStyleIndex> types[] = {
++                {parameters.allow_pro_controller, Core::HID::NpadStyleIndex::Fullkey},
++                {parameters.allow_dual_joycons, Core::HID::NpadStyleIndex::JoyconDual},
++                {gauche, Core::HID::NpadStyleIndex::JoyconLeft},
++                {parameters.allow_right_joycon, Core::HID::NpadStyleIndex::JoyconRight},
++            };
++            for (const auto& [permis, type] : types) {
++                if (!permis)
++                    continue;
++                pad->SetNpadStyleIndex(type);
++                pad->Connect();
++                if (pad->IsConnected()) {
++                    LOG_INFO(Frontend, "En Local : joueur {} rebranché en type {}", i + 1, static_cast<int>(type));
++                    break;
++                }
++            }
++        }
+         QtCommon::system->ApplySettings();
+         config->SaveAllValues();
+         LOG_INFO(Frontend, "En Local : choix des manettes validé sans fenêtre");
+-- 
+2.55.0.windows.5
+

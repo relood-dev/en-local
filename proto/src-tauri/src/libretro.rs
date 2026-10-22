@@ -153,6 +153,8 @@ unsafe extern "C" fn environment(cmd: c_uint, data: *mut c_void) -> bool {
             *(data as *mut c_uint) = 0;
             true
         }
+        // GET_MICROPHONE_INTERFACE : le micro choisi dans les Réglages.
+        75 => crate::micro::interface(data),
         _ => false,
     }
 }
@@ -276,14 +278,14 @@ pub fn start(core: String, game: String, base: String, frames: Channel<InvokeRes
     }
     let system = format!("{base}\\system");
     let saves = format!("{base}\\saves");
+    let fichier_save = std::path::Path::new(&game).file_stem().map(|s| format!("{saves}\\{}.sav", s.to_string_lossy()));
     let _ = std::fs::create_dir_all(&system);
     let _ = std::fs::create_dir_all(&saves);
     let _ = DIRS.set((CString::new(system).unwrap(), CString::new(saves).unwrap()));
     *FRAMES.get_or_init(|| Mutex::new(None)).lock().unwrap() = Some(frames);
     options().lock().unwrap().insert("melonds_show_cursor".into(), CString::new("disabled").unwrap());
-    // Wi-Fi des jeux DS : réseau indirect (sans pilote ni droits admin) et Kaeru WFC.
+    // Wi-Fi des jeux DS : réseau indirect (sans pilote ni droits admin). Le serveur est dans les réglages.
     options().lock().unwrap().insert("melonds_network_mode".into(), CString::new("indirect").unwrap());
-    options().lock().unwrap().insert("melonds_firmware_wfc_dns".into(), CString::new("178.62.43.212").unwrap());
     for (k, v) in reglages {
         if let Ok(v) = CString::new(v) {
             options().lock().unwrap().insert(k.into(), v);
@@ -331,6 +333,34 @@ pub fn start(core: String, game: String, base: String, frames: Channel<InvokeRes
 
         let run = sym!("retro_run", unsafe extern "C" fn());
         let reset = sym!("retro_reset", unsafe extern "C" fn());
+        let memoire = sym!("retro_get_memory_data", unsafe extern "C" fn(c_uint) -> *mut c_void);
+        let taille = sym!("retro_get_memory_size", unsafe extern "C" fn(c_uint) -> usize);
+        let mut images = 0u32;
+        // Sauvegarde du jeu (mémoire de la cartouche) : le cœur la confie à l'app, qui la lit au
+        // lancement et l'écrit dès qu'elle change (toutes les 5 s au plus) et en quittant.
+        const RETRO_MEMORY_SAVE_RAM: c_uint = 0;
+        let sram = || {
+            let (p, n) = (memoire(RETRO_MEMORY_SAVE_RAM) as *mut u8, taille(RETRO_MEMORY_SAVE_RAM));
+            (!p.is_null() && n > 0).then(|| std::slice::from_raw_parts_mut(p, n))
+        };
+        let mut sur_disque: Vec<u8> = Vec::new();
+        if let (Some(m), Some(f)) = (sram(), &fichier_save) {
+            if let Ok(lu) = std::fs::read(f) {
+                let n = lu.len().min(m.len());
+                m[..n].copy_from_slice(&lu[..n]);
+                sur_disque = m.to_vec();
+            }
+        }
+        let mut garder = || {
+            if let (Some(m), Some(f)) = (sram(), &fichier_save) {
+                if m != sur_disque.as_slice() && !m.iter().all(|&b| b == 0xFF || b == 0) {
+                    let tmp = format!("{f}.tmp");
+                    if std::fs::write(&tmp, &*m).and_then(|_| std::fs::rename(&tmp, f)).is_ok() {
+                        sur_disque = m.to_vec();
+                    }
+                }
+            }
+        };
         let frame = Duration::from_secs_f64(1.0 / if av.timing.fps > 0.0 { av.timing.fps } else { 60.0 });
         let mut next = Instant::now();
         while RUNNING.load(Ordering::Relaxed) {
@@ -343,6 +373,10 @@ pub fn start(core: String, game: String, base: String, frames: Channel<InvokeRes
                 reset();
             }
             run();
+            images = images.wrapping_add(1);
+            if images % 300 == 0 {
+                garder();
+            }
             next += frame;
             let now = Instant::now();
             if next > now {
@@ -351,6 +385,7 @@ pub fn start(core: String, game: String, base: String, frames: Channel<InvokeRes
                 next = now; // trop en retard : on repart de maintenant
             }
         }
+        garder();
         sym!("retro_unload_game", unsafe extern "C" fn())();
         sym!("retro_deinit", unsafe extern "C" fn())();
         audio().lock().unwrap().clear();
@@ -359,3 +394,4 @@ pub fn start(core: String, game: String, base: String, frames: Channel<InvokeRes
     });
     rx.recv().map_err(|e| e.to_string())?
 }
+

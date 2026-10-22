@@ -5,9 +5,9 @@ use windows::Win32::Media::Audio::{eRender, IAudioSessionControl2, IAudioSession
 use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED};
 use windows::Win32::System::Diagnostics::ToolHelp::{CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS};
 
-const EMULATEURS: [&str; 5] = ["eden.exe", "azahar.exe", "dolphin.exe", "cemu.exe", "azahar-plus.exe"];
+const EMULATEURS: [&str; 9] = ["eden.exe", "azahar.exe", "dolphin.exe", "cemu.exe", "azahar-plus.exe", "enlocal-3ds.exe", "enlocal-switch.exe", "enlocal-gc-wii.exe", "enlocal-wiiu.exe"];
 
-fn pids() -> Vec<u32> {
+pub fn pids() -> Vec<u32> {
     let mut out = Vec::new();
     unsafe {
         let Ok(snap) = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) else { return out };

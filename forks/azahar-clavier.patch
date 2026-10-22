@@ -1,0 +1,117 @@
+From 884a326271e441b69884eb91948665c30c0662d2 Mon Sep 17 00:00:00 2001
+From: Relood <147659633+relood-dev@users.noreply.github.com>
+Date: Wed, 7 Oct 2026 19:45:04 +0200
+Subject: [PATCH] En Local : clavier et Mii sans fenetre Qt
+
+---
+ src/citra_qt/applets/mii_selector.cpp |  5 +++
+ src/citra_qt/applets/swkbd.cpp        | 53 +++++++++++++++++++++++++++
+ src/citra_qt/applets/swkbd.h          |  1 +
+ 3 files changed, 59 insertions(+)
+
+diff --git a/src/citra_qt/applets/mii_selector.cpp b/src/citra_qt/applets/mii_selector.cpp
+index 199b3f9..b658fed 100644
+--- a/src/citra_qt/applets/mii_selector.cpp
++++ b/src/citra_qt/applets/mii_selector.cpp
+@@ -52,6 +52,11 @@ QtMiiSelector::QtMiiSelector(QWidget& parent_) : parent(parent_) {}
+ 
+ void QtMiiSelector::Setup(const Frontend::MiiSelectorConfig& config) {
+     MiiSelector::Setup(config);
++    // En Local: no Qt dialog inside its window, the standard Mii is chosen.
++    if (qEnvironmentVariableIsSet("ENLOCAL_CLAVIER")) {
++        Finalize(0, HLE::Applets::MiiSelector::GetStandardMiiResult().selected_mii_data);
++        return;
++    }
+     QMetaObject::invokeMethod(this, "OpenDialog", Qt::BlockingQueuedConnection);
+ }
+ 
+diff --git a/src/citra_qt/applets/swkbd.cpp b/src/citra_qt/applets/swkbd.cpp
+index 44e6c57..6737211 100644
+--- a/src/citra_qt/applets/swkbd.cpp
++++ b/src/citra_qt/applets/swkbd.cpp
+@@ -8,6 +8,8 @@
+ #include <QLineEdit>
+ #include <QMessageBox>
+ #include <QString>
++#include <QFile>
++#include <QThread>
+ #include <QVBoxLayout>
+ #include "citra_qt/applets/swkbd.h"
+ 
+@@ -103,10 +105,61 @@ void QtKeyboard::Execute(const Frontend::KeyboardConfig& config) {
+     if (this->config.button_config != Frontend::ButtonConfig::None) {
+         ok_id = static_cast<u8>(this->config.button_config);
+     }
++    // En Local: no Qt dialog inside its window, En Local shows its own keyboard.
++    if (qEnvironmentVariableIsSet("ENLOCAL_CLAVIER")) {
++        AskEnLocal(qEnvironmentVariable("ENLOCAL_CLAVIER"));
++        return;
++    }
+     QMetaObject::invokeMethod(this, "OpenInputDialog", Qt::BlockingQueuedConnection);
+     Finalize(result_text, result_button);
+ }
+ 
++// Request file: max length, buttons, accepted input, hint, error of the last answer.
++// En Local answers in <file>.ok: "ok" or "annuler", then the text. A refused text is asked again.
++void QtKeyboard::AskEnLocal(const QString& path) {
++    QFile answer(path + QStringLiteral(".ok"));
++    int error = 0;
++    for (;;) {
++        answer.remove();
++        QFile ask(path);
++        if (ask.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
++            const QString hint = QString::fromStdString(config.hint_text).simplified();
++            ask.write(QStringLiteral("%1\n%2\n%3\n%4\n%5\n")
++                          .arg(config.max_text_length)
++                          .arg(static_cast<int>(config.button_config))
++                          .arg(static_cast<int>(config.accept_mode))
++                          .arg(hint)
++                          .arg(error)
++                          .toUtf8());
++            ask.close();
++        }
++        while (!answer.exists()) {
++            QThread::msleep(100);
++        }
++        QThread::msleep(50);
++        if (!answer.open(QIODevice::ReadOnly)) {
++            continue;
++        }
++        const QString text = QString::fromUtf8(answer.readAll());
++        answer.close();
++        const qsizetype sep = text.indexOf(QLatin1Char('\n'));
++        const bool ok = text.left(sep) == QStringLiteral("ok");
++        const std::string value = sep < 0 ? std::string{} : text.mid(sep + 1).toStdString();
++        auto e = ok ? ValidateFilters(value) : Frontend::ValidationError::None;
++        if (e == Frontend::ValidationError::None && ok) {
++            e = ValidateInput(value);
++        }
++        if (e == Frontend::ValidationError::None) {
++            answer.remove();
++            QFile::remove(path);
++            LOG_INFO(Frontend, "En Local keyboard finished, button={}", ok ? "ok" : "cancel");
++            Finalize(ok ? value : std::string{}, ok ? ok_id : cancel_id);
++            return;
++        }
++        error = static_cast<int>(e);
++    }
++}
++
+ void QtKeyboard::ShowError(const std::string& error) {
+     QString message = QString::fromStdString(error);
+     QMetaObject::invokeMethod(this, "ShowErrorDialog", Qt::BlockingQueuedConnection,
+diff --git a/src/citra_qt/applets/swkbd.h b/src/citra_qt/applets/swkbd.h
+index 95ed958..64cf257 100644
+--- a/src/citra_qt/applets/swkbd.h
++++ b/src/citra_qt/applets/swkbd.h
+@@ -53,6 +53,7 @@ public:
+ 
+ private:
+     Q_INVOKABLE void OpenInputDialog();
++    void AskEnLocal(const QString& path);
+     Q_INVOKABLE void ShowErrorDialog(QString message);
+ 
+     /// Index of the buttons
+-- 
+2.55.0.windows.5
+

@@ -87,3 +87,11 @@
 /* OLED : tout est noir, les éléments gardent un fin contour. */
 body.oled :is(.btn, .act, .choix, .bv-btn, .bv-choix, .touche, .prof-bouton, .joueur, .bv-b, .tile, .ctx-act, .roue, .salle-code, .bv-manette, .bv-pc span, .prof-chiffres > div):not(.focus):not(.choisi):not(.sel) { box-shadow: inset 0 0 0 1px var(--trait-fort); }
 body.oled .bienvenue::before { display: none; }
+
+/* Jeu à distance, côté invité : l'écran de l'hôte en plein écran. */
+#distance { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; background: #000; }
+#distance video { width: 100%; height: 100%; object-fit: contain; }
+#distance .distance-etat { position: absolute; margin: 0; font-size: 20px; font-weight: 700; color: #fff; text-shadow: 0 2px 12px #000; }
+#distance .distance-etat:empty { display: none; }
+.distance-retour { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 39; display: none; gap: 8px; align-items: center; }
+#distance .distance-aide { position: absolute; right: 18px; bottom: 14px; margin: 0; display: flex; gap: 8px; align-items: center; font-size: 13px; color: #fff; opacity: .55; }

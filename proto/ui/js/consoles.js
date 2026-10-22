@@ -18,6 +18,7 @@ const REGLAGES_CONSOLE = {
     { id: 'info_api', label: 'Pilote graphique', info: 'Logiciel', aide: 'La DS est dessinée par le processeur, dans En Local : pas de pilote graphique à choisir.' },
     { id: 'disposition', label: 'Les deux écrans', aide: 'Comment la DS montre ses deux écrans. Le tactile suit, à la souris ou au doigt.', valeurs: [['top-bottom', 'Haut / bas'], ['left-right', 'Côte à côte'], ['hybrid-top', 'Grand écran du haut'], ['hybrid-bottom', 'Grand écran du bas'], ['bottom-top', 'Bas / haut'], ['right-left', 'Côte à côte (inversé)'], ['top', 'Écran du haut seul'], ['bottom', 'Écran du bas seul']] },
     { id: 'ecart', label: 'Espace entre les écrans', aide: 'Comme la charnière de la console.', valeurs: [['0', 'Aucun'], ['8', 'Petit'], ['16', 'Moyen'], ['32', 'Grand'], ['64', 'Très grand']] },
+    { id: 'wfc', label: 'Serveur Wi-Fi', aide: 'Le Wi-Fi des jeux DS (Nintendo WFC) : Kaeru est public, on y croise tout le monde ; Le Local est réservé aux membres du serveur, en Régional et Mondial vous ne tombez qu\'entre vous.', valeurs: [['local', 'Le Local (privé)'], ['kaeru', 'Kaeru (public)']] },
     { id: 'lissage', label: 'Image', aide: 'La DS a une petite résolution : nette, chaque pixel reste carré ; lissée, l\'image est plus douce mais floue.', valeurs: [['net', 'Nette (pixels)'], ['lisse', 'Lissée']] },
     VOLUME,
   ],
@@ -38,6 +39,7 @@ const REGLAGES_CONSOLE = {
   GC: [], Wii: [], // remplis plus bas
   WiiU: [
     LANGUE,
+    { id: 'manette', label: 'Manette émulée', aide: 'GamePad : la manette de la Wii U, avec son écran. Manette Pro : pour les jeux qui la gèrent (Zelda Twilight Princess HD, Mario Kart 8, Smash…), sans second écran. Se règle aussi jeu par jeu.', valeurs: [['gamepad', 'GamePad'], ['pro', 'Manette Pro']] },
     { id: 'api', label: 'Pilote graphique', parDefaut: 'Vulkan', aide: 'Vulkan : le plus fluide, avec moins de saccades. OpenGL : si un jeu s\'affiche mal en Vulkan.', valeurs: [['1', 'Vulkan'], ['0', 'OpenGL']] },
     { id: 'info', label: 'Résolution et 60 FPS', aide: 'Sur Wii U, la résolution, les FPS et les améliorations sont dans les packs graphiques de chaque jeu : actions du jeu (Share), « Réglages de ce jeu ».', info: 'Par jeu' },
     { id: 'vsync', label: 'Synchro verticale', aide: 'Évite les déchirures de l\'image. Triple : plus fluide, un peu plus de latence.', valeurs: [['1', 'Oui'], ['0', 'Non'], ['2', 'Triple']] },
@@ -58,6 +60,7 @@ const REGLAGES_CONSOLE = {
     { id: 'aniso', label: 'Filtrage anisotrope', aide: 'Textures plus nettes au loin (sols, routes).', valeurs: [['0', 'Auto'], ['1', 'Selon le jeu'], ['2', '2×'], ['3', '4×'], ['4', '8×'], ['5', '16×']] },
     { id: 'precision', label: 'Précision du GPU', aide: 'Moyenne : le bon réglage pour presque tous les jeux. Basse : plus rapide, mais des personnages ou des effets peuvent s\'afficher mal (Mario Kart). Haute : plus fidèle, plus lourde.', valeurs: [['1', 'Moyenne'], ['0', 'Basse (défauts possibles)'], ['2', 'Haute (fidèle)']] },
     { id: 'shaders_async', label: 'Shaders en arrière-plan', aide: 'Moins de saccades quand le jeu affiche quelque chose de nouveau ; un effet peut manquer un instant.', valeurs: NON_OUI },
+    { id: 'shaders_partage', label: 'Shaders partagés', aide: 'Avant de jouer, En Local récupère les shaders déjà préparés par les membres qui ont le jeu (les spells de Smash sans saccade), et partage les tiens après la partie.', valeurs: OUI_NON },
     { id: 'vsync', label: 'Synchro verticale', aide: 'Évite les déchirures de l\'image.', valeurs: [['2', 'Oui'], ['0', 'Non'], ['1', 'Mailbox'], ['3', 'Adaptative']] },
     VOLUME,
   ],
@@ -95,8 +98,12 @@ function optsDe(g) {
   if (j.mods) o.mods = j.mods.length ? j.mods.join('|') : 'aucun';
   if (j.mods_off) o.mods_off = JSON.stringify(j.mods_off);
   if (pseudoConsoles()) o.pseudo = pseudoConsoles();
+  if (monMii()) o.mii = hexMii(miiVer3(monMii())); // le Mii du joueur, pour la 3DS, la Wii, la Wii U et la Switch
+  if (localStorage.vibrations === 'non') o.vibrations = 'non'; // Réglages, Manette
+  if (localStorage.micro) o.micro = localStorage.micro; // « aucun » ou l'identifiant Windows du micro
   if (dureeClips()) o.clips = String(dureeClips()); // durée du tampon des clips, en secondes
   if (dureeClips()) o.clips_qualite = localStorage.clipsQualite || 'haute';
+  if (dureeClips()) o.clips_voix = localStorage.clipsVoix || 'oui'; // ta voix (micro) dans les clips
   if (SUCCES && (g.console === 'GC' || g.console === 'Wii') && ra.token) Object.assign(o, { ra_user: ra.user, ra_token: ra.token, ra_hardcore: ra.hardcore ? 'oui' : 'non' });
   const f = formatJeu(g, o);
   if (f) o.format_jeu = String(f);
@@ -172,6 +179,8 @@ function lignesTouches(c, ou, defaut, parent) {
       label: `Bouton ${nom}`,
       aide: `Le bouton de ta manette qui fait ${nom} sur la ${LONG[c]}. Appuie (ou clique), puis presse la touche voulue sur ta manette. Tu peux aussi cliquer sur le bouton dans le schéma.`,
       valeurHtml: actuelle ? glyphePhys(actuelle) : `<small>${defaut}</small> ${glyphePhys(herite)}`,
+      change: Boolean(actuelle),
+      reset: () => delete ou[cle],
       fn: choisir,
       capture: choisir,
     };
@@ -206,6 +215,47 @@ window.__TAURI__.event.listen('pad-brut', (e) => captureTouche?.(e.payload));
 
 /* ---------- Pages des Réglages ---------- */
 
+// Réglages d'une console rangés par thème ; les plus pointus restent repliés (« Réglages avancés »).
+const GROUPE_DE = { langue: 'Général', volume: 'Général', mode: 'Général', vitesse: 'Performances', cpu: 'Performances', api: 'Performances', info_api: 'Performances', vsync: 'Performances', precision: 'Performances', shaders_async: 'Performances', shaders: 'Performances', wfc: 'En ligne', shaders_partage: 'En ligne', manette: 'Manette' };
+const AVANCES = ['api', 'info_api', 'vsync', 'precision', 'cpu', 'vitesse', 'filtre_haut', 'filtre_bas', 'ecart', 'format', 'aniso', 'shaders'];
+const ORDRE_GROUPES = ['Général', 'Image', 'Performances', 'En ligne', 'Manette'];
+function grouperReglages(liste, ligne) {
+  const par = new Map(ORDRE_GROUPES.map((t) => [t, []]));
+  for (const r of liste) par.get(GROUPE_DE[r.id] || 'Image').push({ ...ligne(r), avance: AVANCES.includes(r.id) });
+  return [...par].filter(([, l]) => l.length);
+}
+/** Ajoute la ligne des touches au groupe Manette (créé s'il n'existe pas). */
+function avecTouches(groupes, ligne) {
+  const m = groupes.find(([t]) => t === 'Manette');
+  if (m) m[1].push(ligne);
+  else groupes.push(['Manette', [ligne]]);
+  return groupes;
+}
+/** « Touches de la manette » : ouvre le grand schéma (Réglages, page des touches). */
+function ligneTouches(c, ou, parent) {
+  const n = TOUCHES_CONSOLE[c].filter(([id]) => ou[`touche_${id}`]).length;
+  return {
+    label: 'Touches de la manette',
+    valeur: n ? `${n} modifiée${n > 1 ? 's' : ''}` : parent ? 'Comme la console' : 'Par défaut',
+    aide: `Le bouton de ta manette qui fait A, B, L, ZR… sur la ${LONG[c]}, sur un grand schéma de la manette.`,
+    loc: 'manette',
+    change: n > 0,
+    reset: () => TOUCHES_CONSOLE[c].forEach(([id]) => delete ou[`touche_${id}`]),
+    fn: () => ouvrirPage({ ...regPage, touches: true, parent: regPage, parentFocus: regFocus }),
+  };
+}
+
+// Même règle que disposition_wii (reglages.rs).
+const WII_HORIZONTALE = ['SSQ', 'SUK', 'SMN', 'R8P', 'RWL', 'REX'];
+const dispositionWii = (g) => (fiche(g)?.manettes?.includes('classiccontroller') ? 'classique' : WII_HORIZONTALE.some((p) => (g.disc_id || '').startsWith(p)) ? 'horizontale' : 'nunchuk');
+/** Jeu Wii en manette classique ou à l'horizontale : la disposition est fixe, sinon le grand schéma. */
+function ligneTouchesJeu(g, ou, c) {
+  const d = g.console === 'Wii' && dispositionWii(g);
+  if (d === 'classique') return { label: 'Touches de la manette', valeur: 'Manette classique', aide: 'Ce jeu reconnaît la manette classique de la Wii : ta manette s\'utilise comme sur Switch, sticks et gâchettes compris.' };
+  if (d === 'horizontale') return { label: 'Touches de la manette', valeur: 'Wiimote à l\'horizontale', aide: 'Stick gauche ou croix : se déplacer et incliner. 2 et 1 sont à la place de A et B sur Switch.' };
+  return ligneTouches(g.console, ou, c);
+}
+
 const texteDe = (r, v) => r.valeurs?.find(([x]) => x === v)?.[1];
 function lignesReglage(r, ou, parent, defaut) {
   if (r.info) return { label: r.label, valeur: r.info, aide: r.aide };
@@ -215,7 +265,11 @@ function lignesReglage(r, ou, parent, defaut) {
     label: r.label,
     aide: r.aide,
     valeur: texteDe({ valeurs }, actuelle) || defaut,
+    options: valeurs,
+    actuel: actuelle,
     fleches: true,
+    change: actuelle !== '',
+    reset: () => delete ou[r.id],
     fn: (d = 1) => {
       const k = valeurs.findIndex(([x]) => x === actuelle);
       const v = valeurs[(k + d + valeurs.length) % valeurs.length][0];
@@ -301,9 +355,9 @@ function pageConsole(c) {
     { label: 'Clés des jeux (title.keys)', valeur: switchEtat ? texteTitres() : '…', aide: AIDE_TITRES, loc: 'dossier', fn: () => poserSwitch('titres').then(drawReglages) },
     { label: 'Firmware', valeur: switchEtat ? texteFirmware() : '…', aide: AIDE_FIRMWARE, loc: 'dossier', fn: () => poserSwitch('firmware').then(drawReglages) },
   ]]] : [];
-  return [...tienne, ...tienne3ds, [LONG[c], REGLAGES_CONSOLE[c].map((r) => perso(r, lignesReglage(r, ou, null, r.id === 'langue' ? `Comme En Local (${global})` : r.parDefaut ? `Par défaut (${r.parDefaut})` : 'Par défaut')))],
-    ['Manette', lignesTouches(c, ou, 'Par défaut')],
-    ['Pour un seul jeu', [{ label: 'Réglages d\'un jeu', aide: 'Chaque jeu peut avoir ses propres réglages (et ses mods) : dans ses actions (Share), « Réglages de ce jeu ».', valeur: 'Actions du jeu' }]]];
+  const groupes = grouperReglages(REGLAGES_CONSOLE[c], (r) => perso(r, lignesReglage(r, ou, null, r.id === 'langue' ? `Comme En Local (${global})` : r.parDefaut ? `Par défaut (${r.parDefaut})` : 'Par défaut')));
+  groupes[0][1].push({ label: 'Réglages d\'un seul jeu', aide: 'Chaque jeu peut avoir ses propres réglages (et ses mods) : dans ses actions (Share), « Réglages de ce jeu ».', valeur: 'Actions du jeu' });
+  return [...tienne, ...tienne3ds, ...avecTouches(groupes, ligneTouches(c, ou))];
 }
 
 /** Mods d'un jeu, lus une fois par visite. */
@@ -324,8 +378,7 @@ function pageJeu(g) {
   if (!modsJeu[g.path]) chargerModsJeu(g);
   const m = modsJeu[g.path] || {};
   const comme = (r) => `Comme la console (${texteDe(r, c[r.id]) || (r.id === 'langue' ? LANGUES.find(([l]) => l === emu.langue)?.[1] : r.parDefaut || 'par défaut')})`;
-  const groupes = [[titreDe(g), REGLAGES_CONSOLE[g.console].filter((r) => !r.info).map((r) => lignesReglage(r, ou, c, comme(r)))],
-    ['Manette', lignesTouches(g.console, ou, 'Comme la console', c)]];
+  const groupes = avecTouches(grouperReglages(REGLAGES_CONSOLE[g.console].filter((r) => !r.info), (r) => lignesReglage(r, ou, c, comme(r))), ligneTouchesJeu(g, ou, c));
   const bascule = (label, aide, actif, fn) => ({ label, aide, valeur: actif ? 'Activé' : 'Désactivé', fleches: true, fn: () => (fn(), garderEmu()) });
 
   if (g.console === 'WiiU') {

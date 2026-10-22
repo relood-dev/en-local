@@ -3,6 +3,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod embed;
+mod figurines;
 mod gametdb;
 mod maison;
 mod libretro;
@@ -12,6 +13,9 @@ mod presence;
 mod pseudo;
 mod clips;
 mod dossier;
+mod distance;
+mod micro;
+mod mii;
 mod importer;
 mod medias;
 mod nsz;
@@ -194,9 +198,10 @@ fn switch_title_id(path: &str) -> Option<String> {
     if let Some(id) = entrees.iter().find(|e| e.0.ends_with(".tik")).and_then(|e| hex16(&e.0)) {
         return Some(id);
     }
-    let xml = cnmt_xml(path)?;
-    let at = xml.find("<Id>0x")? + 6;
-    hex16(&xml[at..])
+    if let Some(id) = cnmt_xml(path).and_then(|xml| Some(hex16(&xml[xml.find("<Id>0x")? + 6..])?)) {
+        return Some(id);
+    }
+    switch::title_id_nca(path).map(|id| format!("{id:016X}"))
 }
 /// Version d'une mise à jour Switch, lue dans son cnmt.xml.
 fn switch_version(path: &str) -> Option<u32> {
@@ -303,7 +308,7 @@ fn dossier_media(sorte: &str) -> std::path::PathBuf {
     }
     medias::choisi(sorte).unwrap_or_else(|| {
         medias::preparer();
-        medias::racine().join(if sorte == "videos" { "Vidéos" } else { "Musique" })
+        medias::racine().join(match sorte { "videos" => "Vidéos", "amiibo" => "Amiibo", "skylanders" => "Skylanders", _ => "Musique" })
     })
 }
 
@@ -410,7 +415,14 @@ fn boot9() -> std::path::PathBuf {
 }
 #[tauri::command]
 fn trois_ds_etat() -> bool {
-    std::fs::metadata(boot9()).is_ok_and(|m| m.len() == 0x10000)
+    std::fs::read(boot9()).is_ok_and(|o| boot9_valide(&o))
+}
+/// Le boot9.bin est le même sur toutes les 3DS du commerce : on reconnaît le vrai à son empreinte.
+const BOOT9_SHA256: &str = "2f88744feed717856386400a44bba4b9ca62e76a32c715d4f309c399bf28166f";
+fn boot9_valide(o: &[u8]) -> bool {
+    use windows::Win32::Security::Cryptography::{BCryptHash, BCRYPT_SHA256_ALG_HANDLE};
+    let mut h = [0u8; 32];
+    o.len() == 0x10000 && unsafe { BCryptHash(BCRYPT_SHA256_ALG_HANDLE, None, o, &mut h) }.is_ok() && h.iter().map(|b| format!("{b:02x}")).collect::<String>() == BOOT9_SHA256
 }
 /// Vérifie que le fichier fait exactement 64 Ko et n'est pas vide.
 #[tauri::command]
@@ -418,17 +430,85 @@ async fn trois_ds_poser(app: AppHandle) -> Result<Option<String>, String> {
     let owner = main_hwnd(&app)?;
     tauri::async_runtime::spawn_blocking(move || {
         let Some(f) = dossier::selectionner_fichier(owner, "Choisis le boot9.bin de ta 3DS", ("Bootrom de la 3DS (boot9.bin)", "*.bin")) else { return Ok(None) };
-        let o = std::fs::read(&f).map_err(|e| e.to_string())?;
-        if o.len() != 0x10000 || o.iter().all(|&b| b == 0 || b == 0xFF) {
-            return Err("Ce fichier n'est pas un boot9.bin (64 Ko, sorti de ta 3DS avec GodMode9, lecteur [M:] MEMORY VIRTUAL).".into());
-        }
-        let cible = boot9();
-        std::fs::create_dir_all(cible.parent().unwrap()).map_err(|e| e.to_string())?;
-        std::fs::write(&cible, o).map_err(|e| e.to_string())?;
-        Ok(Some("boot9.bin installé".into()))
+        poser_boot9(std::path::Path::new(&f)).map(Some)
     })
     .await
     .map_err(|e| e.to_string())?
+}
+fn poser_boot9(f: &std::path::Path) -> Result<String, String> {
+    let o = std::fs::read(f).map_err(|e| e.to_string())?;
+    if !boot9_valide(&o) {
+        return Err("Ce fichier n'est pas le boot9.bin d'une 3DS. Refais-le depuis ta console avec GodMode9 : lecteur [M:] MEMORY VIRTUAL, fichier boot9.bin.".into());
+    }
+    let cible = boot9();
+    std::fs::create_dir_all(cible.parent().unwrap()).map_err(|e| e.to_string())?;
+    std::fs::write(&cible, o).map_err(|e| e.to_string())?;
+    Ok("boot9.bin installé".into())
+}
+
+#[derive(Serialize, Default)]
+struct Poses {
+    messages: Vec<String>,
+    erreurs: Vec<String>,
+    /// Ce qui n'est pas un fichier de console : rangé ensuite comme des jeux.
+    reste: Vec<String>,
+}
+/// Fichiers déposés sur l'app : prod.keys, title.keys, boot9.bin et firmware (son dossier, ou ses .nca)
+/// sont reconnus et installés.
+#[tauri::command]
+async fn poser_console(chemins: Vec<String>) -> Poses {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut p = Poses::default();
+        let mut ncas = std::collections::BTreeSet::new();
+        let mut note = |r: Result<String, String>| match r {
+            Ok(m) => p.messages.push(m),
+            Err(e) => p.erreurs.push(e),
+        };
+        let mut reste = Vec::new();
+        for c in chemins {
+            let f = std::path::Path::new(&c);
+            let nom = f.file_name().map(|n| n.to_string_lossy().to_lowercase()).unwrap_or_default();
+            if f.is_dir() {
+                // Un dossier avec les fichiers de la console (clés, boot9.bin, firmware) : tout est installé.
+                let a_cote: Vec<_> = ["prod.keys", "title.keys", "boot9.bin"].iter().map(|n| f.join(n)).filter(|x| x.is_file()).collect();
+                let firmware = switch::est_firmware(f);
+                if a_cote.is_empty() && !firmware {
+                    reste.push(c);
+                    continue;
+                }
+                for x in a_cote {
+                    match x.file_name().unwrap().to_str() {
+                        Some("prod.keys") => note(switch::poser_cles(&x).map(|_| "Clés installées".into())),
+                        Some("title.keys") => note(switch::poser_titres(&x).map(|n| format!("Clés des jeux installées ({n})"))),
+                        _ => note(poser_boot9(&x)),
+                    }
+                }
+                if firmware {
+                    note(switch::poser_firmware(f).map(|n| format!("Firmware installé ({n} fichiers)")));
+                }
+            } else if !f.is_file() {
+                reste.push(c);
+            } else if nom == "prod.keys" {
+                note(switch::poser_cles(f).map(|_| "Clés installées".into()));
+            } else if nom == "title.keys" {
+                note(switch::poser_titres(f).map(|n| format!("Clés des jeux installées ({n})")));
+            } else if nom.starts_with("boot9") && nom.ends_with(".bin") {
+                note(poser_boot9(f));
+            } else if nom.ends_with(".nca") {
+                ncas.extend(f.parent().map(|d| d.to_path_buf()));
+            } else {
+                reste.push(c);
+            }
+        }
+        // Des .nca déposés : le dossier qui les contient est le firmware.
+        for d in ncas {
+            note(switch::poser_firmware(&d).map(|n| format!("Firmware installé ({n} fichiers)")));
+        }
+        p.reste = reste;
+        p
+    })
+    .await
+    .unwrap_or_default()
 }
 
 /// Switch : prod.keys ou dossier du firmware, sortis de la console du joueur.
@@ -676,7 +756,7 @@ fn dwc_friend_code(save: &[u8]) -> Option<u64> {
 #[tauri::command]
 fn ds_friend_code(path: String) -> Option<String> {
     let stem = std::path::Path::new(&path).file_stem()?.to_string_lossy().into_owned();
-    let save = std::fs::read(format!("{ROOT}\\data\\ds\\saves\\melonDS DS\\{stem}.sav", ROOT = root())).ok()?;
+    let save = std::fs::read(format!("{ROOT}\\data\\ds\\saves\\{stem}.sav", ROOT = root())).ok()?;
     let fc = format!("{:012}", dwc_friend_code(&save)?);
     Some(format!("{}-{}-{}", &fc[..4], &fc[4..8], &fc[8..]))
 }
@@ -701,6 +781,8 @@ async fn play(app: AppHandle, path: String, console: String, room: Option<embed:
     let o = opts.unwrap_or_default();
     let clips = o.get("clips").and_then(|v| v.parse::<u64>().ok()).filter(|n| *n > 0);
     let qualite = o.get("clips_qualite").cloned().unwrap_or_default();
+    // Ta voix dans les clips : le micro choisi pour les consoles, sinon celui de Windows.
+    *clips::MICRO.lock().unwrap() = (o.get("clips_voix").map(String::as_str) == Some("oui")).then(|| reglages::micro(&o).filter(|m| !m.is_empty()).and_then(micro::nom_de));
     let parent = main_hwnd(&app).ok();
     let r = tauri::async_runtime::spawn_blocking(move || start_game(app, path, console, room, update, o, frames)).await.map_err(|e| e.to_string())?;
     if let (Ok(_), Some(secs), Some(parent)) = (&r, clips, parent) {
@@ -724,6 +806,7 @@ fn start_game(app: AppHandle, path: String, console: String, room: Option<embed:
         }
     }
     if console == "DS" {
+        *micro::NOM_DS.lock().unwrap() = reglages::micro(&o).filter(|m| !m.is_empty()).and_then(micro::nom_de);
         libretro::start(melonds(), path, format!("{ROOT}\\data\\ds", ROOT = root()), frames, reglages::melonds(&o), reglages::volume(&o), reglages::touches_ds(&o))?;
         Ok("DS lancé (méthode A)".into())
     } else if console == "WiiU" {
@@ -745,10 +828,15 @@ fn start_game(app: AppHandle, path: String, console: String, room: Option<embed:
     } else {
         // Jeu chiffré : Azahar le lit avec le boot9.bin.
         if chiffre_3ds(&path) && !trois_ds_etat() {
-            return Err("Ce jeu 3DS est chiffré : il faut le boot9.bin de ta 3DS pour le lire.".into());
+            let present = std::fs::metadata(boot9()).is_ok();
+            return Err(if present {
+                "Ce jeu 3DS est chiffré, et ton boot9.bin n'est pas le bon fichier (l'émulateur planterait). Remplace-le par celui de ta 3DS : Réglages, Nintendo 3DS.".into()
+            } else {
+                "Ce jeu 3DS est chiffré : il faut le boot9.bin de ta 3DS pour le lire.".into()
+            });
         }
         let hwnd = main_hwnd(&app)?;
-        let log = embed::start(&format!("{AZAHAR}\\azahar.exe", AZAHAR = azahar()), &azahar(), &path, hwnd, room.as_ref(), &o)?;
+        let log = embed::start(&embed::exe(&azahar(), "azahar.exe", embed::EXE_3DS), &azahar(), &path, hwnd, room.as_ref(), &o)?;
         Ok(format!("3DS lancé (méthode B) — fenêtres : {log}"))
     }
 }
@@ -779,6 +867,32 @@ fn journal(texte: String) {
     let garde = &ancien[debut..];
     let ligne: String = texte.chars().filter(|c| !c.is_control()).take(600).collect();
     let _ = std::fs::write(&f, format!("{garde}{ligne}\n"));
+}
+
+/// Fin d'un fichier texte et sa date (ms), coupée sur une limite de caractère.
+fn fin_de(f: &str, n: usize) -> Option<(String, u128)> {
+    let quand = std::fs::metadata(f).ok()?.modified().ok()?.duration_since(std::time::UNIX_EPOCH).ok()?.as_millis();
+    let b = std::fs::read(f).ok()?;
+    Some((String::from_utf8_lossy(&b[b.len().saturating_sub(n)..]).into_owned(), quand))
+}
+/// Journaux pour Loc : celui de l'app et celui de l'émulateur lancé en dernier. Le dossier du
+/// compte Windows (et donc son nom) est masqué.
+#[tauri::command]
+fn journaux() -> serde_json::Value {
+    let emus = [
+        ("eden", format!("{}\\user\\log\\eden_log.txt", eden())),
+        ("azahar", format!("{}\\user\\log\\azahar_log.txt", azahar())),
+        ("dolphin", format!("{}\\User\\Logs\\dolphin.log", dolphin())),
+        ("cemu", format!("{}\\log.txt", cemu())),
+    ];
+    let profil = std::env::var("USERPROFILE").unwrap_or_default();
+    let masquer = |t: String| if profil.len() > 3 { t.replace(&profil, "%USERPROFILE%").replace(&profil.to_lowercase(), "%USERPROFILE%").replace(&profil.replace('\\', "/"), "%USERPROFILE%") } else { t };
+    let emu = emus.iter().filter_map(|(n, f)| fin_de(f, 200_000).map(|(t, q)| (*n, t, q))).max_by_key(|x| x.2);
+    let ui = fin_de(&format!("{}\\data\\ui.log", root()), 40_000).map(|x| x.0).unwrap_or_default();
+    match emu {
+        Some((source, texte, quand)) => serde_json::json!({ "source": source, "emu": masquer(texte), "ui": masquer(ui), "quand": quand }),
+        None => serde_json::json!({ "source": "app", "ui": masquer(ui), "quand": 0 }),
+    }
 }
 pub fn journal_rust(texte: &str) {
     journal(texte.to_string());
@@ -1069,6 +1183,38 @@ fn stop_game() {
     saves::garder();
 }
 
+/// Cache de shaders d'Eden pour un jeu Switch (title ID en minuscules, 16 chiffres hexadécimaux).
+fn cache_shaders(titre: &str) -> Result<std::path::PathBuf, String> {
+    if titre.len() != 16 || !titre.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err("jeu inconnu".into());
+    }
+    Ok(std::path::PathBuf::from(format!("{}\\user\\shader\\{}\\vulkan.bin", eden(), titre.to_lowercase())))
+}
+/// Shaders du jeu sur ce PC (vide s'il n'y en a pas).
+#[tauri::command]
+fn shaders_lire(titre: String) -> Result<tauri::ipc::Response, String> {
+    Ok(tauri::ipc::Response::new(std::fs::read(cache_shaders(&titre)?).unwrap_or_default()))
+}
+/// Taille des shaders du jeu sur ce PC.
+#[tauri::command]
+fn shaders_taille(titre: String) -> Result<u64, String> {
+    Ok(std::fs::metadata(cache_shaders(&titre)?).map_or(0, |m| m.len()))
+}
+/// Remplace les shaders du jeu par ceux du Local (qui contiennent déjà les siens). Jamais pendant une partie.
+#[tauri::command]
+fn shaders_ecrire(request: tauri::ipc::Request) -> Result<(), String> {
+    let titre = request.headers().get("titre").and_then(|v| v.to_str().ok()).unwrap_or_default().to_string();
+    let f = cache_shaders(&titre)?;
+    let tauri::ipc::InvokeBody::Raw(octets) = request.body() else { return Err("données manquantes".into()) };
+    if embed::is_running() || octets.len() < 12 || &octets[..8] != b"yuzucach" {
+        return Err("shaders refusés".into());
+    }
+    std::fs::create_dir_all(f.parent().unwrap()).map_err(|e| e.to_string())?;
+    let tmp = f.with_extension("bin.nouveau");
+    std::fs::write(&tmp, octets).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, &f).map_err(|e| e.to_string())
+}
+
 /// Fiches GameTDB : [[console, identifiant]] -> { identifiant: fiche }.
 #[tauri::command]
 async fn game_infos(wanted: Vec<(String, String)>) -> std::collections::HashMap<String, gametdb::Info> {
@@ -1258,6 +1404,10 @@ pub fn toggle_home(app: &AppHandle) {
         let _ = app.emit("menu", false);
         return;
     }
+    pause_jeu(app);
+    let _ = app.emit("menu", true);
+}
+fn pause_jeu(app: &AppHandle) {
     MENU.store(true, Ordering::Relaxed);
     libretro::PAUSED.store(true, Ordering::Relaxed);
     // Rien de lisible : on garde l'image précédente.
@@ -1267,7 +1417,49 @@ pub fn toggle_home(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.set_focus();
     }
-    let _ = app.emit("menu", true);
+}
+
+#[derive(Serialize, Clone)]
+struct Clavier {
+    max: u32,
+    boutons: u32,
+    mode: u32,
+    indice: String,
+    erreur: u32,
+}
+
+/// Clavier de la 3DS : le jeu attend un texte (nom du chien…), En Local affiche le sien.
+/// Demande d'Azahar : longueur max, boutons, texte accepté, indication, erreur de la réponse d'avant.
+fn surveiller_clavier(app: AppHandle) {
+    std::thread::spawn(move || {
+        let f = embed::clavier_fichier();
+        let mut vu = String::new();
+        loop {
+            std::thread::sleep(Duration::from_millis(150));
+            let texte = std::fs::read_to_string(&f).unwrap_or_default();
+            if texte == vu {
+                continue;
+            }
+            vu = texte.clone();
+            let l: Vec<&str> = texte.lines().collect();
+            if l.len() < 5 {
+                continue;
+            }
+            let n = |i: usize| l[i].trim().parse().unwrap_or(0);
+            if !MENU.load(Ordering::Relaxed) {
+                pause_jeu(&app);
+            }
+            let _ = app.emit("clavier", Clavier { max: n(0), boutons: n(1), mode: n(2), indice: l[3].to_string(), erreur: n(4) });
+        }
+    });
+}
+
+#[tauri::command]
+fn clavier_reponse(ok: bool, texte: String) -> Result<(), String> {
+    let f = embed::clavier_fichier();
+    let tmp = format!("{f}.tmp");
+    std::fs::write(&tmp, format!("{}\n{texte}", if ok { "ok" } else { "annuler" })).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, format!("{f}.ok")).map_err(|e| e.to_string())
 }
 
 /// Bouton Home / PS / Guide : Steam le prend aussi et passe devant. Si En Local était au premier
@@ -1380,6 +1572,7 @@ fn main() {
                 app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
             }
             pad::start(app.handle().clone());
+            surveiller_clavier(app.handle().clone());
             // L'interface ne lit que les images de l'accueil et les captures.
             for d in maison::dossiers_lisibles().into_iter().chain(medias::lisibles()) {
                 let _ = app.asset_protocol_scope().allow_directory(&d, true);
@@ -1390,7 +1583,7 @@ fn main() {
                 match tauri::WebviewWindowBuilder::new(app, "habillage", tauri::WebviewUrl::App("habillage.html".into()))
                     .parent(&main)
                     // Mêmes options WebView2 que la fenêtre principale, sinon WebView2 refuse.
-                    .map(|b| b.additional_browser_args("--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,CalculateNativeWinOcclusion --autoplay-policy=no-user-gesture-required"))
+                    .map(|b| b.additional_browser_args(r#"--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,CalculateNativeWinOcclusion --autoplay-policy=no-user-gesture-required --auto-select-desktop-capture-source="En Local" --disable-blink-features=GetDisplayMediaRequiresUserActivation"#))
                     .and_then(|b| b.transparent(true).decorations(false).shadow(false).skip_taskbar(true).focused(false).visible(false).resizable(false).build())
                 {
                     Ok(h) => {
@@ -1424,13 +1617,23 @@ fn main() {
                 embed::stop();
             }
         })
-        .invoke_handler(tauri::generate_handler![verifier_maj, installer_maj, ouvrir_site, importer_jeux, choisir_jeux, oublier_jaquettes, jaquette, journal, habillage_ds, switch_etat, switch_poser, volume_jeux, list_games, medias_liste, ouvrir_medias, dossiers_medias, choisir_dossier_media, creer_dossier_media, dossier_jeux, definir_dossier_jeux, choisir_dossier, creer_dossier_jeux, ranger_jeux, contenus_jeux, ra_connexion, ouvrir_ra, mode_ecran, materiel, switch_updates, cemu_packs, cemu_packs_maj, dolphin_mods, eden_mods, open_folder, open_games_folder, ouvrir_saves, reset_jeu, salon_en_jeu, pokedex, sprite, perf::performances, trois_ds_etat, trois_ds_poser, clips::clip, clips::miniature, garder_photo, nsz::preparer_switch, salon::salon_preparer, salon::salon_sonde, salon::salon_lancer, salon::salon_fermer, pad_info, open_discord_user, game_icon, save_image, capture, list_captures, load_stats, save_stats, game_infos, play, login, menu_shown, resume, quit_game, quit_app, home, snapshot, game_shot, autoplay, lien_initial, ds_friend_code, netplay, netplay_launch, netplay_stop, netplay_message, netplay_cancel, presence, presence_clear, pointer])
+        .invoke_handler(tauri::generate_handler![verifier_maj, journaux, installer_maj, ouvrir_site, micro::micros, importer_jeux, choisir_jeux, oublier_jaquettes, jaquette, journal, habillage_ds, switch_etat, switch_poser, volume_jeux, list_games, medias_liste, ouvrir_medias, dossiers_medias, choisir_dossier_media, creer_dossier_media, dossier_jeux, definir_dossier_jeux, choisir_dossier, creer_dossier_jeux, ranger_jeux, contenus_jeux, ra_connexion, ouvrir_ra, mode_ecran, materiel, switch_updates, cemu_packs, cemu_packs_maj, dolphin_mods, eden_mods, open_folder, open_games_folder, ouvrir_saves, reset_jeu, salon_en_jeu, pokedex, sprite, perf::performances, trois_ds_etat, trois_ds_poser, clips::clip, clips::miniature, garder_photo, nsz::preparer_switch, salon::salon_preparer, salon::salon_sonde, salon::salon_lancer, salon::salon_fermer, pad_info, open_discord_user, game_icon, save_image, capture, list_captures, load_stats, save_stats, game_infos, play, login, menu_shown, resume, quit_game, quit_app, home, snapshot, game_shot, autoplay, lien_initial, ds_friend_code, netplay, netplay_launch, netplay_stop, netplay_message, netplay_cancel, presence, presence_clear, pointer, clavier_reponse, poser_console, pad::manette_ajouter, shaders_lire, shaders_taille, shaders_ecrire, figurines::figurines, figurines::figurines_poser, distance::distance_debut, distance::distance_pad, distance::distance_fin, distance::distance_arret, pad::distance_manette])
         .run(tauri::generate_context!())
         .expect("En Local n'a pas pu démarrer");
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn boot9_reconnu() {
+        assert!(!super::boot9_valide(&[0u8; 0x10000]), "un faux boot9 est refusé");
+        assert!(!super::boot9_valide(&[1u8; 10]));
+        // Le vrai, s'il est installé sur ce PC.
+        if let Ok(o) = std::fs::read(super::boot9()) {
+            assert!(super::boot9_valide(&o));
+        }
+    }
+
     #[test]
     fn mac_et_chiffre() {
         let d = std::env::temp_dir().join(format!("enlocal-mac-{}", std::process::id()));

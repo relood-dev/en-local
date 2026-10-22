@@ -68,7 +68,12 @@ fn dossiers(sorte: &str) -> Vec<PathBuf> {
     l.into_iter().filter(|d| d.is_dir()).collect()
 }
 pub fn preparer() {
-    for (d, texte) in [("Musique", "Ta musique : un dossier par album (avec cover.jpg si tu veux une pochette).\r\nMP3, FLAC, OGG, M4A, WAV.\r\n"), ("Vidéos", "Tes vidéos (MP4, WebM, MKV), un dossier par série si tu veux.\r\n")] {
+    for (d, texte) in [
+        ("Musique", "Ta musique : un dossier par album (avec cover.jpg si tu veux une pochette).\r\nMP3, FLAC, OGG, M4A, WAV.\r\n"),
+        ("Vidéos", "Tes vidéos (MP4, WebM, MKV), un dossier par série si tu veux.\r\n"),
+        ("Amiibo", "Tes amiibo : les copies .bin de tes figurines. En jeu, menu HOME puis Amiibo.\r\n"),
+        ("Skylanders", "Tes Skylanders : les fichiers .sky de tes figurines, un dossier par jeu si tu veux (avec poster.jpg),\r\npuis un dossier par élément. En jeu, menu HOME puis Skylanders.\r\n"),
+    ] {
         let p = racine().join(d);
         let _ = std::fs::create_dir_all(&p);
         let f = p.join("Lisez-moi.txt");
@@ -82,6 +87,7 @@ pub fn lisibles() -> Vec<PathBuf> {
     preparer();
     let mut l: Vec<PathBuf> = dossiers("Musique").into_iter().chain(dossiers("Vidéos")).collect();
     l.push(crate::maison::dossier("pochettes"));
+    l.push(racine().join("Skylanders"));
     l.push(crate::maison::dossier_captures());
     l.iter().flat_map(|d| deux_chemins(d)).collect()
 }

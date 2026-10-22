@@ -2,6 +2,7 @@
  * Saisie de texte plein écran, avec un clavier AZERTY pour la manette.
  * Au clavier, on tape directement dans le champ.
  * valider(valeurs) rend un message d'erreur, ou rien si tout va bien.
+ * annuler() remplace la fermeture par Annuler, si elle est donnée.
  */
 let saisie = null;
 const saisieOuverte = () => Boolean(saisie);
@@ -11,11 +12,15 @@ const CLAVIERS = {
 };
 
 function saisirTexte(o) {
-  saisie = { ...o, champ: 0, maj: false, sym: false, focus: 0, erreur: '' };
+  saisie = { ...o, champ: 0, maj: false, sym: false, focus: 0, erreur: o.erreur || '' };
   $('#saisie').style.display = 'flex';
   drawSaisie();
   entree($('#saisie .salle-carte'), 'pop-salle');
   setTimeout(() => $('#saisie input')?.focus(), 50);
+}
+function annulerSaisie() {
+  if (saisie.annuler) return saisie.annuler();
+  fermerSaisie();
 }
 function fermerSaisie() {
   saisie = null;
@@ -90,7 +95,7 @@ function activerSaisie() {
   if (a === 'sym') (saisie.sym = !saisie.sym), drawSaisie();
   if (a === 'effacer') effacerSaisie();
   if (a === 'valider') validerSaisie();
-  if (a === 'annuler') fermerSaisie();
+  if (a === 'annuler') annulerSaisie();
 }
 function navSaisie(k) {
   const els = [...$('#saisie').querySelectorAll('[data-n]')];
@@ -103,5 +108,5 @@ function navSaisie(k) {
   if (k === 'a') return activerSaisie();
   if (k === 'y') return effacerSaisie();
   if (k === 'plus') return validerSaisie();
-  if (k === 'b') return fermerSaisie();
+  if (k === 'b') return annulerSaisie();
 }

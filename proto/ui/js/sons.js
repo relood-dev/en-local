@@ -19,6 +19,7 @@ function appliquerVolumes() {
   if (typeof musique !== 'undefined') musique.volume = vol('general') * vol('perso');
   if (typeof volumeMusiqueMenu === 'function') volumeMusiqueMenu();
   if (typeof current !== 'undefined' && current) volumeJeu();
+  if (typeof volumeDistance === 'function') volumeDistance();
 }
 /** Volume du jeu en cours (DS : géré par En Local, autres : mélangeur Windows). */
 const volumeJeu = () => invoke('volume_jeux', { v: vol('general') * vol('jeux') }).catch(() => 0);

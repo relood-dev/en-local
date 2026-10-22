@@ -1,0 +1,40 @@
+From d406fdf071e5f8a6d5e3c096a0b80488b7c0474d Mon Sep 17 00:00:00 2001
+From: Relood <147659633+relood-dev@users.noreply.github.com>
+Date: Fri, 9 Oct 2026 17:16:51 +0200
+Subject: [PATCH] En Local : pause du jeu quand le menu est ouvert en session
+
+---
+ src/citra_qt/citra_qt.cpp | 17 +++++++++++++++++
+ 1 file changed, 17 insertions(+)
+
+diff --git a/src/citra_qt/citra_qt.cpp b/src/citra_qt/citra_qt.cpp
+index daed842..2061c81 100644
+--- a/src/citra_qt/citra_qt.cpp
++++ b/src/citra_qt/citra_qt.cpp
+@@ -1768,6 +1768,23 @@ GMainWindow::GMainWindow(Core::System& system_)
+         });
+     }
+ 
++    // En Local: menu open during a session (file ENLOCAL_MENU): the game is paused, the controller
++    // no longer reaches it, the room stays connected.
++    if (const char* menu = std::getenv("ENLOCAL_MENU")) {
++        auto* const menu_timer = new QTimer(this);
++        connect(menu_timer, &QTimer::timeout, this, [this, path = QString::fromUtf8(menu), paused = false]() mutable {
++            const bool open = QFile::exists(path);
++            if (!emulation_running || !emu_thread || open == paused)
++                return;
++            paused = open;
++            if (open && !system.frame_limiter.IsFrameAdvancing())
++                OnPauseGame();
++            else if (!open && system.frame_limiter.IsFrameAdvancing())
++                OnResumeGame(false);
++        });
++        menu_timer->start(50);
++    }
++
+     // En Local: a session started mid-game writes its room to the ENLOCAL_SALON file
+     // (host:port, nickname, password). The current room is left, then the new one joined.
+     if (const char* file = std::getenv("ENLOCAL_SALON")) {
+-- 
+2.55.0.windows.5
+

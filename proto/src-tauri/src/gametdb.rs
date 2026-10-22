@@ -21,6 +21,8 @@ pub struct Info {
     pub online: u32,
     /// Jeu eShop : la jaquette GameTDB est un modèle rouge.
     pub eshop: bool,
+    /// Manettes reconnues (Wii : wiimote, nunchuk, classiccontroller…).
+    pub manettes: Vec<String>,
 }
 
 /// Base de chaque console (Wii et GameCube partagent la leur).
@@ -81,6 +83,11 @@ pub fn infos(wanted: Vec<(String, String)>) -> HashMap<String, Info> {
     out
 }
 
+/// Manettes d'un jeu Wii, sans télécharger la base : elle l'a été pour la bibliothèque.
+pub fn manettes_wii(id: &str) -> Vec<String> {
+    std::fs::read_to_string(dir().join("wiitdb.xml")).ok().and_then(|t| find(&t, id)).map(|i| i.manettes).unwrap_or_default()
+}
+
 /// Fiche d'un jeu. Une copie « toutes régions » sans vraie fiche prend celle d'une autre région.
 fn find(text: &str, id: &str) -> Option<Info> {
     let entry = |id: &str| -> Option<&str> {
@@ -112,6 +119,7 @@ fn find(text: &str, id: &str) -> Option<Info> {
         players,
         online: attr(wifi, "players").and_then(|p| p.parse().ok()).unwrap_or(0),
         eshop: tag(g, "type").as_deref() == Some("eShop"),
+        manettes: g.match_indices("<control ").filter_map(|(i, _)| attr(&g[i..i + g[i..].find('>').unwrap_or(0)], "type")).collect(),
     })
 }
 
@@ -245,6 +253,7 @@ mod tests {
     fn anglais_si_pas_de_texte_francais() {
         let i = find(XML, "GALP01").unwrap();
         assert_eq!((i.synopsis.as_str(), i.players, i.online), ("Fight.", 4, 0));
+        assert_eq!(i.manettes, ["gamecube"]);
         assert!(find(XML, "ZZZZ").is_none());
     }
 }

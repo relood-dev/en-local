@@ -65,14 +65,31 @@ fn touche<'a>(o: &'a Opts, bouton: &str) -> Option<&'a str> {
 
 /* ---------- DS : melonDS ---------- */
 
+/* ---------- Micro (toutes les consoles) ---------- */
+
+/// Micro choisi : None = celui de Windows par défaut, Some("") = aucun, sinon l'identifiant Windows.
+pub fn micro(o: &Opts) -> Option<&str> {
+    get(o, "micro").map(|m| if m == "aucun" { "" } else { m }).filter(|m| m.is_empty() || m.starts_with('{'))
+}
+
+/// Wi-Fi DS sur le serveur du Local (par défaut ; Kaeru au choix).
+pub fn wfc_local(o: &Opts) -> bool {
+    get(o, "wfc") != Some("kaeru")
+}
+
 pub fn melonds(o: &Opts) -> Vec<(&'static str, String)> {
     let mut out = Vec::new();
+    // Micro réel (donné au cœur par En Local), toujours ouvert ; « aucun » : silence.
+    out.push(("melonds_mic_input", if micro(o) == Some("") { "silence" } else { "microphone" }.into()));
+    out.push(("melonds_mic_input_active", "always".into()));
     if let Some(l) = get(o, "langue").filter(|l| ["en", "ja", "fr", "de", "it", "es"].contains(l)) {
         out.push(("melonds_firmware_language", l.to_string()));
     }
     if get(o, "pseudo").is_some() {
         out.push(("melonds_firmware_username", "guess_username".into())); // le pseudo donné par En Local
     }
+    // Wi-Fi des jeux : Kaeru (public) ou le serveur du Local (privé, réservé aux membres).
+    out.push(("melonds_firmware_wfc_dns", if wfc_local(o) { "152.228.234.204" } else { "178.62.43.212" }.into()));
     const DISPOSITIONS: [&str; 8] = ["top-bottom", "bottom-top", "left-right", "right-left", "hybrid-top", "hybrid-bottom", "top", "bottom"];
     if let Some(d) = get(o, "disposition").filter(|d| DISPOSITIONS.contains(d)) {
         out.push(("melonds_screen_layout1", d.to_string()));
@@ -159,12 +176,29 @@ pub fn azahar_ini(o: &Opts) -> String {
     if let Some(n) = nombre(o, "volume", 0, 100) {
         a.push(paire("volume", n as f32 / 100.0));
     }
+    // Micro : 3 = Cubeb (le vrai micro, désigné par son nom Windows), 1 = aucun, 0 = automatique.
+    match micro(o) {
+        Some("") => a.push(paire("input_type", 1)),
+        Some(id) => {
+            a.push(paire("input_type", 3));
+            a.push(paire("input_device", crate::micro::nom_de(id).unwrap_or_else(|| "Auto".into())));
+        }
+        None => {
+            a.push(paire("input_type", 3));
+            a.push(paire("input_device", "Auto"));
+        }
+    }
     let mut c = Vec::new();
     if let Some(n) = nombre(o, "cpu", 5, 400) {
         c.push(paire("cpu_clock_percentage", n));
     }
+    // Applets simulés (clavier, Mii…) : avec des fichiers système 3DS posés dans l'émulateur, Azahar
+    // lancerait les vrais, et un fichier système chiffré ou incomplet fait planter tous les jeux.
+    let y = vec![paire("lle_applets", false)];
     let mut out = String::new();
-    for (s, p) in [("Renderer", r), ("Layout", l), ("Audio", a), ("Core", c)] {
+    // Journal : le jeu à plusieurs en détail (salon, local sans fil), pour comprendre quand deux joueurs ne se voient pas.
+    let j = vec![paire("log_filter", "*:Info Service.NWM:Debug Service.DLP:Debug Network:Debug")];
+    for (s, p) in [("Renderer", r), ("Layout", l), ("Audio", a), ("Core", c), ("System", y), ("Miscellaneous", j)] {
         out = ini_set(&out, s, &p);
     }
     out
@@ -259,6 +293,17 @@ pub fn dolphin_args(o: &Opts, wii: bool) -> Vec<String> {
         if let Some(v) = oui(o, "wii_16_9") {
             c.push(format!("SYSCONF.IPL.AR={}", b(v)));
         }
+        // Portail Skylanders : les figurines viennent du menu HOME d'En Local.
+        c.push("Dolphin.EmulatedUSBDevices.EmulateSkylanderPortal=True".into());
+        // Wii Speak (micro des jeux Wii) : le micro choisi, sinon celui par défaut ; « aucun » le coupe.
+        match micro(o) {
+            Some("") => c.push("Dolphin.EmulatedUSBDevices.EmulateWiiSpeak=False".into()),
+            m => {
+                c.push("Dolphin.EmulatedUSBDevices.EmulateWiiSpeak=True".into());
+                c.push("Dolphin.EmulatedUSBDevices.WiiSpeakMuted=False".into());
+                c.push(format!("Dolphin.EmulatedUSBDevices.WiiSpeakMicrophone={}", m.unwrap_or("")));
+            }
+        }
     }
     if get(o, "mods").is_some() {
         c.push("GFX.Settings.EnableMods=True".into());
@@ -288,11 +333,44 @@ pub fn dolphin_gc(o: &Opts, defauts: &[(&str, &str)]) -> Vec<(String, String)> {
     }
     out
 }
+/// Jeux qui se jouent Wiimote à l'horizontale (GameTDB ne le dit pas) : Mario Party 9, Kirby, NSMB Wii,
+/// Super Paper Mario, Wario Land, Excite Truck.
+const WII_HORIZONTALE: [&str; 6] = ["SSQ", "SUK", "SMN", "R8P", "RWL", "REX"];
+/// Manette Wii donnée au jeu : « classique » s'il la reconnaît (mêmes boutons qu'une manette de salon),
+/// « horizontale » pour les jeux ci-dessus, sinon « nunchuk ».
+pub fn disposition_wii(id: &str, manettes: &[String]) -> &'static str {
+    if manettes.iter().any(|m| m == "classiccontroller") {
+        "classique"
+    } else if WII_HORIZONTALE.iter().any(|p| id.starts_with(p)) {
+        "horizontale"
+    } else {
+        "nunchuk"
+    }
+}
+/// Manette classique, boutons à la même place que sur Switch.
+pub fn dolphin_classique() -> Vec<(String, String)> {
+    let mut out: Vec<(String, String)> = [
+        ("Buttons/A", "east"), ("Buttons/B", "south"), ("Buttons/X", "north"), ("Buttons/Y", "west"), ("Buttons/ZL", "lt"), ("Buttons/ZR", "rt"),
+        ("Buttons/-", "back"), ("Buttons/+", "start"), ("Triggers/L", "lb"), ("Triggers/L-Analog", "lb"), ("Triggers/R", "rb"), ("Triggers/R-Analog", "rb"),
+        ("D-Pad/Up", "up"), ("D-Pad/Down", "down"), ("D-Pad/Left", "left"), ("D-Pad/Right", "right"),
+    ]
+    .iter()
+    .map(|(k, p)| (format!("Classic/{k}"), dolphin_entree(p).to_string()))
+    .collect();
+    for (stick, axe) in [("Left Stick", "Left"), ("Right Stick", "Right")] {
+        for (k, v) in [("Up", "Y+"), ("Down", "Y-"), ("Left", "X-"), ("Right", "X+")] {
+            out.push((format!("Classic/{stick}/{k}"), format!("`{axe} {v}`")));
+        }
+    }
+    out
+}
 /// Wiimote + Nunchuk : touches choisies, sinon disposition d'En Local.
-pub fn dolphin_wii(o: &Opts) -> Vec<(String, String)> {
+/// À l'horizontale (cote), 2 et 1 prennent la place de A et B sur Switch.
+pub fn dolphin_wii(o: &Opts, cote: bool) -> Vec<(String, String)> {
     let mut out = Vec::new();
+    let (a, un, deux) = if cote { ("north", "south", "east") } else { ("south", "west", "north") };
     for (cles, bouton, defaut) in [
-        (&["Buttons/A"][..], "a", "south"), (&["Buttons/B"], "b", "rt"), (&["Buttons/1"], "un", "west"), (&["Buttons/2"], "deux", "north"),
+        (&["Buttons/A"][..], "a", a), (&["Buttons/B"], "b", "rt"), (&["Buttons/1"], "un", un), (&["Buttons/2"], "deux", deux),
         (&["Buttons/-"], "moins", "back"), (&["Buttons/+"], "plus", "start"), (&["Nunchuk/Buttons/C"], "c", "lb"), (&["Nunchuk/Buttons/Z"], "nz", "lt"),
         (&["Shake/X", "Shake/Y", "Shake/Z"], "secouer", "r3"),
     ] {
@@ -373,6 +451,8 @@ pub struct Cemu {
     pub graphic: String,
     pub volume: i64,
     pub packs: String,
+    /// Micro du GamePad : identifiant Windows, « default », ou vide (aucun).
+    pub micro: String,
 }
 pub fn cemu(o: &Opts) -> Cemu {
     let langue = get(o, "langue").and_then(|l| ["ja", "en", "fr", "de", "it", "es", "zh", "ko", "nl", "pt", "ru", "tw"].iter().position(|x| *x == l)).map(|n| n as i64);
@@ -415,7 +495,11 @@ pub fn cemu(o: &Opts) -> Cemu {
             packs += "    </Entry>\n";
         }
     }
-    Cemu { api: nombre(o, "api", 0, 1).unwrap_or(1), langue, graphic: g, volume: nombre(o, "volume", 0, 100).unwrap_or(100), packs }
+    let micro = match micro(o) {
+        Some(m) => xml(m),
+        None => "default".into(),
+    };
+    Cemu { api: nombre(o, "api", 0, 1).unwrap_or(1), langue, graphic: g, volume: nombre(o, "volume", 0, 100).unwrap_or(100), packs, micro }
 }
 /// Boutons du GamePad : (bouton Cemu, entrée). Boutons SDL 0-14, gâchettes 42 et 43.
 pub fn cemu_touches(o: &Opts) -> Vec<(u32, u32)> {
@@ -557,6 +641,16 @@ pub fn en_main(title_id: &str) -> bool {
     ["010003F003A34000", "0100187003A36000"].iter().any(|p| p.eq_ignore_ascii_case(title_id))
 }
 
+/// Vibrations des manettes (Réglages, Manette) : oui par défaut.
+/// Wii U : manette Pro émulée au lieu du GamePad (jeux qui la gèrent, sans second écran).
+pub fn cemu_pro(o: &Opts) -> bool {
+    get(o, "manette") == Some("pro")
+}
+
+pub fn vibrations(o: &Opts) -> bool {
+    get(o, "vibrations") != Some("non")
+}
+
 pub fn eden(ini: &str, o: &Opts, title_id: Option<&str>) -> String {
     let mut r = Vec::new();
     if let Some(n) = nombre(o, "api", 0, 4).filter(|n| *n != 2) {
@@ -578,6 +672,11 @@ pub fn eden(ini: &str, o: &Opts, title_id: Option<&str>) -> String {
     if let Some(b) = oui(o, "shaders_async") {
         r.push(paire("use_asynchronous_shaders", b));
     }
+    // Super Mario Party : portraits des personnages noirs en précision Moyenne.
+    if title_id.is_some_and(|t| t.eq_ignore_ascii_case("010036B0034E4000")) {
+        r.retain(|(k, _)| k != "gpu_accuracy");
+        r.push(paire("gpu_accuracy", 2));
+    }
     let mut s = Vec::new();
     if let Some(l) = get(o, "langue") {
         // La région suit la langue, sinon certains jeux la refusent.
@@ -598,16 +697,26 @@ pub fn eden(ini: &str, o: &Opts, title_id: Option<&str>) -> String {
             s.push(paire("region_index", region));
         }
     }
-    let portable = title_id.is_some_and(en_main);
-    if let Some(n) = if portable { Some(0) } else { nombre(o, "mode", 0, 1) } {
+    // Jeu à distance : les manettes des invités arrivent par le serveur DSU d'En Local (distance.rs),
+    // console sur la télé pour brancher les joueurs 2 à 8.
+    let distance = get(o, "distance") == Some("oui");
+    let portable = title_id.is_some_and(en_main) && !distance;
+    if let Some(n) = if portable { Some(0) } else if distance { Some(1) } else { nombre(o, "mode", 0, 1) } {
         s.push(paire("use_docked_mode", n));
     }
     let mut a = Vec::new();
     if let Some(n) = nombre(o, "volume", 0, 100) {
         a.push(paire("volume", n));
     }
+    // Session Switch (serveur du Local, sur un PC) : des invités à distance peuvent aussi se brancher.
+    let invites = distance || get(o, "invites") == Some("oui");
+    let mut c = vec![paire("vibration_enabled", vibrations(o)), paire("enable_udp_controller", invites)];
+    if invites {
+        let serveurs: Vec<String> = crate::distance::PORTS.iter().map(|p| format!("127.0.0.1:{p}")).collect();
+        c.push(paire("udp_input_servers", format!("\"{}\"", serveurs.join(","))));
+    }
     let mut out = ini.to_string();
-    for (sec, p) in [("Renderer", r), ("System", s), ("Audio", a)] {
+    for (sec, p) in [("Renderer", r), ("System", s), ("Audio", a), ("Controls", c)] {
         out = ini_set(&out, sec, &p);
     }
     // Mods désactivés : la section entière est réécrite.
@@ -676,14 +785,35 @@ mod tests {
     }
 
     #[test]
+    fn wii_a_l_horizontale() {
+        let v = |cote, k: &str| dolphin_wii(&opts(&[]), cote).into_iter().find(|(c, _)| c == k).unwrap().1;
+        assert_eq!(v(true, "Buttons/2"), "`Button E`");
+        assert_eq!(v(true, "Buttons/1"), "`Button S`");
+        assert_eq!(v(false, "Buttons/A"), "`Button S`");
+        let m = |l: &[&str]| l.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(disposition_wii("RMCP01", &m(&["wiimote", "nunchuk", "classiccontroller"])), "classique");
+        assert_eq!(disposition_wii("SSQP01", &m(&["wiimote"])), "horizontale");
+        assert_eq!(disposition_wii("SUPP01", &m(&["wiimote", "mii"])), "nunchuk");
+        assert_eq!(disposition_wii("SUPP01", &[]), "nunchuk");
+        let c = dolphin_classique();
+        assert!(c.contains(&("Classic/Buttons/A".into(), "`Button E`".into())));
+        assert!(c.contains(&("Classic/Right Stick/Up".into(), "`Right Y+`".into())));
+    }
+    #[test]
     fn eden_langue_et_mods() {
         let o = opts(&[("langue", "fr"), ("resolution", "6"), ("mode", "0"), ("mods_off", "[\"60 FPS\"]")]);
         let t = eden("[System]\nlanguage_index=1\n[DisabledAddOns]\nsize=0\n[Controls]\nx=1\n", &o, Some("010013C00E930000"));
         assert!(t.contains("language_index=2\n") && t.contains("region_index=2\n") && t.contains("use_docked_mode=0\n") && t.contains("resolution_setup=6\n"));
         let lg = eden("", &[("mode".to_string(), "1".to_string())].into_iter().collect(), Some("010003F003A34000"));
         assert!(lg.contains("use_docked_mode=0\n"));
+        let mut d = o.clone();
+        d.insert("distance".into(), "oui".into());
+        let dt = eden("", &d, Some("010003F003A34000"));
+        assert!(dt.contains("use_docked_mode=1\n") && dt.contains("enable_udp_controller=true\n") && dt.contains("udp_input_servers=\"127.0.0.1:26760,127.0.0.1:26761\"\n"));
         assert!(t.contains(&format!("[DisabledAddOns]\n1\\title_id={}\n1\\disabled\\1\\d=60 FPS\n1\\disabled\\size=1\nsize=1\n[Controls]", 0x010013C00E930000u64)));
         assert_eq!(t.matches("language_index=").count(), 1);
+        let smp = eden("", &opts(&[("precision", "1")]), Some("010036b0034e4000"));
+        assert!(smp.contains("gpu_accuracy=2\n") && !smp.contains("gpu_accuracy=1\n"));
     }
 
     #[test]
@@ -714,7 +844,19 @@ mod tests {
     #[test]
     fn dolphin_options() {
         let a = dolphin_args(&opts(&[("langue", "fr"), ("resolution", "3"), ("vsync", "oui"), ("resolution2", "x")]), true);
-        assert_eq!(a, ["-C", "SYSCONF.IPL.LNG=3", "-C", "GFX.Settings.InternalResolution=3", "-C", "GFX.Hardware.VSync=True"]);
+        assert_eq!(a, [
+            "-C", "SYSCONF.IPL.LNG=3", "-C", "GFX.Settings.InternalResolution=3", "-C", "GFX.Hardware.VSync=True",
+            "-C", "Dolphin.EmulatedUSBDevices.EmulateSkylanderPortal=True",
+            "-C", "Dolphin.EmulatedUSBDevices.EmulateWiiSpeak=True", "-C", "Dolphin.EmulatedUSBDevices.WiiSpeakMuted=False", "-C", "Dolphin.EmulatedUSBDevices.WiiSpeakMicrophone=",
+        ]);
+        // Micro choisi, ou aucun.
+        let m = dolphin_args(&opts(&[("micro", "{0.0.1.00000000}.{abc}")]), true);
+        assert!(m.contains(&"Dolphin.EmulatedUSBDevices.WiiSpeakMicrophone={0.0.1.00000000}.{abc}".to_string()));
+        assert!(dolphin_args(&opts(&[("micro", "aucun")]), true).contains(&"Dolphin.EmulatedUSBDevices.EmulateWiiSpeak=False".to_string()));
+        // Un identifiant qui n'a pas la forme Windows est ignoré (micro par défaut).
+        assert_eq!(micro(&opts(&[("micro", "C:\\x")])), None);
+        assert_eq!(cemu(&opts(&[("micro", "aucun")])).micro, "");
+        assert_eq!(cemu(&opts(&[])).micro, "default");
         assert_eq!(dolphin_args(&opts(&[("langue", "fr"), ("resolution", "99")]), false), ["-C", "Dolphin.Core.SelectedLanguage=2"]);
     }
 

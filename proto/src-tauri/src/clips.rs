@@ -62,7 +62,41 @@ fn format_son() -> Option<(u32, u16)> {
     (cfg.sample_format() == cpal::SampleFormat::F32).then(|| (cfg.sample_rate().0, cfg.channels()))
 }
 
-/// Son du PC vers ffmpeg, avec du silence quand rien ne joue (sinon ffmpeg attend).
+/// Micro à mêler au son des clips : None = pas de micro, Some(None) = celui de Windows, Some(Some(nom)) = celui-là.
+pub static MICRO: std::sync::Mutex<Option<Option<String>>> = std::sync::Mutex::new(None);
+
+/// Le micro, en mono ramené à `rate` Hz, dans `vers` (une demi-seconde au plus en attente).
+fn micro(rate: u32, vers: std::sync::mpsc::SyncSender<Vec<f32>>) -> Option<cpal::Stream> {
+    use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+    let choix = MICRO.lock().unwrap().clone()?;
+    let host = cpal::default_host();
+    let dev = choix.and_then(|n| host.input_devices().ok()?.find(|d| d.name().is_ok_and(|x| x == n))).or_else(|| host.default_input_device())?;
+    let cfg = dev.default_input_config().ok()?;
+    let canaux = cfg.channels() as usize;
+    let pas = cfg.sample_rate().0 as f64 / rate as f64;
+    let mut pos = 0.0f64;
+    let flux = dev.build_input_stream(
+        &cfg.config(),
+        move |d: &[f32], _: &_| {
+            let mut sortie = Vec::with_capacity(d.len() / canaux.max(1) + 1);
+            for trame in d.chunks(canaux.max(1)) {
+                pos += 1.0;
+                while pos >= pas {
+                    pos -= pas;
+                    sortie.push(trame.iter().sum::<f32>() / canaux as f32);
+                }
+            }
+            let _ = vers.try_send(sortie);
+        },
+        |_| {},
+        None,
+    ).ok()?;
+    flux.play().ok()?;
+    Some(flux)
+}
+
+/// Son du PC vers ffmpeg, avec du silence quand rien ne joue (sinon ffmpeg attend), et ta voix
+/// mêlée par-dessus si le micro est demandé.
 fn son(mut vers: std::process::ChildStdin, stop: Arc<AtomicBool>, rate: u32, canaux: u16) {
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
     let (tx, rx) = std::sync::mpsc::sync_channel::<Vec<f32>>(256);
@@ -72,6 +106,9 @@ fn son(mut vers: std::process::ChildStdin, stop: Arc<AtomicBool>, rate: u32, can
         flux.play().ok()?;
         Some(flux)
     });
+    let (tx_micro, rx_micro) = std::sync::mpsc::sync_channel::<Vec<f32>>(256);
+    let flux_micro = micro(rate, tx_micro);
+    let mut voix: std::collections::VecDeque<f32> = std::collections::VecDeque::new();
     let debut = Instant::now();
     let mut ecrits: u64 = 0;
     let mut attente: Vec<f32> = Vec::new();
@@ -89,6 +126,20 @@ fn son(mut vers: std::process::ChildStdin, stop: Arc<AtomicBool>, rate: u32, can
         if attente.len() as u64 > par_seconde / 2 {
             attente.clear();
         }
+        // Ta voix, mêlée à chaque canal (sans saturer).
+        if flux_micro.is_some() {
+            while let Ok(b) = rx_micro.try_recv() {
+                voix.extend(b);
+            }
+            for trame in bloc.chunks_mut(canaux as usize) {
+                let v = voix.pop_front().unwrap_or(0.0);
+                for s in trame {
+                    *s = (*s + v).clamp(-1.0, 1.0);
+                }
+            }
+            let trop = voix.len().saturating_sub(rate as usize / 2);
+            voix.drain(..trop);
+        }
         let octets: Vec<u8> = bloc.iter().flat_map(|s| s.to_le_bytes()).collect();
         if vers.write_all(&octets).is_err() {
             break;
@@ -96,6 +147,7 @@ fn son(mut vers: std::process::ChildStdin, stop: Arc<AtomicBool>, rate: u32, can
         ecrits += n as u64;
     }
     drop(flux);
+    drop(flux_micro);
 }
 
 /// Encodeur de la carte graphique, sinon Media Foundation.
@@ -274,6 +326,8 @@ mod tests {
     fn tampon_et_clip() {
         let _ = std::fs::create_dir_all(format!("{}\\emu\\ffmpeg", crate::root()));
         let _ = std::fs::copy("C:\\EnLocal\\emu\\ffmpeg\\ffmpeg.exe", super::ffmpeg());
+        // Avec ta voix (micro de Windows) mêlée au son du PC.
+        *super::MICRO.lock().unwrap() = Some(None);
         super::demarrer_zone(0, 0, 0, 320, 240, 15, "haute");
         assert!(super::EN_COURS.lock().unwrap().is_some(), "le tampon n'a pas démarré");
         std::thread::sleep(std::time::Duration::from_secs(7));

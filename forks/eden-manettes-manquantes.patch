@@ -1,0 +1,31 @@
+From ed01ed9860fb452f893e3503c2403577d0a9cccb Mon Sep 17 00:00:00 2001
+From: Relood <147659633+relood-dev@users.noreply.github.com>
+Date: Sun, 18 Oct 2026 17:14:42 +0200
+Subject: [PATCH] En Local : choix des manettes annule quand il manque des
+ joueurs
+
+---
+ src/yuzu/main_window.cpp | 7 +++++--
+ 1 file changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/src/yuzu/main_window.cpp b/src/yuzu/main_window.cpp
+index f6d233f..aa84cdd 100644
+--- a/src/yuzu/main_window.cpp
++++ b/src/yuzu/main_window.cpp
+@@ -1088,8 +1088,11 @@ void MainWindow::ControllerSelectorReconfigureControllers(
+         }
+         QtCommon::system->ApplySettings();
+         config->SaveAllValues();
+-        LOG_INFO(Frontend, "En Local : choix des manettes valid├® sans fen├¬tre");
+-        emit ControllerSelectorReconfigureFinished(true);
++        // Moins de joueurs que demand├® (Mario Party Jamboree en veut 4) : valider faisait redemander
++        // le jeu en boucle jusqu'├á figer. Annuler, comme B sur la Switch : le jeu revient au menu.
++        const bool assez = parameters.enable_single_mode || static_cast<int>(hid.GetPlayerCount()) >= parameters.min_players;
++        LOG_INFO(Frontend, "En Local : choix des manettes {} sans fen├¬tre ({} joueurs)", assez ? "valid├®" : "annul├®", static_cast<int>(hid.GetPlayerCount()));
++        emit ControllerSelectorReconfigureFinished(assez);
+         return;
+     }
+     controller_applet =
+-- 
+2.55.0.windows.5
+

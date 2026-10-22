@@ -1,0 +1,66 @@
+From 56dde4e371cd8a9f8896065d7da3684fa22f6019 Mon Sep 17 00:00:00 2001
+From: Relood <147659633+relood-dev@users.noreply.github.com>
+Date: Sun, 11 Oct 2026 15:51:18 +0200
+Subject: [PATCH] =?UTF-8?q?En=20Local=20:=20jeu=20=C3=A0=20distance,=20man?=
+ =?UTF-8?q?ettes=20des=20invit=C3=A9s=20(DSU)=20aux=20joueurs=202=20=C3=A0?=
+ =?UTF-8?q?=208=20(ENLOCAL=5FDISTANCE)?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ src/yuzu/main_window.cpp | 31 ++++++++++++++++++++++++++++++-
+ 1 file changed, 30 insertions(+), 1 deletion(-)
+
+diff --git a/src/yuzu/main_window.cpp b/src/yuzu/main_window.cpp
+index a022c3b..24a3fb0 100644
+--- a/src/yuzu/main_window.cpp
++++ b/src/yuzu/main_window.cpp
+@@ -594,7 +594,7 @@ MainWindow::MainWindow(bool has_broken_vulkan)
+         // Manette : la première manette SDL devient le joueur 1, aussi après un
+         // branchement ; Guide reste au frontend (son menu), pas de HOME Switch.
+         auto* const pad_timer = new QTimer(this);
+-        connect(pad_timer, &QTimer::timeout, this, [this, mapped = std::string{}]() mutable {
++        connect(pad_timer, &QTimer::timeout, this, [this, mapped = std::string{}, distants = std::array<std::string, 7>{}]() mutable {
+             const auto devices = input_subsystem->GetInputDevices();
+             // La manette que le joueur utilise dans En Local (ENLOCAL_MANETTE : nintendo,
+             // playstation, xbox…) d'abord ; sinon la première. SDL, ou le pilote Joy-Con
+@@ -615,6 +615,35 @@ MainWindow::MainWindow(bool has_broken_vulkan)
+                 for (const auto& d : devices)
+                     LOG_INFO(Frontend, "En Local : périphérique {} ({})", d.Get("display", ""), d.Get("engine", ""));
+             }
++            // Jeu à distance (ENLOCAL_DISTANCE) : les manettes des invités, servies par En Local
++            // en DSU (cemuhookudp, 4 par port), deviennent les joueurs 2 à 8 en manette Pro.
++            if (std::getenv("ENLOCAL_DISTANCE")) {
++                for (std::size_t j = 0; j < distants.size(); ++j) {
++                    const auto it = std::find_if(devices.begin(), devices.end(), [j](const Common::ParamPackage& d) {
++                        return d.Get("engine", "") == "cemuhookudp" && d.Get("pad", -1) == static_cast<int>(j);
++                    });
++                    const std::string cle = it == devices.end() ? std::string{} : it->Serialize();
++                    if (cle == distants[j])
++                        continue;
++                    distants[j] = cle;
++                    auto* const joueur = QtCommon::system->HIDCore().GetEmulatedController(static_cast<Core::HID::NpadIdType>(j + 1));
++                    if (it == devices.end()) {
++                        joueur->Disconnect();
++                        LOG_INFO(Frontend, "En Local : joueur {} à distance parti", j + 2);
++                        continue;
++                    }
++                    for (const auto& [index, param] : input_subsystem->GetButtonMappingForDevice(*it))
++                        joueur->SetButtonParam(index, param);
++                    for (const auto& [index, param] : input_subsystem->GetAnalogMappingForDevice(*it))
++                        joueur->SetStickParam(index, param);
++                    joueur->SetButtonParam(Settings::NativeButton::Home, {});
++                    joueur->SetButtonParam(Settings::NativeButton::Screenshot, {});
++                    joueur->SaveCurrentConfig();
++                    joueur->SetNpadStyleIndex(Core::HID::NpadStyleIndex::Fullkey);
++                    joueur->Connect();
++                    LOG_INFO(Frontend, "En Local : joueur {} à distance", j + 2);
++                }
++            }
+             std::vector<Common::ParamPackage> manettes;
+             for (const auto& d : devices)
+                 if (d.Get("engine", "") == "sdl" || d.Get("engine", "") == "joycon")
+-- 
+2.55.0.windows.5
+

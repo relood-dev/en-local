@@ -72,7 +72,8 @@ function drawMembres() {
       ${f('data-a="code" title="Rejoindre avec un code"', icone('<path d="M4 7h16M4 12h10M4 17h7"/>'), 'bouton-rond')}
       ${f('data-a="creer" title="Créer une session"', icone('<path d="M12 5v14M5 12h14"/>'), 'bouton-rond plein')}
     </div>
-    ${sess.length ? `<div class="titre-groupe">Sessions ouvertes</div>${sess.map((s) => f(`data-s="${esc(s.code)}"`, `<img class="av" src="${esc(s.host?.avatar || 'img/hang-coucou.png')}" alt=""><span class="t"><b>${esc(s.game)}</b><small>${esc(s.host?.name || '')} · ${+s.players || 0}/${+s.slots || 0} · ${esc(s.code)}</small></span><span class="tag live">Rejoindre</span>`, 'ligne-m')).join('')}` : ''}
+    ${session ? `<div class="titre-groupe">Ta session</div>${f('data-a="ma-session"', `<span class="t"><b>${esc(current?.name || 'Session')} · ${esc(session.code)}</b><small>${+session.players || 1}/${+session.slots || 0} · invite des membres ci-dessous</small></span><span class="tag live">Gérer</span>`, 'ligne-m')}` : ''}
+    ${sess.length ? `<div class="titre-groupe">Amis en jeu</div>${[...sess].sort((a, b) => (ownGame(b) >= 0) - (ownGame(a) >= 0) || b.createdAt - a.createdAt).map((s) => f(`data-s="${esc(s.code)}"`, `<img class="av" src="${esc(s.host?.avatar || 'img/hang-coucou.png')}" alt=""><span class="t"><b>${esc(s.game)}</b><small>${esc(s.host?.name || '')} · ${+s.players || 0}/${+s.slots || 0}${ownGame(s) < 0 ? ' · tu n\'as pas ce jeu' : ''}</small></span><span class="tag live">${ownGame(s) >= 0 ? (session?.code === s.code ? 'Tu y es' : 'Rejoindre') : 'Voir'}</span>`, 'ligne-m')).join('')}` : ''}
     ${GROUPES.map(([cle, titre]) => {
       const g = liste.filter((m) => (m.app || (enLigne(m) ? 'en-ligne' : 'hors-ligne')) === cle);
       if (!g.length) return '';
@@ -113,7 +114,16 @@ async function basculerMembres(ouvrir = !panneauOuvert) {
   panneauFocus = 0;
   drawMembres();
   entree($('#membres'), 'panneau-entre');
+  focusSessionPanneau();
   await chargerMembres();
+  focusSessionPanneau();
+}
+
+/** Le focus sur la première session ouverte : L2 puis A pour rejoindre. */
+function focusSessionPanneau() {
+  const pfs = [...$('#membres').querySelectorAll('.pf')];
+  const k = pfs.findIndex((el) => el.dataset.s);
+  if (k >= 0 && panneauFocus === 0) focusPanneau(k);
 }
 
 async function chargerMembres() {
@@ -127,8 +137,13 @@ function activerPanneau(el) {
   if (!el) return;
   if (el.dataset.a === 'code') return ouvrirCode();
   if (el.dataset.a === 'creer') return (basculerMembres(false), choisirJeuSession());
+  if (el.dataset.a === 'ma-session') return sheet(`Session ${session.code}`, 'Donne ce code aux autres, ou invite-les depuis leur nom.', [
+    { label: 'Quitter la session', fn: () => (current ? quitterSessionEnJeu(current) : leaveSession(), drawMembres()) },
+    { label: 'Fermer', cancel: true },
+  ]);
   if (el.dataset.s) {
     const x = autres().find((y) => y.code === el.dataset.s);
+    if (x && ownGame(x) >= 0 && (+x.players || 0) < (+x.slots || 0)) return (basculerMembres(false), join(x.code));
     return x ? detailSession(x) : join(el.dataset.s);
   }
   const m = membres.find((x) => x.id === el.dataset.m);
@@ -197,7 +212,7 @@ function envoyerStats() {
     secs: tempsTotal(), jeux: games.length, joues: joues().length, consoles, top,
     defis: ds.filter((d) => d.fait).length, defisTotal: ds.length, serie: serie(), jours: (compteurs.jours || []).length,
     sessions: (compteurs.sessionsCreees || 0) + (compteurs.sessionsRejointes || 0), captures: capturesListe.length,
-    pseudo: pseudoConsoles(), defisV: Object.fromEntries(ds.map((d) => [d.id, d.v])),
+    pseudo: pseudoConsoles(), mii: monMii() ? studioMii(monMii()) : '', defisV: Object.fromEntries(ds.map((d) => [d.id, d.v])),
   }).catch(() => {});
 }
 

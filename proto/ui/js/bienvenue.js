@@ -2,10 +2,10 @@
  * Premier lancement : Loc guide la configuration en quelques étapes.
  * Tout se change ensuite dans les Réglages.
  */
-const TOUTES = ['discord', 'son', 'pseudo', 'ecran', 'jeux', 'switch', '3ds', 'medias', 'manette', 'graphismes', ...(SUCCES ? ['succes'] : []), 'fin'];
+const TOUTES = ['discord', 'son', 'pseudo', 'ecran', 'jeux', 'consoles', 'medias', 'manette', 'graphismes', ...(SUCCES ? ['succes'] : []), 'fin'];
 // Déjà configuré mais déconnecté : seulement la connexion.
 let ETAPES = TOUTES;
-const NOMS_ETAPES = { son: 'Son', discord: 'Discord', pseudo: 'Pseudo', ecran: 'Écran', jeux: 'Jeux', switch: 'Switch', '3ds': '3DS', medias: 'Médias', manette: 'Manette', graphismes: 'Graphismes', succes: 'Succès' };
+const NOMS_ETAPES = { son: 'Son', discord: 'Discord', pseudo: 'Pseudo', ecran: 'Écran', jeux: 'Jeux', consoles: 'Consoles', medias: 'Médias', manette: 'Manette', graphismes: 'Graphismes', succes: 'Succès' };
 let bienvenue = null;
 const bienvenueOuverte = () => Boolean(bienvenue);
 
@@ -34,8 +34,7 @@ function ouvrirBienvenue() {
   entree($('#bienvenue .bv-carte'), 'pop-salle');
   invoke('pad_info').then((p) => ((manetteNom = p.name || ''), bienvenue && ETAPES[bienvenue.etape] === 'manette' && drawBienvenue())).catch(() => {});
   chargerDossier().then(() => bienvenue && ETAPES[bienvenue.etape] === 'jeux' && drawBienvenue());
-  chargerSwitch().then(() => bienvenue && ETAPES[bienvenue.etape] === 'switch' && drawBienvenue());
-  chargerTroisDs().then(() => bienvenue && ETAPES[bienvenue.etape] === '3ds' && drawBienvenue());
+  Promise.all([chargerSwitch(), chargerTroisDs()]).then(() => bienvenue && ETAPES[bienvenue.etape] === 'consoles' && drawBienvenue());
   chargerDossiersMedias().then(() => bienvenue && ETAPES[bienvenue.etape] === 'medias' && drawBienvenue());
   invoke('materiel').then((m) => {
     if (!bienvenue) return;
@@ -65,8 +64,13 @@ function choixEtape() {
   if (e === 'medias') return [['musique', 'Musique', dossiersMedias?.musique?.chemin || '…'], ['videos', 'Vidéos', dossiersMedias?.videos?.chemin || '…'], ['captures', 'Captures et photos', dossiersMedias?.captures?.chemin || '…']];
   if (e === 'son') return NIVEAUX_SON.map(([v, t, d]) => [v, t, d]);
   if (e === 'pseudo') return [['discord', `Le même que sur Discord${me?.name ? ` : ${me.name}` : ''}`, 'Ton pseudo Discord aussi sur les consoles.'], ['autre', `Un pseudo pour les consoles${localStorage.pseudo ? ` : ${localStorage.pseudo}` : ''}`, 'Avec le clavier à l\'écran, ou celui du PC.']];
-  if (e === '3ds') return [['boot9', `boot9.bin : ${troisDsPret === null ? '…' : troisDsPret ? 'Installé' : 'À ajouter'}`, AIDE_BOOT9], ['plus-tard', troisDsPret ? 'C\'est bon' : 'Pas de 3DS, ou plus tard', 'Ça s\'ajoute aussi dans Réglages, Nintendo 3DS.']];
-  if (e === 'switch') return [['cles', `Clés : ${switchEtat ? texteCles() : '…'}`, AIDE_CLES], ['titres', `Clés des jeux : ${switchEtat ? texteTitres() : '…'}`, AIDE_TITRES], ['firmware', `Firmware : ${switchEtat ? texteFirmware() : '…'}`, AIDE_FIRMWARE], ['plus-tard', switchPret() ? 'C\'est bon' : 'Pas de Switch, ou plus tard', 'Ça s\'ajoute aussi dans Réglages, Nintendo Switch.']];
+  if (e === 'consoles') return [
+    ['cles', `Switch, clés : ${switchEtat ? texteCles() : '…'}`, AIDE_CLES],
+    ['titres', `Switch, clés des jeux : ${switchEtat ? texteTitres() : '…'}`, AIDE_TITRES],
+    ['firmware', `Switch, firmware : ${switchEtat ? texteFirmware() : '…'}`, AIDE_FIRMWARE],
+    ['boot9', `3DS, boot9.bin : ${troisDsPret === null ? '…' : troisDsPret ? 'Installé' : 'À ajouter'}`, AIDE_BOOT9],
+    ['plus-tard', switchPret() || troisDsPret ? 'C\'est bon' : 'Plus tard', 'Ça s\'ajoute aussi dans Réglages, Nintendo Switch et Nintendo 3DS.'],
+  ];
   if (e === 'manette') return Object.entries(GLYPHES_NOMS).map(([v, t]) => [v, t, v === 'auto' ? 'Les symboles de la manette que tu tiens.' : `Toujours les symboles ${t}.`]);
   if (e === 'succes') return ra.token ? [['ok', `Connecté : ${ra.user}`, 'Tes succès se débloquent en jeu.']] : [['connecter', 'Connecter RetroAchievements', 'Les vrais succès des jeux GameCube et Wii, avec un compte gratuit.'], ['plus-tard', 'Plus tard', 'Dans les Réglages, partie Succès, quand tu veux.']];
   if (e === 'graphismes') {
@@ -85,13 +89,12 @@ function drawBienvenue() {
   const e = ETAPES[b.etape];
   const choix = choixEtape();
   const actuel = { son: niveauSon(), pseudo: localStorage.pseudo ? 'autre' : 'discord', ecran: b.choix.ecran, jeux: dossierInfo?.chemin, manette: b.choix.glyphes, graphismes: b.choix.profil }[e];
-  const titres = { son: 'Le son', discord: 'Bienvenue sur En Local', pseudo: 'Ton pseudo pour les consoles', switch: 'Ta Switch', '3ds': 'Ta 3DS', ecran: 'Comment afficher En Local ?', medias: 'Ta musique, tes vidéos, tes captures', jeux: 'Où ranger tes jeux ?', manette: 'Ta manette', graphismes: 'Les graphismes', succes: 'Les succès', fin: `C'est prêt${me ? `, ${esc(me.name)}` : ''} !` };
+  const titres = { son: 'Le son', discord: 'Bienvenue sur En Local', pseudo: 'Ton pseudo pour les consoles', consoles: 'Ta Switch et ta 3DS', ecran: 'Comment afficher En Local ?', medias: 'Ta musique, tes vidéos, tes captures', jeux: 'Où ranger tes jeux ?', manette: 'Ta manette', graphismes: 'Les graphismes', succes: 'Les succès', fin: `C'est prêt${me ? `, ${esc(me.name)}` : ''} !` };
   const textes = {
     pseudo: 'Dans En Local, tu gardes ton pseudo Discord. Sur les consoles (DS, 3DS, Switch), c\'est ce pseudo que les autres voient en jeu. Il se change dans les Réglages.',
     son: 'Choisis le volume d\'En Local : tu entends la différence tout de suite. Chaque son se règle ensuite dans Réglages, Son (et le volume des jeux dans leur menu).',
     discord: 'L\'app du Local pour jouer ensemble. Pour commencer, connecte-toi avec ton compte Discord : tes sessions, les membres et ton profil en dépendent.',
-    '3ds': 'Pour lire tes jeux 3DS chiffrés, il faut le fichier boot9.bin de ta propre 3DS (En Local n\'en fournit pas). Choisis-le sur ton PC, En Local le range au bon endroit.',
-    switch: 'Pour les jeux Switch, il faut les clés et le firmware de ta propre console (En Local n\'en fournit pas). Choisis-les sur ton PC, En Local les range au bon endroit.',
+    consoles: 'Pour les jeux Switch, il faut les clés et le firmware de ta propre Switch ; pour les jeux 3DS chiffrés, le boot9.bin de ta propre 3DS (En Local n\'en fournit pas). Choisis-les, ou dépose-les tous d\'un coup sur cette fenêtre : En Local les reconnaît et les range.',
     medias: 'Où En Local les trouve (et range tes captures en jeu). Choisis un dossier existant ou crées-en un ; ça se change dans les Réglages.',
     jeux: 'En Local y crée un dossier par console (Switch, 3DS, Wii U, Wii, GameCube, DS). Switch : un dossier par jeu, ses mises à jour et DLC dans un sous-dossier. Mets-y les copies de tes cartouches et disques ; un fichier posé au mauvais endroit, En Local le range pour toi (Réglages, Ranger mes jeux).',
     succes: 'Les trophées d\'En Local marchent sur toutes les consoles, sans compte. Pour les vrais succès des jeux : RetroAchievements.',
@@ -119,7 +122,7 @@ function drawBienvenue() {
   const nb = choix.length;
   $('#bienvenue').innerHTML = `<div class="bv-carte">
     <div class="bv-etapes">${ETAPES.length > 1 ? ETAPES.filter((x) => x !== 'fin').map((x, k) => `<span class="${k < b.etape ? 'fait' : k === b.etape ? 'ici' : ''}">${k + 1}. ${NOMS_ETAPES[x]}</span>`).join('') : ''}</div>
-    <img class="bv-loc" src="img/loc/loc_${{ son: 'musique', discord: 'coucou', pseudo: 'content', fin: 'fete', graphismes: 'reglages', succes: 'gg', jeux: 'dossier', switch: 'manette', '3ds': 'dossier', medias: 'photo', manette: 'manette' }[e] || 'coucou'}.gif" alt="">
+    <img class="bv-loc" src="img/loc/loc_${{ son: 'musique', discord: 'coucou', pseudo: 'content', fin: 'fete', graphismes: 'reglages', succes: 'gg', jeux: 'dossier', consoles: 'manette', medias: 'photo', manette: 'manette' }[e] || 'coucou'}.gif" alt="">
     <h2>${titres[e]}</h2>${textes[e] ? `<p>${textes[e]}</p>` : ''}
     ${corps}
     ${options ? `<div class="bv-choix-liste n${nb}">${options}</div>` : ''}
@@ -162,8 +165,7 @@ async function activerBienvenue() {
   }
   if (e === 'medias') return choisirDossierMedia(v);
   if (e === 'discord') return login();
-  if (e === '3ds') return v === 'plus-tard' ? etapeBienvenue(1) : poserTroisDs().then(() => bienvenue && drawBienvenue());
-  if (e === 'switch') return v === 'plus-tard' ? etapeBienvenue(1) : poserSwitch(v).then(() => bienvenue && drawBienvenue());
+  if (e === 'consoles') return v === 'plus-tard' ? etapeBienvenue(1) : (v === 'boot9' ? poserTroisDs() : poserSwitch(v)).then(() => bienvenue && drawBienvenue());
   if (e === 'succes' && v === 'connecter') return connecterRa();
   if (e === 'succes' && v === 'plus-tard') return etapeBienvenue(1);
   drawBienvenue();

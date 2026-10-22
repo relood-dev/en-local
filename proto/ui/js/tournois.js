@@ -1,7 +1,8 @@
 /*
- * Tournois : un membre organise un tournoi sur un de ses jeux, les autres s'inscrivent, il le lance.
- * Chaque match se joue dans une session En Local : « Jouer » la crée, l'adversaire reçoit le code.
- * Le perdant confirme le résultat (ou l'organisateur). Les données sont chez Loc.
+ * Tournois : un membre organise un tournoi sur un de ses jeux, les autres s'inscrivent, il le lance
+ * (ou il part tout seul à l'heure prévue, avec ceux qui ont confirmé leur présence). Élimination
+ * simple ou double. Chaque match a sa session, ouverte par le Local. Le perdant confirme le
+ * résultat (ou l'organisateur). Les données sont chez Loc.
  */
 let tournoisListe = [];
 let trnOuvert = null; // id du tournoi affiché, null : la liste
@@ -21,10 +22,11 @@ function jeuDeTournoi(g) {
 
 async function chargerTournois() {
   if (!me) return;
+  chargerClasses();
   tournoisListe = await api('GET', '/tournois').catch(() => tournoisListe);
   if (onglet === 'tournois') drawTournois();
 }
-setInterval(() => onglet === 'tournois' && !current && chargerTournois(), 15000);
+setInterval(() => onglet === 'tournois' && (!current || enAccueil) && chargerTournois(), 15000);
 
 const trnActuel = () => tournoisListe.find((t) => t.id === trnOuvert);
 const nomJoueur = (t, id) => t.joueurs.find((j) => j.id === id)?.name || '…';
@@ -35,6 +37,29 @@ const jaquetteTournoi = (t) => {
   return g ? iconeHtml(g, true) : t.gametdb ? coverImg(jeuDeMembre(t.console, t.jeu, t.gametdb), 'icone-img', true) : `<span class="r-ic">${iconeConsole(t.console)}</span>`;
 };
 const ETATS_TOURNOI = { inscriptions: 'Inscriptions', 'en-cours': 'En cours', fini: 'Terminé' };
+const FORMATS_TOURNOI = { simple: 'Élimination simple', double: 'Double élimination' };
+/** « 21:00 », « demain 21:00 » ou « sam. 21:00 ». */
+function heureTournoi(ms) {
+  const d = new Date(ms), auj = new Date();
+  const h = d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  const jours = Math.round((new Date(d).setHours(0, 0, 0, 0) - auj.setHours(0, 0, 0, 0)) / 864e5);
+  return jours === 0 ? h : jours === 1 ? `demain ${h}` : `${d.toLocaleDateString('fr-FR', { weekday: 'short' })} ${h}`;
+}
+const dansMin = (ms) => {
+  const m = Math.max(0, Math.round((ms - Date.now()) / 60000));
+  return m < 1 ? 'maintenant' : m < 60 ? `dans ${m} min` : `dans ${Math.floor(m / 60)} h${m % 60 ? String(m % 60).padStart(2, '0') : ''}`;
+};
+const aConfirmer = (t) => t.etat === 'inscriptions' && t.confirmation && t.joueurs.some((j) => j.id === me?.id) && !t.confirmes.includes(me?.id);
+/** Nom d'un tour : tableau principal (numéro), perdants (« L<j> ») ou grande finale (« G »). */
+function nomTour(t, r, i = 0) {
+  if (r === 'G') return i ? 'Revanche de la grande finale' : 'Grande finale';
+  if (typeof r === 'string' && r[0] === 'L') {
+    const j = +r.slice(1), n = t.perdants?.length || 0;
+    return j === n - 1 ? 'Finale des perdants' : `Perdants · tour ${j + 1}`;
+  }
+  const nom = roundNom(r, t.rounds.length);
+  return t.grande?.length && nom === 'Finale' ? 'Finale du tableau' : nom;
+}
 
 function drawTournois() {
   const t = trnActuel();
@@ -45,13 +70,13 @@ function drawTournois() {
   if (!me) {
     html = `<div class="trn"><h1>Tournois</h1><p>Connecte-toi avec Discord pour jouer les tournois du Local.</p></div>`;
   } else if (!t) {
-    html = `<div class="trn"><h1>Tournois</h1><p>Organise un tournoi sur un de tes jeux : les matchs se jouent dans En Local, avec un code.</p>
-      <div class="trn-grille">
+    html = `<div class="trn"><h1>Compétition</h1><p>Joue en classé contre des membres de ton niveau, ou organise un tournoi : chaque match ouvre sa session tout seul.</p>
+      ${htmlClasse(action)}<div class="trn-grille">
         <button class="trn-el trn-carte nouveau" data-n="${action(organiserTournoi)}"><div class="icone">${icone('<path d="M12 5v14M5 12h14"/>')}</div><span><b>Organiser un tournoi</b><small>Switch, 3DS ou DS</small></span></button>
         ${tournoisListe.map((x) => {
           const inscrit = x.joueurs.some((j) => j.id === me.id);
-          const etat = x.etat === 'fini' ? `Gagné par ${esc(nomJoueur(x, x.champion))}` : x.etat === 'inscriptions' ? `${x.joueurs.length}/${+x.max || 0} inscrits` : x.monMatch ? 'Ton match est prêt' : 'En cours';
-          return `<button class="trn-el trn-carte${x.monMatch ? ' a-jouer' : ''}" data-n="${action(() => ouvrirTournoi(x.id))}"><div class="icone">${jaquetteTournoi(x)}</div><span><b>${esc(x.nom)}</b><small>${esc(x.jeu)} · ${etat}${inscrit && x.etat === 'inscriptions' ? ' · inscrit' : ''}</small></span><i class="trn-etat ${esc(x.etat)}">${ETATS_TOURNOI[x.etat] || ''}</i></button>`;
+          const etat = x.etat === 'fini' ? `Gagné par ${esc(nomJoueur(x, x.champion))}` : aConfirmer(x) ? 'Confirme ta présence' : x.etat === 'inscriptions' ? `${x.joueurs.length}/${+x.max || 0} inscrits${x.debut ? ` · ${heureTournoi(x.debut)}` : ''}` : x.monMatch ? 'Ton match est prêt' : 'En cours';
+          return `<button class="trn-el trn-carte${x.monMatch || aConfirmer(x) ? ' a-jouer' : ''}" data-n="${action(() => ouvrirTournoi(x.id))}"><div class="icone">${jaquetteTournoi(x)}</div><span><b>${esc(x.nom)}</b><small>${esc(x.jeu)} · ${etat}${inscrit && x.etat === 'inscriptions' ? ' · inscrit' : ''}</small></span><i class="trn-etat ${esc(x.etat)}">${ETATS_TOURNOI[x.etat] || ''}</i></button>`;
         }).join('')}
       </div>${tournoisListe.length ? '' : '<div class="col-vide"><img src="img/loc/loc_gg.gif" alt=""><p>Aucun tournoi pour l\'instant. Lance le premier !</p></div>'}</div>`;
   } else {
@@ -61,29 +86,46 @@ function drawTournois() {
     if (t.etat === 'inscriptions') {
       if (!inscrit) boutons.push(['S\'inscrire', () => inscrireTournoi(t, true)]);
       else if (!orga) boutons.push(['Se désinscrire', () => inscrireTournoi(t, false)]);
-      if (orga) boutons.push([`Lancer (${t.joueurs.length} joueurs)`, () => lancerTournoi(t)]);
+      if (orga) boutons.push([`Lancer ${t.debut ? 'maintenant ' : ''}(${t.confirmation ? t.confirmes.length : t.joueurs.length} joueurs)`, () => lancerTournoi(t)]);
     }
     if (orga && t.etat !== 'fini') boutons.push(['Annuler le tournoi', () => annulerTournoi(t)]);
     const m = t.monMatch;
     const match = m && `<div class="trn-match">
-      <img class="av" src="${esc(avatarJoueur(t, m.contre))}" alt=""><span><small>Ton match · ${esc(roundNom(m.r, t.rounds.length))}${+t.bo > 1 ? ` · au meilleur des ${+t.bo}` : ''}</small><b>Contre ${esc(nomJoueur(t, m.contre))}</b>${m.code ? `<small>Code de la session : <b>${esc(m.code)}</b></small>` : ''}${m.reclame === m.contre ? `<small>${esc(nomJoueur(t, m.contre))} annonce avoir gagné.</small>` : m.reclame === me.id ? '<small>Victoire annoncée, en attente de confirmation.</small>' : ''}</span>
+      <img class="av" src="${esc(avatarJoueur(t, m.contre))}" alt=""><span><small>Ton match · ${esc(nomTour(t, m.r, m.i))}${+t.bo > 1 ? ` · au meilleur des ${+t.bo}` : ''}</small><b>Contre ${esc(nomJoueur(t, m.contre))}</b>${m.code ? `<small>Code de la session : <b>${esc(m.code)}</b></small>` : ''}${m.reclame === m.contre ? `<small>${esc(nomJoueur(t, m.contre))} annonce avoir gagné.</small>` : m.reclame === me.id ? '<small>Victoire annoncée, en attente de confirmation.</small>' : ''}</span>
       <div class="trn-boutons">
         <button class="trn-el choix" data-n="${action(() => jouerMatch(t))}">${m.code ? 'Rejoindre' : 'Jouer'}</button>
         ${m.reclame === m.contre ? `<button class="trn-el choix" data-n="${action(() => resultatMatch(t, m, m.contre))}">Confirmer sa victoire</button>` : `<button class="trn-el choix" data-n="${action(() => resultatMatch(t, m, me.id))}">J'ai gagné</button><button class="trn-el choix" data-n="${action(() => resultatMatch(t, m, m.contre))}">J'ai perdu</button>`}
       </div></div>`;
-    const tableau = t.rounds ? `<div class="trn-tableau">${t.rounds.map((round, r) => `<div class="trn-tour"><small>${esc(roundNom(r, t.rounds.length))}</small><div class="trn-duels">${round.map((x, i) => {
-      const ligne = (id) => `<span class="${x.winner && x.winner === id ? 'gagne' : x.winner ? 'perd' : ''}">${id ? `<img class="av" src="${esc(avatarJoueur(t, id))}" alt="">${esc(nomJoueur(t, id))}` : '<em>—</em>'}</span>`;
-      const jouable = orga && !x.winner && x.a && x.b;
-      return `<${jouable ? `button class="trn-el trn-duel" data-n="${action(() => arbitrer(t, r, i, x))}"` : 'div class="trn-duel"'}>${ligne(x.a)}${ligne(x.b)}</${jouable ? 'button' : 'div'}>`;
-    }).join('')}</div></div>`).join('')}</div>` : `<div class="trn-joueurs">${t.joueurs.map((j) => `<span><img class="av" src="${esc(j.avatar || 'img/hang-coucou.png')}" alt="">${esc(j.name)}</span>`).join('')}</div>`;
-    html = `<div class="trn"><div class="trn-tete"><div class="icone">${jaquetteTournoi(t)}</div><div><h1>${esc(t.nom)}</h1><p>${esc(t.jeu)} · ${esc(LONG[t.console] || t.console)} · ${t.joueurs.length}/${+t.max || 0} joueurs${t.champion ? ` · gagné par <b>${esc(nomJoueur(t, t.champion))}</b>` : ''}</p></div></div>
-      ${boutons.length ? `<div class="trn-boutons">${boutons.map(([l, fn]) => `<button class="trn-el choix" data-n="${action(fn)}">${esc(l)}</button>`).join('')}</div>` : ''}
+    const debut = t.etat === 'inscriptions' && t.debut && `<div class="trn-match trn-debut${aConfirmer(t) ? ' urgent' : ''}">
+      <div class="trn-horloge"><b>${esc(heureTournoi(t.debut).split(' ').pop())}</b><small>${esc(dansMin(t.debut))}</small></div><span><b>${t.confirmation ? (aConfirmer(t) ? 'Confirme ta présence' : t.confirmes.includes(me.id) ? 'Présence confirmée' : 'Confirmation ouverte') : `Début ${esc(heureTournoi(t.debut))}`}</b>
+      <small>${t.confirmation ? `${t.confirmes.length}/${t.joueurs.length} confirmés. À l'heure, le tournoi part avec eux ; les autres ne jouent pas.` : 'La confirmation ouvre 15 min avant : chaque inscrit dit « Je suis là ». À l\'heure, le tournoi part tout seul.'}</small></span>
+      ${aConfirmer(t) ? `<div class="trn-boutons"><button class="trn-el choix" data-n="${action(() => appel('POST', `/tournois/${t.id}/confirmer`))}">Je suis là</button></div>` : ''}</div>`;
+    const tableau = t.rounds ? htmlTableau(t, orga, action) : `<div class="trn-joueurs">${t.joueurs.map((j) => `<span class="${t.confirmation && t.confirmes.includes(j.id) ? 'ok' : ''}"><img class="av" src="${esc(j.avatar || 'img/hang-coucou.png')}" alt="">${esc(j.name)}${t.confirmation ? `<i>${t.confirmes.includes(j.id) ? '✓' : '…'}</i>` : ''}</span>`).join('')}</div>`;
+    html = `<div class="trn"><div class="trn-tete"><div class="icone">${jaquetteTournoi(t)}</div><div><h1>${esc(t.nom)}</h1><p>${esc(t.jeu)} · ${esc(FORMATS_TOURNOI[t.format] || FORMATS_TOURNOI.simple)} · ${t.joueurs.length}/${+t.max || 0} joueurs${t.champion ? ` · gagné par <b>${esc(nomJoueur(t, t.champion))}</b>` : ''}</p></div></div>
+      ${debut || ''}${boutons.length ? `<div class="trn-boutons">${boutons.map(([l, fn]) => `<button class="trn-el choix" data-n="${action(fn)}">${esc(l)}</button>`).join('')}</div>` : ''}
       ${match || ''}${tableau}</div>`;
   }
   $('#section').innerHTML = html;
   $('#section').querySelectorAll('.trn-el').forEach((b) => (b.onclick = () => ((trnFocus = +b.dataset.n), trnActions[trnFocus]())));
-  $('#titre').textContent = t ? t.nom : 'Tournois';
+  $('#titre').textContent = t ? t.nom : 'Compétition';
   focusTournoi(trnFocus);
+}
+/** Le tableau façon console : principal, perdants, grande finale ; tes matchs et ceux en cours ressortent. */
+function htmlTableau(t, orga, action) {
+  const duel = (x, r, i) => {
+    const ligne = (id) => `<span class="${x.winner && x.winner === id ? 'gagne' : x.winner ? 'perd' : ''}${id === me.id ? ' moi' : ''}">${id === '-' ? '<em>exempt</em>' : id ? `<img class="av" src="${esc(avatarJoueur(t, id))}" alt="">${esc(nomJoueur(t, id))}` : '<em>—</em>'}</span>`;
+    const live = !x.winner && x.a && x.b && x.a !== '-' && x.b !== '-';
+    const jouable = orga && live;
+    const cls = `trn-duel${live ? ' live' : ''}${[x.a, x.b].includes(me.id) ? ' a-moi' : ''}`;
+    return `<${jouable ? `button class="trn-el ${cls}" data-n="${action(() => arbitrer(t, r, i, x))}"` : `div class="${cls}"`}>${ligne(x.a)}${ligne(x.b)}</${jouable ? 'button' : 'div'}>`;
+  };
+  const colonne = (titre, matchs, r) => `<div class="trn-tour"><small>${esc(titre)}</small><div class="trn-duels">${matchs.map((x, i) => duel(x, r(i), i)).join('')}</div></div>`;
+  const principal = t.rounds.map((round, r) => colonne(nomTour(t, r), round, () => r)).join('');
+  if (!t.perdants?.length) return `<div class="trn-tableau">${principal}</div>`;
+  const perdants = t.perdants.map((round, j) => colonne(nomTour(t, `L${j}`), round, () => `L${j}`)).join('');
+  const grande = t.grande.map((x, i) => colonne(nomTour(t, 'G', i), [x], () => 'G')).join('');
+  return `<div class="titre-groupe">Tableau principal</div><div class="trn-tableau">${principal}${grande}</div>
+    <div class="titre-groupe">Tableau des perdants · une défaite de plus et c'est fini</div><div class="trn-tableau">${perdants}</div>`;
 }
 const roundNom = (r, n) => ['Finale', 'Demi-finales', 'Quarts', 'Huitièmes', 'Seizièmes'][n - 1 - r] || `Tour ${r + 1}`;
 
@@ -132,14 +174,31 @@ async function organiserTournoi() {
   ]);
 }
 function tailleTournoi(g) {
-  sheet(`Tournoi ${titreDe(g)}`, 'Combien de joueurs au plus ? Tu le lances quand tu veux, même incomplet.', [
-    ...[4, 8, 16, 32].map((max) => ({ label: `${max} joueurs`, fn: () => creerTournoi(g, max) })),
+  sheet(`Tournoi ${titreDe(g)}`, 'Combien de joueurs au plus ? Il peut partir incomplet.', [
+    ...[4, 8, 16, 32].map((max) => ({ label: `${max} joueurs`, fn: () => formatTournoi(g, max) })),
     { label: 'Annuler', cancel: true },
   ]);
 }
-async function creerTournoi(g, max) {
+function formatTournoi(g, max) {
+  sheet(`Tournoi ${titreDe(g)} · ${max} joueurs`, 'Combien de défaites avant d\'être éliminé ?', [
+    { label: 'Élimination simple · une défaite et c\'est fini', fn: () => debutTournoi(g, max, 'simple') },
+    { label: 'Double élimination · chacun a droit à une défaite', fn: () => debutTournoi(g, max, 'double') },
+    { label: 'Annuler', cancel: true },
+  ]);
+}
+function debutTournoi(g, max, format) {
+  const a = (h) => { const d = new Date(); if (d.getHours() * 60 + d.getMinutes() > h * 60 - 30) d.setDate(d.getDate() + 1); return d.setHours(h, 0, 0, 0); };
+  const lib = (ms) => ((x) => (x.startsWith('demain') ? `Demain à ${x.slice(7)}` : `À ${x}`))(heureTournoi(ms));
+  const heures = [['Dans 30 min', Date.now() + 30 * 60000], ['Dans 1 h', Date.now() + 3600000], [lib(a(18)), a(18)], [lib(a(21)), a(21)]];
+  sheet('Quand commence-t-il ?', 'Avec une heure, chaque inscrit confirme sa présence 15 min avant, et le tournoi part tout seul.', [
+    { label: 'Quand je le lance', fn: () => creerTournoi(g, max, format, 0) },
+    ...heures.map(([label, ms]) => ({ label, fn: () => creerTournoi(g, max, format, ms) })),
+    { label: 'Annuler', cancel: true },
+  ]);
+}
+async function creerTournoi(g, max, format, debut) {
   try {
-    const t = await api('POST', '/tournois', { jeu: titreDe(g), console: g.console, titleId: g.title_id || '', gameKey: g.console === 'DS' ? dsKey(g) : '', gametdb: idGametdb(g) || '', max });
+    const t = await api('POST', '/tournois', { jeu: titreDe(g), console: g.console, titleId: g.title_id || '', gameKey: g.console === 'DS' ? dsKey(g) : '', gametdb: idGametdb(g) || '', max, format, debut });
     majTournoi(t);
     ouvrirTournoi(t.id);
     toast('Tournoi créé : les membres le voient dans Tournois.');
@@ -151,7 +210,9 @@ const appel = (methode, chemin, corps) => api(methode, chemin, corps).then(majTo
 const inscrireTournoi = (t, oui) => appel(oui ? 'POST' : 'DELETE', `/tournois/${t.id}/inscription`);
 function lancerTournoi(t) {
   if (t.joueurs.length < 2) return toast('Il faut au moins deux joueurs.');
-  sheet('Lancer le tournoi ?', `${t.joueurs.length} joueurs. Les inscriptions se ferment et le tableau est tiré au sort.`, [
+  const n = t.confirmation ? t.confirmes.length : t.joueurs.length;
+  if (n < 2) return toast('Il faut au moins deux joueurs confirmés.');
+  sheet('Lancer le tournoi ?', `${n} joueurs${t.confirmation && n < t.joueurs.length ? ' (ceux qui ont confirmé)' : ''}. Les inscriptions se ferment et le tableau est tiré au sort.`, [
     { label: 'Lancer', fn: () => appel('POST', `/tournois/${t.id}/lancer`) },
     { label: 'Retour', cancel: true },
   ]);
@@ -182,6 +243,121 @@ function resultatMatch(t, m, gagnant) {
 function arbitrer(t, r, i, x) {
   sheet('Qui a gagné ?', 'En tant qu\'organisateur, tu peux donner le résultat de ce match.', [
     ...[x.a, x.b].map((id) => ({ label: nomJoueur(t, id), fn: () => appel('POST', `/tournois/${t.id}/resultat`, { r, i, gagnant: id }) })),
+    { label: 'Retour', cancel: true },
+  ]);
+}
+
+/*
+ * Parties classées : une file par jeu, Loc trouve un adversaire de ton niveau et ouvre votre
+ * session. Après le match, chacun dit qui a gagné ; d'accord, les cotes bougent.
+ */
+let classes = {}; // clé du jeu -> classement (saison, top, moi)
+let fileClasse = null; // { g, depuis } pendant la recherche
+let matchClasse = null; // le match en cours, s'il y en a un
+const cleClasse = (g) => `${g.console}:${g.title_id || (g.console === 'DS' ? dsKey(g) : '') || titreDe(g).toLowerCase()}`;
+const corpsClasse = (g) => ({ jeu: titreDe(g), console: g.console, titleId: g.title_id || '', gameKey: g.console === 'DS' ? dsKey(g) : '' });
+// Jeux ouverts au classé (title ID Switch, comme côté Loc) : Mario Kart 8 Deluxe et Smash Ultimate.
+const JEUX_CLASSES = ['0100152000022000', '01006A800016E000'];
+const jeuxClasses = () => games.filter((g) => JEUX_CLASSES.includes((g.title_id || '').toUpperCase()));
+async function chargerClasses() {
+  if (!me) return;
+  await Promise.all(jeuxClasses().map(async (g) => {
+    classes[cleClasse(g)] = await api('GET', `/classe/classement?${new URLSearchParams(corpsClasse(g))}`).catch(() => classes[cleClasse(g)]);
+  }));
+  const e = await api('GET', '/classe/file').catch(() => null);
+  matchClasse = e?.etat === 'match' ? e.match : null;
+  if (onglet === 'tournois' && !trnOuvert) drawTournois();
+}
+const placeTexte = (c) => (c?.moi?.place ? `${c.moi.place}${c.moi.place === 1 ? 'er' : 'e'} · ` : '');
+/** Les cartes « Classé » en haut de Tournois : un jeu par carte, avec ta cote. */
+function htmlClasse(action) {
+  const jeux = jeuxClasses();
+  if (!me || !jeux.length) return '';
+  const m = matchClasse;
+  const match = m ? `<div class="trn-match classe"><img class="av" src="${esc(m.contre.avatar || 'img/hang-coucou.png')}" alt=""><span><small>Partie classée · ${esc(m.jeu)}</small><b>Contre ${esc(m.contre.name)} (${+m.contre.cote || 0})</b><small>${m.salon ? 'Persos, bans, résultats et chat : tout se passe dans le salon.' : m.declare ? 'Résultat donné, en attente de ton adversaire.' : m.sienne ? `${esc(m.contre.name)} a donné le résultat : à toi.` : 'Après le match, dis qui a gagné.'}</small></span>
+    <div class="trn-boutons">${m.salon ? `<button class="trn-el choix" data-n="${action(ouvrirSalonClasse)}">Ouvrir le salon</button>` : m.code ? `<button class="trn-el choix" data-n="${action(() => join(m.code))}">Rejoindre</button>` : ''}${m.declare || m.salon ? '' : `<button class="trn-el choix" data-n="${action(() => resultatClasse(m, me.id))}">J'ai gagné</button><button class="trn-el choix" data-n="${action(() => resultatClasse(m, m.contre.id))}">J'ai perdu</button>`}</div></div>` : '';
+  return `<div class="titre-groupe">Classé${classes[cleClasse(jeux[0])]?.saison ? ` · saison ${esc(classes[cleClasse(jeux[0])].saison)}` : ''}</div>${match}
+    <div class="trn-grille classe">${jeux.map((g) => {
+      const c = classes[cleClasse(g)];
+      return `<button class="trn-el trn-carte classe" data-n="${action(() => menuClasse(g))}"><div class="icone">${iconeHtml(g)}</div><span><b>${esc(titreDe(g))}</b><small>${placeTexte(c)}${c?.moi?.matchs ? `${c.moi.victoires} victoire${c.moi.victoires > 1 ? 's' : ''} sur ${c.moi.matchs}` : 'Pas encore classé'}${c?.enFile ? ` · ${c.enFile} en file` : ''}</small></span><i class="cote">${+c?.moi?.cote || 1000}</i></button>`;
+    }).join('')}</div><div class="titre-groupe">Tournois</div>`;
+}
+function menuClasse(g) {
+  const c = classes[cleClasse(g)];
+  sheet(titreDe(g), `Partie classée : Loc te trouve un adversaire de ton niveau et ouvre votre session. Ta cote : ${+c?.moi?.cote || 1000}${c?.moi?.place ? ` (${placeTexte(c)}de la saison)`.replace(' · ', ' ') : ''}.`, [
+    { label: 'Chercher un adversaire', fn: () => chercherClasse(g) },
+    { label: 'Voir le classement', fn: () => voirClassement(g) },
+    { label: 'Annuler', cancel: true },
+  ]);
+}
+function voirClassement(g) {
+  const c = classes[cleClasse(g)];
+  const top = c?.top || [];
+  sheet(`Classement · ${titreDe(g)}`, top.length ? `Saison ${esc(c.saison)}. La cote monte quand tu gagnes, surtout contre plus fort que toi.` : 'Personne n\'a encore joué en classé sur ce jeu cette saison.', [
+    ...top.slice(0, 20).map((x, k) => ({ html: `<span class="cl-ligne${x.id === me?.id ? ' moi' : ''}"><em>${k + 1}</em><img class="av" src="${esc(x.avatar || 'img/hang-coucou.png')}" alt=""><b>${esc(x.name || '…')}</b><small>${x.victoires}/${x.matchs}</small><i>${x.cote}</i></span>`, fn: () => voirClassement(g) })),
+    { label: 'Retour', cancel: true, fn: () => menuClasse(g) },
+  ]);
+}
+
+async function chercherClasse(g) {
+  try {
+    const e = await api('POST', '/classe/file', corpsClasse(g));
+    fileClasse = { g, depuis: Date.now(), e };
+    ouvrirSalle({ mode: 'file', actions: [{ label: 'Annuler', k: 'b', fn: annulerClasse }] });
+    suivreClasse();
+  } catch (e) {
+    oops(e);
+  }
+}
+let suiviClasse = null;
+function suivreClasse() {
+  clearTimeout(suiviClasse);
+  if (!fileClasse) return;
+  suiviClasse = setTimeout(async () => {
+    const e = await api('GET', '/classe/file').catch(() => fileClasse?.e);
+    if (!fileClasse) return;
+    fileClasse.e = e;
+    if (e?.etat === 'match' && e.match.code) {
+      matchClasse = e.match;
+      fileClasse.trouve = true;
+      son('notif', true);
+      drawSalle();
+      const code = e.match.code;
+      // Smash et Mario Kart : le salon du match d'abord (persos, bans…), le jeu ensuite.
+      setTimeout(() => (fermerSalle(), (fileClasse = null), e.match.salon ? ouvrirSalonClasse() : join(code)), 1800);
+      return;
+    }
+    if (e?.etat === 'libre') return annulerClasse();
+    drawSalle();
+    suivreClasse();
+  }, 3000);
+}
+function annulerClasse() {
+  clearTimeout(suiviClasse);
+  fileClasse = null;
+  api('DELETE', '/classe/file').catch(() => {});
+  fermerSalle();
+}
+/** L'écran de recherche, dans la salle : le jeu, le temps d'attente, la cote. */
+function drawFile() {
+  const { g, depuis, e, trouve } = fileClasse || {};
+  if (!g) return;
+  const s = Math.floor((Date.now() - depuis) / 1000);
+  const m = e?.match;
+  $('#salle').innerHTML = `<div class="salle-carte file-classe${trouve ? ' trouve' : ''}">
+    <div class="salle-jeu"><div class="icone grande">${iconeHtml(g)}</div><div><h2>${esc(titreDe(g))}</h2><span>Partie classée · ${LONG[g.console]}</span></div></div>
+    <div class="file-centre">${trouve && m ? `<img class="av" src="${esc(m.contre.avatar || 'img/hang-coucou.png')}" alt=""><b>${esc(m.contre.name)}</b><span>Cote ${+m.contre.cote || 0} · lancement…</span>`
+      : `<div class="file-ondes"><i></i><i></i><i></i><img class="av" src="${esc(me?.avatar || 'img/hang-coucou.png')}" alt=""></div><b>Recherche d'un adversaire</b><span>${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')} · ta cote ${+e?.cote || 1000}${e?.joueurs > 1 ? ` · ${e.joueurs} dans la file` : ''}</span>`}</div>
+    <div class="salle-actions">${trouve ? '' : `<button class="choix focus" data-a="non">${glyphs.b}Annuler</button>`}</div>
+    <img class="salle-loc" src="img/loc/loc_${trouve ? 'gg' : 'cherche'}.gif" alt="">
+  </div>`;
+  $('#salle [data-a="non"]')?.addEventListener('click', annulerClasse);
+}
+setInterval(() => salle?.mode === 'file' && !fileClasse?.trouve && drawFile(), 1000);
+function resultatClasse(m, gagnant) {
+  const moi = gagnant === me.id;
+  sheet(moi ? 'Tu as gagné ?' : `${m.contre.name} a gagné ?`, 'Ton adversaire donne aussi le résultat. S\'il n\'est pas d\'accord, le match ne compte pas.', [
+    { label: 'Confirmer', fn: () => api('POST', '/classe/resultat', { match: m.id, gagnant }).then((e) => ((matchClasse = e?.etat === 'match' ? e.match : null), chargerClasses())).catch(oops) },
     { label: 'Retour', cancel: true },
   ]);
 }

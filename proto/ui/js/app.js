@@ -2,8 +2,9 @@
 const { invoke, Channel } = window.__TAURI__.core;
 
 function drawGlyphs() {
-  document.querySelector('#menu-aide').innerHTML = `Appuie sur ${glyphs.home} pour revenir au jeu.`;
-  document.querySelector('#menu-touches').innerHTML = `<span>${glyphs.a}Valider</span><span>${glyphs.b}Reprendre</span>`;
+  document.querySelector('#menu-aide').innerHTML = `Appuie sur ${glyphs.home} pour reprendre le jeu.`;
+  document.querySelector('#menu-touches').innerHTML = `<span>${glyphs.a}Valider</span><span>${glyphs.b}Retour</span>`;
+  if (typeof drawEnCours === 'function') drawEnCours();
   if (typeof drawHome === 'function') drawHome();
 }
 const { listen } = window.__TAURI__.event;
@@ -17,8 +18,12 @@ function toast(t) {
 }
 
 let games = [], menuFocus = 0, current = null;
+// Menu HOME : tout En Local ouvert pendant une partie (voir entrerAccueil).
+let enAccueil = false;
+// Le prochain menu ouvert est le choix photo ou clip (bouton de partage), sans le menu HOME.
+let captureSeule = false;
 const shown = (s) => $(s).style.display === 'grid';
-const view = () => (shown('#menu') ? 'menu' : shown('#sheet') ? 'sheet' : saisieOuverte() ? 'saisie' : vueOuverte() ? 'vue' : salle ? 'salle' : current ? 'jeu' : bienvenueOuverte() ? 'bienvenue' : 'biblio');
+const view = () => (shown('#menu') ? 'menu' : shown('#sheet') ? 'sheet' : saisieOuverte() ? 'saisie' : figurinesOuvertes() ? 'figurines' : vueOuverte() ? 'vue' : distanceVisible() ? 'distance' : salle ? 'salle' : current && !enAccueil ? 'jeu' : bienvenueOuverte() ? 'bienvenue' : 'biblio');
 // Les noms viennent aussi des autres membres : jamais de HTML brut.
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
@@ -34,6 +39,22 @@ async function api(method, path, body) {
   if (res.status === 401) { delete localStorage.token; me = null; drawHome(); }
   if (!res.ok) throw data.error || `Erreur ${res.status}`;
   return data;
+}
+
+/**
+ * Journaux de la dernière partie envoyés à Loc (une fois chacun), pour comprendre les bugs
+ * signalés : après une partie, et avant d'en lancer une (l'émulateur réécrit son journal, et
+ * un jeu planté n'est pas passé par « Quitter »).
+ */
+async function envoyerJournaux(jeu = '', seulApp = false) {
+  if (!me) return;
+  const j = await invoke('journaux').catch(() => null);
+  if (!j) return;
+  if (seulApp) Object.assign(j, { source: 'app', emu: undefined });
+  else if (!j.quand || String(j.quand) === localStorage.journalEnvoye) return;
+  else localStorage.journalEnvoye = j.quand;
+  const version = await window.__TAURI__.app?.getVersion?.().catch(() => '');
+  api('POST', '/journaux', { ...j, jeu, version }).catch(() => {});
 }
 
 const b64url = (bytes) => btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -185,12 +206,16 @@ function startBeat() {
   beat = setInterval(heartbeatNow, 10000); // 10 s pour que l'hôte voie vite qui attend
 }
 
-/** Switch : salon sur le serveur du Local ou sur le PC de l'hôte. Rend null, 'pc' ou false (annulé). */
-function choisirSalon(g) {
+/**
+ * Switch : salon sur le serveur du Local ou sur le PC de l'hôte, ou jeu à distance (depuis la
+ * bibliothèque : Eden doit être lancé pour). Rend null, 'pc', 'distance' ou false (annulé).
+ */
+function choisirSalon(g, aDistance = false) {
   if (g.console !== 'Switch') return Promise.resolve(null);
-  return new Promise((ok) => sheet('Où héberger la partie ?', 'Le serveur du Local marche pour tout le monde. Sur ton PC, les autres se connectent directement à toi : moins de latence, si ta connexion est bonne (la fibre de préférence).', [
+  return new Promise((ok) => sheet('Où héberger la partie ?', `Le serveur du Local marche pour tout le monde. Sur ton PC, les autres se connectent directement à toi : moins de latence, si ta connexion est bonne (la fibre de préférence).${aDistance ? '<br><br>À distance : pour les jeux sans mode sans fil local (Mario Party…). Ton jeu tourne chez toi, les autres voient ton écran et jouent avec leur manette, comme s\'ils étaient à côté.' : ''}`, [
     { label: 'Serveur du Local', fn: () => ok(null) },
     { label: 'Sur mon PC', fn: () => ok('pc') },
+    ...(aDistance ? [{ label: 'À distance', fn: () => ok('distance') }] : []),
     { label: 'Annuler', cancel: true, fn: () => ok(false) },
   ]));
 }
@@ -210,11 +235,13 @@ async function salonSurMonPc(g, places) {
   }
 }
 
+/** Fin d'une action du jeu en cours : on reste dans le menu HOME, sinon la partie reprend. */
+const retourMenu = () => (enAccueil ? fermerOptions() : (($('#menu').style.display = 'grid'), closeMenu()));
 /** Session en pleine partie, sans relancer le jeu (Switch et DS). */
 function sessionEnJeu() {
   const g = current;
   if (!g) return;
-  const retour = () => (($('#menu').style.display = 'grid'), drawMenu());
+  const retour = retourMenu;
   $('#menu').style.display = 'none';
   if (!me) return sheet('Session en ligne', 'Connecte-toi avec Discord pour jouer avec les membres.', [{ label: 'Retour', cancel: true, fn: retour }]);
   if (!['Switch', 'DS', '3DS'].includes(g.console)) {
@@ -240,15 +267,14 @@ function quitterSessionEnJeu(g) {
   updatePresence();
   envoyerHabillage();
   toast(`Session ${code} quittée : ta partie continue en solo.`);
-  $('#menu').style.display = 'grid';
-  drawMenu();
+  retourMenu();
 }
 async function creerSessionEnJeu(g) {
   const f = fiche(g);
   const places = f && Math.max(f.players || 0, f.online || 0);
   const slots = places > 1 ? Math.min(8, places) : undefined;
   const ou = await choisirSalon(g);
-  if (ou === false) return sessionEnJeu();
+  if (ou === false) return retourMenu();
   const salon = ou === 'pc' ? await salonSurMonPc(g, slots) : undefined;
   const s = await api('POST', '/sessions', { game: g.name, console: g.console, titleId: ['3DS', 'Switch'].includes(g.console) ? g.title_id || '' : '', gameKey: dsKey(g), slots, salon }).catch((e) => {
     if (salon) invoke('salon_fermer');
@@ -261,7 +287,7 @@ async function creerSessionEnJeu(g) {
   startBeat(s.code);
   if (s.room) await invoke('salon_en_jeu', { room: s.room });
   updatePresence();
-  sheet(`Session ${s.code}`, 'Donne ce code aux autres : « Rejoindre avec un code » dans En Local, ou invite-les depuis Social. Dans le jeu, choisis le mode sans fil local.', [{ label: 'Reprendre le jeu', fn: () => (($('#menu').style.display = 'grid'), closeMenu()) }]);
+  sheet(`Session ${s.code}`, 'Donne ce code aux autres : « Rejoindre avec un code » dans En Local, ou invite-les depuis Social. Dans le jeu, choisis le mode sans fil local.', [{ label: 'Reprendre le jeu', fn: closeMenu }, ...(enAccueil ? [{ label: 'Rester dans le menu', cancel: true }] : [])]);
 }
 async function rejoindreEnJeu(g, code) {
   const s = await api('POST', `/sessions/${encodeURIComponent(code)}/join`);
@@ -280,10 +306,12 @@ async function rejoindreEnJeu(g, code) {
   startBeat(s.code);
   if (s.room) await invoke('salon_en_jeu', { room: s.room });
   updatePresence();
-  sheet(`Session ${s.code}`, 'Tu es dans la session. Dans le jeu, choisis le mode sans fil local pour retrouver les autres.', [{ label: 'Reprendre le jeu', fn: () => (($('#menu').style.display = 'grid'), closeMenu()) }]);
+  sheet(`Session ${s.code}`, 'Tu es dans la session. Dans le jeu, choisis le mode sans fil local pour retrouver les autres.', [{ label: 'Reprendre le jeu', fn: closeMenu }, ...(enAccueil ? [{ label: 'Rester dans le menu', cancel: true }] : [])]);
 }
 
 async function host(i) {
+  if (current && enAccueil && games[i] === current && ['Switch', 'DS', '3DS'].includes(current.console) && !session) return creerSessionEnJeu(current).catch(oops);
+  if (current && enAccueil) return libererJeu(() => host(i));
   const g = games[i];
   try {
     await ensureFriendCode(g);
@@ -291,21 +319,21 @@ async function host(i) {
     const f = fiche(g);
     const places = f && (['GC', 'Wii'].includes(g.console) ? f.players : Math.max(f.players || 0, f.online || 0));
     const slots = places > 1 ? Math.min(8, places) : undefined;
-    const ou = await choisirSalon(g);
+    const ou = await choisirSalon(g, true);
     if (ou === false) return;
     const salon = ou === 'pc' ? await salonSurMonPc(g, slots) : undefined;
-    const s = await api('POST', '/sessions', { game: g.name, console: g.console, titleId: ['3DS', 'Switch'].includes(g.console) ? g.title_id || '' : '', gameKey: g.disc_id ? g.disc_id.slice(0, 4) : dsKey(g), slots, salon }).catch((e) => {
+    const s = await api('POST', '/sessions', { game: g.name, console: g.console, titleId: ['3DS', 'Switch'].includes(g.console) ? g.title_id || '' : '', gameKey: g.disc_id ? g.disc_id.slice(0, 4) : dsKey(g), slots: ou === 'distance' ? Math.max(slots || 0, 4) : slots, salon, distance: ou === 'distance' }).catch((e) => {
       if (salon) invoke('salon_fermer');
       throw e;
     });
     if (salon && !s.chezHote) invoke('salon_fermer'); // Loc a refusé le salon du PC : le serveur du Local
-    session = { code: s.code, members: s.members, players: s.players, slots: s.slots, gameKey: s.gameKey };
+    session = { code: s.code, members: s.members, players: s.players, slots: s.slots, gameKey: s.gameKey, distance: s.distance };
     compter('sessionsCreees');
     compterJeu(g, 's');
     // Sans signe de vie de l'hôte pendant 2 min, Loc ferme la session.
     startBeat(s.code);
     if (g.console === 'GC' || g.console === 'Wii') return netplayLobby(i, '');
-    const aide = {
+    const aide = s.distance ? 'Les autres le tapent dans « Rejoindre avec un code » : ils verront ton écran et joueront avec leur manette (joueurs 2 à 8), même en pleine partie.' : {
       DS: 'Une fois dans le jeu, connectez-vous au Wi-Fi : vos codes ami sont dans le menu (touche Accueil).',
       Switch: 'Les autres le tapent dans « Rejoindre avec un code ». Dans le jeu, choisissez le mode sans fil local.',
     }[g.console] || 'Les autres le tapent dans « Rejoindre avec un code », ou cliquent sur Rejoindre dans Discord.';
@@ -323,7 +351,7 @@ async function host(i) {
 let pendingCode = null;
 function openLink(code) {
   if (!code) return;
-  if (current) return oops(`Quitte le jeu en cours pour rejoindre la session ${code}.`);
+  if (current) return enAccueil ? libererJeu(() => openLink(code)) : oops(`Quitte le jeu en cours pour rejoindre la session ${code}.`);
   if (!me) {
     pendingCode = code;
     return status(`Connecte-toi avec Discord pour rejoindre la session ${code}.`);
@@ -332,27 +360,47 @@ function openLink(code) {
 }
 listen('lien', (e) => openLink(e.payload));
 
+/** Mon exemplaire du jeu d'une session : même title ID, même jeu DS, une version compatible, sinon même nom. -1 sinon. */
+function jeuDeSession(s) {
+  let i = games.findIndex((g) => (s.console === 'DS' ? s.gameKey && dsKey(g) === s.gameKey : s.titleId && g.title_id === s.titleId));
+  if (i < 0 && (s.console === 'DS' || s.console === '3DS')) {
+    const f = familleDe(s.console === 'DS' ? s.gameKey : s.titleId);
+    i = games.findIndex((g) => g.console === s.console && f.includes(s.console === 'DS' ? dsKey(g) : g.title_id));
+  }
+  if (i < 0 && (s.console === 'GC' || s.console === 'Wii')) i = games.findIndex((g) => g.console === s.console && g.disc_id && g.disc_id.slice(0, 4) === s.gameKey);
+  if (i < 0) i = games.findIndex((g) => g.name === s.game || (g.console === s.console && s.game && g.name.toLowerCase() === s.game.toLowerCase()));
+  return i;
+}
+
 async function join(code) {
+  if (current && enAccueil) return rejoindreDepuisAccueil(code);
   try {
     const s = await api('POST', `/sessions/${encodeURIComponent(code.trim())}/join`);
-    // Chacun joue avec son propre jeu : même title ID, même jeu DS, sinon même nom.
-    let i = games.findIndex((g) => (s.console === 'DS' ? s.gameKey && dsKey(g) === s.gameKey : s.titleId && g.title_id === s.titleId));
-    // Sinon une version compatible.
-    if (i < 0 && (s.console === 'DS' || s.console === '3DS')) {
-      const f = familleDe(s.console === 'DS' ? s.gameKey : s.titleId);
-      i = games.findIndex((g) => g.console === s.console && f.includes(s.console === 'DS' ? dsKey(g) : g.title_id));
+    const i = jeuDeSession(s);
+    // Switch : ceux qui font tourner le jeu prennent aussi des invités à distance (sans le jeu, c'est la seule façon).
+    const ecrans = s.distance ? [] : (s.ecrans || []).filter((e) => e.id !== me.id);
+    const ecran = ecrans.length && (await new Promise((ok) => sheet(`Session ${s.code}`, `${esc(s.game)} : joue avec ton exemplaire, ou rejoins l'écran d'un joueur à distance (tu joues avec ta manette, comme à côté de lui).`, [
+      ...(i >= 0 ? [{ label: 'Sur mon PC', fn: () => ok(null) }] : []),
+      ...ecrans.map((e) => ({ label: `Écran de ${e.name}`, fn: () => ok(e) })),
+      { label: 'Annuler', cancel: true, fn: () => ok(false) },
+    ])));
+    if (ecran === false) return api('DELETE', `/sessions/${s.code}`).catch(() => {});
+    if (ecran) {
+      session = { code: s.code, members: s.members, players: s.players, slots: s.slots, gameKey: s.gameKey, distance: true };
+      compter('sessionsRejointes');
+      startBeat(s.code);
+      return distanceInvite(s, ecran);
     }
-    if (i < 0 && (s.console === 'GC' || s.console === 'Wii')) i = games.findIndex((g) => g.console === s.console && g.disc_id && g.disc_id.slice(0, 4) === s.gameKey);
-    if (i < 0) i = games.findIndex((g) => g.name === s.game);
     if (i < 0) {
       api('DELETE', `/sessions/${s.code}`).catch(() => {});
       return oops(`Il te faut ton propre exemplaire de ${s.game} (ou d'une version compatible) pour rejoindre cette session.`);
     }
-    session = { code: s.code, members: s.members, players: s.players, slots: s.slots, gameKey: s.gameKey };
+    session = { code: s.code, members: s.members, players: s.players, slots: s.slots, gameKey: s.gameKey, distance: s.distance };
     await ensureFriendCode(games[i]);
     compter('sessionsRejointes');
     compterJeu(games[i], 's');
     startBeat(s.code);
+    if (s.distance) return distanceInvite(s);
     if (s.console === 'GC' || s.console === 'Wii') return netplayJoin(i, s);
     play(i, s.room);
   } catch (e) {
@@ -406,7 +454,7 @@ async function netplayLobby(i, hostCode) {
       stop();
       const wasPlaying = current;
       cancelLobby();
-      if (wasPlaying) { compterTemps(); current = null; $('#jeu').style.display = 'none'; status(''); updatePresence(); }
+      if (wasPlaying) { compterTemps(); current = null; enAccueil = false; drawEnCours(); $('#jeu').style.display = 'none'; status(''); updatePresence(); }
       return oops(l.error ? 'Connexion au netplay impossible (partie en cours chez l\'hôte, ou hôte parti).' : 'La partie en ligne est terminée.');
     }
     if (l.playing && !playing) {
@@ -585,6 +633,7 @@ async function verifierMaj() {
 }
 
 function leaveSession() {
+  finDistance();
   if (!session) return;
   clearInterval(beat);
   invoke('salon_fermer'); // salon sur ce PC, s'il y en a un
@@ -801,7 +850,7 @@ function chercherJaquette(g, k) {
 // Image chargée : le nom du jeu s'efface. Le « load » d'une image ne remonte pas jusqu'à window.
 document.addEventListener('load', (e) => e.target.dataset?.k && e.target.classList.contains('jaquette') && e.target.parentNode?.querySelector('.sans')?.classList.add('cache'), true);
 document.addEventListener('load', (e) => e.target.dataset?.cadre === 'attente' && cadrerEshop(e.target), true);
-/** Modèle eShop : l'icône est remplie par l'image ; la jaquette verticale montre l'image entière sur un fond flouté d'elle-même. */
+/** Modèle eShop : l'image du jeu remplit l'icône et la jaquette du carrousel (recadrée au centre). */
 const cadresEshop = new Map();
 function cadrerEshop(img) {
   const forme = img.closest('.g') ? JAQUETTES.Switch.ratio : img.matches('.icone-img, .m-img') ? 1 : 0;
@@ -814,7 +863,7 @@ function cadrerEshop(img) {
       im.onload = () => {
         try {
           const [sx, sy, sw, sh] = [im.width * 0.103, im.height * 0.302, im.width * 0.794, im.height * 0.27];
-          // L'image seule d'abord, sinon le flou reprend le rouge du modèle.
+          // L'image seule d'abord, sans le cadre rouge du modèle.
           const seule = document.createElement('canvas');
           seule.width = Math.round(sw);
           seule.height = Math.round(sh);
@@ -823,18 +872,9 @@ function cadrerEshop(img) {
           c.width = 512;
           c.height = Math.round(512 / forme);
           const ctx = c.getContext('2d');
-          // Icône : l'image remplit le carré (recadrée au centre).
-          if (forme === 1) {
-            const cote = Math.min(seule.width, seule.height);
-            ctx.drawImage(seule, (seule.width - cote) / 2, (seule.height - cote) / 2, cote, cote, 0, 0, c.width, c.height);
-            return ok(c.toDataURL('image/jpeg', 0.9));
-          }
-          const k = Math.max(c.width / sw, c.height / sh) * 1.2;
-          ctx.filter = 'blur(28px) brightness(.55) saturate(1.3)';
-          ctx.drawImage(seule, (c.width - sw * k) / 2, (c.height - sh * k) / 2, sw * k, sh * k);
-          ctx.filter = 'none';
-          const h = (c.width * sh) / sw;
-          ctx.drawImage(seule, 0, (c.height - h) / 2, c.width, h);
+          // L'image remplit l'icône comme la jaquette du carrousel : recadrée au centre, sans bandes.
+          const [w, h] = seule.width / seule.height > forme ? [seule.height * forme, seule.height] : [seule.width, seule.width / forme];
+          ctx.drawImage(seule, (seule.width - w) / 2, (seule.height - h) / 2, w, h, 0, 0, c.width, c.height);
           ok(c.toDataURL('image/jpeg', 0.9));
         } catch {
           ok('');
@@ -879,7 +919,8 @@ function quand(ms) {
 const duree = (s) => (s >= 3600 ? `${Math.floor(s / 3600)} h de jeu` : `${Math.max(1, Math.round(s / 60))} min de jeu`);
 const noms = (l) => (l.length > 1 ? `${l.slice(0, -1).join(', ')} et ${l.at(-1)}` : l[0] || '');
 const autres = () => sessionsLocal.filter((s) => s.code && s.host?.id !== me?.id);
-const ownGame = (s) => games.findIndex((g) => g.name === s.game || (g.console === s.console && s.game && g.name.toLowerCase() === s.game.toLowerCase()));
+// Mon exemplaire du jeu d'une session (title ID, clé du jeu, sinon nom) : voir jeuDeSession.
+const ownGame = (s) => jeuDeSession(s);
 
 /* ---------- Choisir une session ---------- */
 
@@ -893,7 +934,7 @@ const vignetteSession = (s, cls = 'micro') => {
 };
 const joueursSession = (s) => (Array.isArray(s.joueurs) ? s.joueurs : []).filter((j) => j && typeof j.name === 'string');
 const placesSession = (s) => `<span class="places">${Array.from({ length: Math.min(8, +s.slots || 0) }, (_, k) => `<i class="${k < (+s.players || 0) ? 'prise' : ''}"></i>`).join('')}</span>`;
-const badgeSession = (s) => (s.chezHote ? '<span class="badge-s direct">Sur son PC</span>' : '<span class="badge-s">Serveur du Local</span>');
+const badgeSession = (s) => (s.distance ? '<span class="badge-s direct">À distance</span>' : s.chezHote ? '<span class="badge-s direct">Sur son PC</span>' : '<span class="badge-s">Serveur du Local</span>');
 
 function carteSession(s) {
   const j = joueursSession(s);
@@ -996,8 +1037,8 @@ const fiches = JSON.parse(localStorage.fiches || '{}');
 const idFiche = (g) => (g.console === 'Switch' ? g.name : g.console === 'GC' || g.console === 'Wii' ? g.disc_id : g.product_code);
 const fiche = (g) => fiches[`${g.console}:${idFiche(g)}`];
 async function chargerFiches() {
-  // Anciennes fiches sans eshop ou title_en : redemandées une fois.
-  const manque = games.filter((g) => idFiche(g) && (!fiche(g) || fiche(g).title_en === undefined || (g.console === 'Switch' && fiche(g).eshop === undefined))).map((g) => [g.console, idFiche(g)]);
+  // Anciennes fiches sans eshop, title_en ou manettes : redemandées une fois.
+  const manque = games.filter((g) => idFiche(g) && (!fiche(g) || fiche(g).title_en === undefined || (g.console === 'Switch' && fiche(g).eshop === undefined) || (g.console === 'Wii' && fiche(g).manettes === undefined))).map((g) => [g.console, idFiche(g)]);
   if (!manque.length) return;
   const r = await invoke('game_infos', { wanted: manque }).catch(() => ({}));
   for (const [c, id] of manque) if (r[id]) fiches[`${c}:${id}`] = r[id];
@@ -1255,7 +1296,7 @@ setInterval(horloge, 15000);
 
 /** Sessions ouvertes, rafraîchies dans les menus. */
 async function rafraichirSessions() {
-  if (!me || current) return;
+  if (!me || (current && !enAccueil)) return;
   sessionsLocal = await api('GET', '/sessions').catch(() => sessionsLocal);
   if (view() === 'biblio') drawHome();
 }
@@ -1375,7 +1416,7 @@ async function resetJeu() {
   son('lancer', true);
   try {
     // Depuis le menu : le jeu reprend d'abord, puis repart à zéro.
-    if (shown('#menu')) await closeMenu();
+    if (shown('#menu') || enAccueil) await closeMenu();
     if (await invoke('reset_jeu').catch(() => false)) return envoyerHabillage();
     const { i, room } = dernierLancement || {};
     if (i === undefined) return;
@@ -1389,7 +1430,37 @@ async function resetJeu() {
   }
 }
 
+/*
+ * Shaders Switch partagés : chacun envoie au Local ceux de son jeu après une partie, et reçoit
+ * avant de jouer ceux de tous les membres (les spells de Smash déjà prêts). Réglages, Switch.
+ */
+const partageShaders = (g) => g?.console === 'Switch' && g.title_id && me && (emu.consoles.Switch?.shaders_partage ?? 'oui') === 'oui';
+const titreShaders = (g) => g.title_id.toLowerCase();
+async function envoyerShaders(g) {
+  const t = titreShaders(g);
+  const taille = await invoke('shaders_taille', { titre: t }).catch(() => 0);
+  if (!taille || String(taille) === localStorage[`shaders:${t}`]) return;
+  const brut = await invoke('shaders_lire', { titre: t });
+  const gz = await new Response(new Blob([brut]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer();
+  const res = await fetch(`${API}/shaders/${t}`, { method: 'PUT', headers: { Authorization: `Bearer ${localStorage.token}`, 'Content-Type': 'application/gzip' }, body: gz });
+  if (res.ok) localStorage[`shaders:${t}`] = String(taille);
+}
+async function recevoirShaders(g) {
+  const t = titreShaders(g);
+  await envoyerShaders(g); // ce qui n'a pas encore été envoyé d'abord : rien ne se perd
+  const local = await invoke('shaders_taille', { titre: t }).catch(() => 0);
+  const info = await api('GET', `/shaders/${t}`);
+  if (!info.taille || info.taille <= local * 1.02) return;
+  status(`Shaders des membres pour ${g.name}…`);
+  const res = await fetch(`${API}/shaders/${t}/cache`, { headers: { Authorization: `Bearer ${localStorage.token}` } });
+  if (!res.ok) return;
+  const brut = await new Response(res.body.pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
+  await invoke('shaders_ecrire', new Uint8Array(brut), { headers: { titre: t } });
+  localStorage[`shaders:${t}`] = String(brut.byteLength);
+}
+
 async function play(i, room = null) {
+  if (current && enAccueil) return games[i] === current ? closeMenu() : libererJeu(() => play(i, room));
   const g = games[i];
   dernierLancement = { i, room };
   // Switch .nsz / .xcz : décompressé une fois, l'original supprimé.
@@ -1407,7 +1478,9 @@ async function play(i, room = null) {
     }
     status('');
   }
+  await envoyerJournaux();
   await pokedexAvantPartie(g);
+  if (partageShaders(g)) await recevoirShaders(g).catch(() => {});
   if (!musique.paused) musique.pause();
   son('lancer');
   const update = majDe(g);
@@ -1422,8 +1495,9 @@ async function play(i, room = null) {
   status(`Lancement de ${g.name}…`);
   try {
     canvas.classList.toggle('lisse', lissageDs(g));
-    await invoke('play', { path: g.path, console: g.console, room, update, opts: optsDe(g), frames });
+    await invoke('play', { path: g.path, console: g.console, room, update, opts: { ...optsDe(g), ...(session?.distance ? { distance: 'oui' } : invitesEnSession(g) ? { invites: 'oui' } : {}) }, frames });
     status('');
+    if (session?.distance || invitesEnSession(g)) distanceHote();
     for (const ms of [0, 2000, 6000, 15000, 40000]) setTimeout(() => current === g && volumeJeu(), ms);
     for (const ms of [0, 1500]) setTimeout(() => current === g && envoyerHabillage(), ms);
     (stats[g.path] ||= { secs: 0, last: 0 }).last = Date.now();
@@ -1465,6 +1539,8 @@ async function setMenu(open) {
     await new Promise((r) => setTimeout(r, 40)); // le temps que Windows l'affiche
   }
   if (seq !== menuSeq) return;
+  // Menu HOME : pas de menu d'options, tout se passe dans En Local.
+  if (open && enAccueil) return fermerOptions();
   $('#menu').classList.remove('sortie');
   $('#menu').style.display = open ? 'grid' : 'none';
   $('#menu-titre').textContent = current ? current.name + (session ? ` · session ${session.code}` : '') : 'En pause';
@@ -1486,6 +1562,7 @@ async function setMenu(open) {
 
 async function act(name) {
   if (name === 'volume') return;
+  if (name === 'accueil') return fermerOptions();
   if (name === 'resume') await closeMenu();
   if (name === 'relaunch') { await relaunchWithWaiting(); }
   if (name === 'fc') {
@@ -1493,10 +1570,10 @@ async function act(name) {
     $('#menu').style.display = 'none';
     await editFriendCode(current);
     if (session) heartbeatNow();
-    setMenu(true);
+    retourMenu();
   }
   // Pour les manettes sans bouton de partage.
-  if (name === 'capturer') return menuCapture(true);
+  if (name === 'capturer') return menuCapture();
   if (name === 'session') return sessionEnJeu();
   if (name === 'chasse') return basculerChasse();
   if (name === 'reset') return resetJeu();
@@ -1505,20 +1582,21 @@ async function act(name) {
     const n = +localStorage[`resets:${current.path}`] || 0;
     $('#menu').style.display = 'none';
     return sheet('Remettre le compteur à zéro ?', `${n} reset${n > 1 ? 's' : ''} sur cette chasse. Le compteur repart de 0.`, [
-      { label: 'Retour', cancel: true, fn: () => setMenu(true) },
-      { label: 'Remettre à zéro', fn: () => ((compteurs.resetsPasses = (compteurs.resetsPasses || 0) + n), garderCompteurs(), (localStorage[`resets:${current.path}`] = 0), envoyerHabillage(), drawMenu(), setMenu(true), toast(`Compteur remis à zéro (${n} resets)`)) },
+      { label: 'Retour', cancel: true, fn: retourMenu },
+      { label: 'Remettre à zéro', fn: () => ((compteurs.resetsPasses = (compteurs.resetsPasses || 0) + n), garderCompteurs(), (localStorage[`resets:${current.path}`] = 0), envoyerHabillage(), retourMenu(), toast(`Compteur remis à zéro (${n} resets)`)) },
     ]);
   }
   if (name === 'quit') {
     // On demande d'abord. ○ / Échap ramène au menu.
     $('#menu').style.display = 'none';
     sheet('Quitter le jeu ?', 'N\'oublie pas de sauvegarder : tout ce qui n\'est pas sauvegardé sera perdu.', [
-      { label: 'Retour', cancel: true, fn: () => setMenu(true) },
+      { label: 'Retour', cancel: true, fn: retourMenu },
       { label: 'Quitter le jeu', fn: () => act('quitter') },
     ]);
   }
   if (name === 'quitter') {
     pokedexApresPartie(current);
+    const joue = current;
     saveShot(current);
     compterTemps();
     await setMenu(false);
@@ -1526,12 +1604,24 @@ async function act(name) {
     invoke('habillage_ds', { format: 0, visible: false }).catch(() => {});
     $('#jeu').classList.remove('habille');
     await invoke('quit_game');
+    envoyerJournaux(joue?.name);
     leaveSession();
     current = null;
+    enAccueil = false;
+    drawEnCours();
     updatePresence();
     $('#jeu').style.display = 'none';
     status('');
     await apresPartie();
+    // Après une partie classée : son salon, ou qui a gagné ?
+    if (matchClasse?.salon) ouvrirSalonClasse();
+    else if (matchClasse && !matchClasse.declare && joue.console === matchClasse.console) sheet(`Partie classée contre ${esc(matchClasse.contre.name)}`, 'Qui a gagné ?', [
+      { label: 'J\'ai gagné', fn: () => resultatClasse(matchClasse, me.id) },
+      { label: 'J\'ai perdu', fn: () => resultatClasse(matchClasse, matchClasse.contre.id) },
+      { label: 'Plus tard (dans Compétition)', cancel: true },
+    ]);
+    // Envoi après la fermeture d'Eden : le cache est complet.
+    if (partageShaders(joue)) envoyerShaders(joue).catch(() => {});
     drawHome();
     rafraichirSessions();
     envoyerStats();
@@ -1540,6 +1630,7 @@ async function act(name) {
 document.querySelectorAll('#menu .btn').forEach((b) => (b.onclick = () => act(b.dataset.act)));
 
 async function closeMenu() {
+  if (enAccueil) return (son('reprise', true), compterTemps(), quitterAccueilJeu());
   if (!shown('#menu') || $('#menu').classList.contains('sortie')) return;
   son('reprise', true);
   compterTemps();
@@ -1547,6 +1638,86 @@ async function closeMenu() {
   await new Promise((r) => setTimeout(r, 180));
   await backToGame();
 }
+/*
+ * Menu HOME : PS ouvre tout En Local, le jeu en pause derrière (en session, il continue sans
+ * recevoir les touches). PS, la tuile « Reprendre » ou le bandeau « En cours » y retournent ;
+ * Start quitte le jeu, « − » ouvre ses actions (session, chasse, quitter). Un seul jeu à la fois.
+ */
+async function entrerAccueil() {
+  enAccueil = true;
+  await setMenu(true); // l'image du jeu, et le jeu caché derrière l'interface
+  if (!enAccueil || !current) return;
+  $('#en-cours img').src = canvas.toDataURL('image/jpeg', 0.7);
+  fermerOptions();
+  drawEnCours();
+  drawHome();
+  rafraichirSessions();
+  // Partie classée en cours : le menu HOME s'ouvre sur son salon (résultat de la manche, bans…).
+  if (matchClasse?.salon) ouvrirSalonClasse();
+}
+/** Options du jeu fermées : retour au menu HOME. */
+function fermerOptions() {
+  $('#menu').style.display = 'none';
+  $('#jeu').style.display = 'none';
+  canvas.classList.remove('photo');
+}
+async function quitterAccueilJeu() {
+  enAccueil = false;
+  drawEnCours();
+  if (panneauOuvert) basculerMembres(false);
+  if (contexte) fermerContexte();
+  $('#sheet').style.display = 'none';
+  $('#jeu').style.display = 'grid';
+  await backToGame();
+}
+function drawEnCours() {
+  const b = $('#en-cours');
+  b.style.display = enAccueil && current ? 'flex' : 'none';
+  if (!enAccueil || !current) return;
+  b.querySelector('b').textContent = current.name;
+  b.querySelector('small').innerHTML = `${glyphs.home} Reprendre${session ? ` · ${esc(session.code)}` : ''}<span class="opt">${glyphs.plus} Quitter</span>`;
+}
+$('#en-cours').onclick = (e) => (e.target.closest('.opt') ? act('quit') : closeMenu());
+/** Menu HOME : le jeu en cours garde ses actions habituelles (−), avec Reprendre et la chasse. */
+function actionsEnCours(base) {
+  const chasse = chasseActive(current), n = +localStorage[`resets:${current.path}`] || 0;
+  const attente = netplay?.hosting ? session?.waiting || [] : [];
+  return [
+    { label: 'Reprendre', fn: closeMenu },
+    ...base.slice(1).filter((a) => !(session && a.label === 'Créer une session')),
+    ...(attente.length ? [{ label: `Relancer avec ${attente.map((w) => w.name).join(', ')}`, fn: () => act('relaunch') }] : []),
+    ...(session?.members && current.console === 'DS' ? [{ label: 'Mon code ami', fn: () => act('fc') }] : []),
+    ...(figurinesDe(current) ? [{ label: figurinesDe(current) === 'amiibo' ? 'Amiibo' : 'Skylanders', fn: () => ouvrirFigurines(figurinesDe(current)) }] : []),
+    ...(estPokemon(current) ? [{ label: chasse ? `Chasse aux chromatiques : activée (${n} resets)` : 'Chasse aux chromatiques', fn: basculerChasse }] : []),
+    ...(chasse ? [{ label: 'Relancer le jeu (R1, F5)', fn: resetJeu }] : []),
+    ...(chasse && n ? [{ label: 'Compteur à zéro', fn: () => act('zero') }] : []),
+    { label: 'Quitter le jeu', fn: () => act('quit') },
+  ];
+}
+/**
+ * Rejoindre depuis le menu HOME : même jeu que celui en cours (3DS, Switch), on entre dans la
+ * session sans relancer ; sinon le jeu en cours s'arrête d'abord (on demande).
+ */
+async function rejoindreDepuisAccueil(code) {
+  const s = sessionsLocal.find((x) => x.code === code);
+  if (session?.code === code) return closeMenu();
+  if (['3DS', 'Switch'].includes(current.console) && (!s || (s.console === current.console && !s.distance)) && !session) {
+    try {
+      await rejoindreEnJeu(current, code);
+      return;
+    } catch {
+      // Pas le même jeu : on quitte d'abord.
+    }
+  }
+  libererJeu(() => join(code));
+}
+function libererJeu(suite) {
+  sheet(`Quitter ${esc(current.name)} ?`, 'Un seul jeu à la fois : le tien s\'arrête. Pense à sauvegarder avant.', [
+    { label: 'Retour', cancel: true },
+    { label: 'Quitter et continuer', fn: async () => { await act('quitter'); suite(); } },
+  ]);
+}
+
 /** Laisse l'image du jeu dans l'interface : Windows la remontre au prochain menu. */
 async function backToGame() {
   ++menuSeq;
@@ -1568,7 +1739,47 @@ async function refreshShot() {
 }
 // Le temps de jeu s'arrête pendant le menu.
 let menuOuvertA = 0;
-listen('menu', (e) => (e.payload ? ((menuOuvertA = Date.now()), compterTemps(), son('pause', true), setMenu(true)) : closeMenu()));
+// Clavier du jeu (3DS, Switch) : le jeu attend un texte (nom du chien…). Il reste en pause pendant la saisie.
+// À distance, les invités le reçoivent aussi : la première réponse compte.
+const ERREURS_CLAVIER = { 2: 'Trop de chiffres.', 3: 'Le @ n\'est pas accepté.', 4: 'Le % n\'est pas accepté.', 5: 'Le \\ n\'est pas accepté.', 6: 'Ce mot n\'est pas accepté par le jeu.', 7: 'Le jeu refuse ce texte.', 9: 'Texte trop long.', 10: 'Écris autre chose que des espaces.', 11: 'Écris quelque chose.' };
+let clavierEnCours = false;
+listen('clavier', async ({ payload: c }) => {
+  if (enAccueil) ((enAccueil = false), drawEnCours());
+  await setMenu(true);
+  $('#menu').style.display = 'none';
+  clavierEnCours = true;
+  clavierAuxInvites({ type: 'clavier', c });
+  saisieClavier(c, repondreClavier);
+});
+async function repondreClavier(ok, texte = '') {
+  if (!clavierEnCours) return;
+  clavierEnCours = false;
+  await invoke('clavier_reponse', { ok, texte });
+  clavierAuxInvites({ type: 'clavier-fin' });
+  fermerSaisie();
+  backToGame();
+}
+/** Saisie du texte demandé par le jeu ; repondre(ok, texte). */
+function saisieClavier(c, repondre) {
+  saisirTexte({
+    titre: 'Clavier',
+    texte: c.indice,
+    erreur: ERREURS_CLAVIER[c.erreur] || (c.erreur ? ERREURS_CLAVIER[7] : ''),
+    champs: [{ id: 'clavier', label: c.mode === 4 ? `${c.max} caractères` : `${c.max} caractères au plus` }],
+    bouton: 'OK',
+    valider: async ({ clavier: t }) => {
+      const n = [...t].length;
+      if (c.mode === 4 && n !== c.max) return `Il faut ${c.max} caractères.`;
+      if (n > c.max) return ERREURS_CLAVIER[9];
+      if ((c.mode === 1 || c.mode === 2) && !t) return ERREURS_CLAVIER[11];
+      if ((c.mode === 2 || c.mode === 3) && t && !t.trim()) return ERREURS_CLAVIER[10];
+      await repondre(true, t);
+    },
+    // Un seul bouton OK (0) ou aucun (3) : le jeu attend forcément un texte.
+    annuler: () => (c.boutons === 1 || c.boutons === 2 ? repondre(false) : ((saisie.erreur = 'Le jeu attend un texte.'), drawSaisie())),
+  });
+}
+listen('menu', (e) => (e.payload ? ((menuOuvertA = Date.now()), compterTemps(), son('pause', true), captureSeule ? ((captureSeule = false), setMenu(true).then(menuCapture)) : entrerAccueil()) : closeMenu()));
 // Croix ou Alt+F4 en jeu : ouvre le menu, puis demande.
 listen('close-request', async () => {
   if (shown('#sheet')) return;
@@ -1601,7 +1812,11 @@ listen('pad', async (e) => {
   if (captureTouche) return;
   if (!typeManette) typeManette = (await invoke('pad_info').catch(() => ({}))).kind || '';
   utiliser(typeManette);
-  if (k === 'capture' && view() === 'jeu') return menuCapture();
+  // Bouton de partage (micro, Partage, Capture) : photo ou clip, par-dessus la partie.
+  // Aucun jeu ne s'en sert : sur la console d'origine, c'est un bouton du système.
+  if (k === 'capture' && view() === 'jeu') return ((captureSeule = true), invoke('home'));
+  if (view() === 'distance') return navDistance(k); // les touches vont au jeu de l'hôte
+  if (k === 'home' && distance?.cache) return revenirDistance();
   if (k === 'rb' && view() === 'jeu' && chasseActive(current)) return resetJeu();
   sonTouche(k);
   if (view() === 'menu') {
@@ -1609,13 +1824,15 @@ listen('pad', async (e) => {
     if (k === 'up' || k === 'down') { menuFocus = (menuFocus + (k === 'up' ? n - 1 : 1)) % n; drawMenu(); }
     volumeMenu(k);
     if (k === 'a') act(menuBtns()[menuFocus].dataset.act);
-    if (k === 'b') act('resume');
+    if (k === 'b') enAccueil ? fermerOptions() : act('resume');
   } else if (view() === 'sheet') {
     if (k === 'up' || k === 'down') { sheetFocus = (sheetFocus + (k === 'up' ? -1 : 1) + sheetBtns.length) % sheetBtns.length; drawSheet(); }
     if (k === 'a') pick(sheetFocus);
     if (k === 'b') cancelSheet();
   } else if (view() === 'saisie') {
     navSaisie(k);
+  } else if (view() === 'figurines') {
+    navFigurines(k);
   } else if (view() === 'vue') {
     navVue(k);
   } else if (view() === 'salle') {
@@ -1630,10 +1847,13 @@ listen('pad', async (e) => {
 /** Menus : d'abord le menu d'actions ou le dock, puis les touches générales, puis l'écran. */
 function navigation(k) {
   if (panneauOuvert) return navMembres(k);
+  if (miiEdition && onglet === 'profil') return navMii(k); // l'éditeur de Mii prend toutes les touches
+  if (current && enAccueil && !contexte && k === 'plus') return act('quit'); // Start : quitter le jeu
   if (k === 'lt') return basculerMembres(true);
   if (k === 'rt') return ouvrirNotifs(); // R2 / ZR : les notifications
   if (contexte) return navContexte(k);
   if (dockOuvert) return navDock(k);
+  if ((k === 'lb' || k === 'rb') && onglet === 'reglages') return navReglages(k); // L1/R1 : catégorie des Réglages
   if (k === 'lb' || k === 'rb') return sectionVoisine(k === 'lb' ? -1 : 1);
   if (k === 'plus' && !(onglet === 'accueil' && modif)) return ouvrirDock();
   if (onglet === 'jeux' && games.length) {
@@ -1659,14 +1879,21 @@ window.onkeydown = (e) => {
   if (e.key === 'F12' && current) return (e.preventDefault(), capturer());
   if (e.key === 'F10' && current) return (e.preventDefault(), enregistrerClip());
   if (e.key === 'F5' && chasseActive(current)) return (e.preventDefault(), resetJeu());
-  if (e.key === 'Escape' && current) invoke('home');
+  if (e.key === 'Escape' && current && !enAccueil && view() !== 'saisie') invoke('home');
   if (e.key === 'Enter' && view() === 'menu') act(menuBtns()[menuFocus].dataset.act);
+  if (e.key === 'Escape' && view() === 'menu' && enAccueil) fermerOptions();
   if (view() === 'menu' && volumeMenu({ ArrowLeft: 'left', ArrowRight: 'right' }[e.key])) return;
   if (e.key === 'Enter' && view() === 'sheet') pick(sheetFocus);
   if (e.key === 'Escape' && view() === 'sheet') cancelSheet();
   if (view() === 'sheet' && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) { sheetFocus = (sheetFocus + (e.key === 'ArrowUp' ? -1 : 1) + sheetBtns.length) % sheetBtns.length; drawSheet(); }
   if (captureTouche && e.key === 'Escape') return ($('#sheet').style.display = 'none'), (captureTouche = null), drawReglages();
   if (e.key === 'F11') return (e.preventDefault(), modeEcran(localStorage.ecran === 'plein' ? localStorage.ecranAvant || 'fenetre' : ((localStorage.ecranAvant = localStorage.ecran || 'fenetre'), 'plein')));
+  if (view() === 'distance') return e.key === 'Escape' && navDistance('home');
+  if (view() === 'figurines') {
+    const k = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', Enter: 'a', Escape: 'b', r: 'x' }[e.key];
+    if (k) e.preventDefault(), navFigurines(k);
+    return;
+  }
   if (view() === 'vue') {
     const k = { ArrowLeft: 'left', ArrowRight: 'right', Enter: 'a', ' ': 'a', Escape: 'b', Backspace: 'b' }[e.key];
     if (k) e.preventDefault(), navVue(k);
@@ -1675,7 +1902,7 @@ window.onkeydown = (e) => {
   if (view() === 'saisie') {
     // Entrée valide, Échap annule, Tab passe au champ suivant.
     if (e.key === 'Enter') return (e.preventDefault(), validerSaisie());
-    if (e.key === 'Escape') return (e.preventDefault(), fermerSaisie());
+    if (e.key === 'Escape') return (e.preventDefault(), annulerSaisie());
     if (e.key === 'Tab') return (e.preventDefault(), (saisie.champ = (saisie.champ + 1) % saisie.champs.length), champActif().focus(), focusSaisie());
     if (e.target.tagName === 'INPUT') return;
     if (e.key.length === 1 || e.key === 'Backspace') return champActif().focus();

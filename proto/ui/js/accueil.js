@@ -570,24 +570,20 @@ function navAccueil(k) {
 /* ---------- Captures en jeu ---------- */
 
 let capturesPartie = 0;
-/** Menu de capture : photo ou clip des dernières secondes. */
-async function menuCapture(depuisMenu = false) {
+/** Menu de capture (options du jeu) : photo ou clip de ce qui était à l'écran à l'ouverture du menu. */
+async function menuCapture() {
   if (!current) return;
-  const appui = depuisMenu ? menuOuvertA || Date.now() : Date.now();
-  // DS : l'image reste figée sous le menu.
-  if (current.console !== 'DS') await invoke('garder_photo', { menu: depuisMenu }).catch(() => {});
-  if (!depuisMenu) {
-    await invoke('home');
-    for (let k = 0; k < 60 && !shown('#menu'); k++) await new Promise((r) => setTimeout(r, 25));
-  }
+  const appui = menuOuvertA || Date.now();
   // Le menu du jeu se cache derrière le choix, sinon la manette le pilote en dessous.
   $('#menu').style.display = 'none';
+  // DS : l'image reste figée sous le menu.
+  if (current.console !== 'DS') await invoke('garder_photo', { menu: true }).catch(() => {});
   const fin = () => (($('#menu').style.display = 'grid'), closeMenu());
-  const retour = () => (depuisMenu ? (($('#menu').style.display = 'grid'), drawMenu()) : fin());
-  sheet('Capturer', 'Ce qui était à l\'écran quand tu as appuyé.', [
+  const retour = fin;
+  sheet('Capturer', 'Ce qui était à l\'écran quand tu as ouvert le menu.', [
     { label: 'Capture d\'écran', fn: () => capturer().then(fin) },
     ...(dureeClips() ? [{ label: `Clip vidéo · les ${dureeClips()} dernières secondes`, fn: () => (enregistrerClip((Date.now() - appui) / 1000), fin()) }] : []),
-    { label: dureeClips() ? (depuisMenu ? 'Retour' : 'Annuler') : 'Annuler (clips désactivés dans les Réglages)', cancel: true, fn: retour },
+    { label: dureeClips() ? 'Retour' : 'Retour (clips désactivés dans les Réglages)', cancel: true, fn: retour },
   ]);
 }
 /** Capture d'écran dans data\captures\<jeu>. */
@@ -604,6 +600,9 @@ async function capturer() {
     }
     capturesPartie++;
     compterJeu(current, 'c');
+    // Tout de suite dans Médias et l'accueil, sans attendre la fin de la partie.
+    capturesListe = await invoke('list_captures').catch(() => capturesListe);
+    bulleJeu('Capture enregistrée : Médias, Captures.');
   } catch {}
 }
 /** Bulle en jeu, affichée par l'habillage. */

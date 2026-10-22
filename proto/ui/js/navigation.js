@@ -5,7 +5,7 @@ const SECTIONS = [
   { id: 'accueil', nom: 'Accueil', rang: 1 },
   { id: 'jeux', nom: 'Bibliothèque', rang: 1 },
   { id: 'collections', nom: 'Collections', rang: 3 },
-  { id: 'tournois', nom: 'Tournois', rang: 3 },
+  { id: 'tournois', nom: 'Compétition', rang: 3 },
   { id: 'medias', nom: 'Médias', rang: 3 },
   { id: 'recherche', nom: 'Recherche', rang: 4, apres: true },
   { id: 'reglages', nom: 'Réglages', rang: 4 },
@@ -105,6 +105,7 @@ async function allerA(id, vu = null) {
   if (id === 'profil') {
     profilVu = vu;
     pokedexOuvert = false;
+    miiEdition = null;
     profFocus = 0;
     if (onglet === 'profil') return drawProfil();
   }
@@ -123,7 +124,7 @@ async function allerA(id, vu = null) {
   part.forEach((el) => el.classList.remove('sort'));
   enTransition = false;
   if (onglet === 'recherche') recherche = '', chercheFocus = 0, rechercheChargee = false; // la prochaine recherche repart de zéro
-  if (onglet === 'reglages') regPage = null, regFocus = 0, regEdition = -1;
+  if (onglet === 'reglages') regPage = null, regFocus = 0, regGroupe = 0, regVue = 'tuiles', regRecherche = '';
   onglet = id;
   zone = 'consoles';
   tileFocus = 0;
@@ -187,7 +188,7 @@ function actionsDe(el) {
   const i = +el.dataset.i;
   const g = games[i];
   if (g && (el.dataset.act === 'jeu' || el.dataset.act === 'jouer' || el.classList.contains('g'))) {
-    return [
+    const base = [
       { label: 'Jouer', fn: () => play(i) },
       ...(me && enSession(g) ? [{ label: 'Créer une session', fn: () => host(i) }] : []),
       ...(onglet !== 'jeux' ? [{ label: 'Voir dans la bibliothèque', fn: () => voirJeu(i) }] : []),
@@ -198,6 +199,7 @@ function actionsDe(el) {
       ...(EN_LIGNE.includes(g.console) && seulJeu(g) ? [{ label: sessionsForcees[g.path] ? 'Masquer les sessions (un seul joueur)' : 'Proposer les sessions (il se joue à plusieurs)', fn: () => basculerSessions(g) }] : []),
       { label: 'Ouvrir le dossier des jeux', fn: () => invoke('open_games_folder') },
     ];
+    return g === current && enAccueil ? actionsEnCours(base) : base;
   }
   if (el.dataset.act === 'session') {
     const s = sessionsLocal.find((x) => x.code === el.dataset.code);
@@ -227,7 +229,7 @@ function drawSection() {
   if (onglet === 'collections') return drawCollections();
   if (onglet === 'tournois') return (chargerTournois(), drawTournois());
   if (onglet === 'recherche') return drawRecherche();
-  if (onglet === 'reglages') return drawReglages();
+  if (onglet === 'reglages') return (lireMicros(), drawReglages());
   if (onglet === 'medias') return drawMedias();
   if (onglet === 'profil') return drawProfil();
   const lignes = lignesDe(onglet);
@@ -285,16 +287,16 @@ function drawAide() {
     }
     const act = el?.dataset.act;
     $('#aide-g').innerHTML = `<div>${glyphs.y}Personnaliser</div>${actionsDe(el).length ? `<div>${glyphs.minus}Actions</div>` : ''}`;
-    $('#aide-d').innerHTML = `${['jeu', 'jouer', 'session', 'sessions', 'profil', 'login', 'dossier', 'code'].includes(act) ? `<div>${glyphs.a}${act === 'jouer' ? 'Jouer' : act === 'session' ? 'Rejoindre' : act === 'jeu' ? 'Jouer' : 'Ouvrir'}</div>` : ''}<div>${glyphs.plus}Menu</div>`;
+    $('#aide-d').innerHTML = `${['jeu', 'jouer', 'session', 'sessions', 'profil', 'login', 'dossier', 'code'].includes(act) ? `<div>${glyphs.a}${act === 'jouer' ? 'Jouer' : act === 'session' ? 'Rejoindre' : act === 'jeu' ? 'Jouer' : 'Ouvrir'}</div>` : ''}<div>${glyphs.plus}${current && enAccueil ? 'Quitter le jeu' : 'Menu'}</div>`;
     return;
   }
   if (onglet === 'collections') return aideCollections();
   if (onglet === 'tournois') return focusTournoi(trnFocus);
   if (onglet === 'recherche') return focusRecherche(chercheFocus);
-  if (onglet === 'reglages') return focusReglage(regFocus);
+  if (onglet === 'reglages') return focusReglage(regVue === 'tuiles' ? regGroupe : regFocus);
   if (onglet === 'medias') return aideMedias();
   if (onglet === 'profil') return focusProfil(profFocus);
   if (onglet === 'jeux') return; // l'écran Jeux a sa barre d'actions et sa propre aide
-  $('#aide-g').innerHTML = `<div>${glyphs.b}Accueil</div><div>${glyphs.plus}Menu</div>`;
+  $('#aide-g').innerHTML = `<div>${glyphs.b}Accueil</div><div>${glyphs.plus}${current && enAccueil ? 'Quitter le jeu' : 'Menu'}</div>`;
   $('#aide-d').innerHTML = `<div>${glyphs.a}Valider</div>`;
 }

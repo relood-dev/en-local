@@ -92,6 +92,30 @@ fn sans_liens(d: &Path) -> bool {
     std::fs::read_dir(d).into_iter().flatten().flatten().all(|e| e.file_type().is_ok_and(|t| !t.is_symlink() && (!t.is_dir() || sans_liens(&e.path()))))
 }
 
+/// Décompresse une archive dans `vers`. Les .zip passent par .NET : le tar de Windows saute les
+/// fichiers aux noms avec ™ ou 【】 (les DLC de Smash). .NET refuse aussi les chemins qui sortent de `vers`.
+/// Les .rar et .7z passent par 7-Zip, livré avec En Local : le tar de Windows lit mal les RAR5.
+/// Les chemins passent par l'environnement ou en arguments, jamais dans le texte d'une commande.
+fn decompresser(archive: &Path, vers: &Path) -> bool {
+    use std::os::windows::process::CommandExt;
+    let zip = archive.extension().is_some_and(|e| e.eq_ignore_ascii_case("zip"));
+    let mut c = if zip {
+        let mut c = std::process::Command::new("powershell");
+        c.args(["-NoProfile", "-NonInteractive", "-Command", "Add-Type -AssemblyName System.IO.Compression.FileSystem; [IO.Compression.ZipFile]::ExtractToDirectory($env:ENLOCAL_ARCHIVE, $env:ENLOCAL_VERS)"]);
+        c.env("ENLOCAL_ARCHIVE", archive).env("ENLOCAL_VERS", vers);
+        c
+    } else if Path::new(&crate::emu("7zip\\7z.exe")).is_file() {
+        let mut c = std::process::Command::new(crate::emu("7zip\\7z.exe"));
+        c.arg("x").arg(format!("-o{}", vers.display())).args(["-y", "-bso0", "-bsp0", "--"]).arg(archive);
+        c
+    } else {
+        let mut c = std::process::Command::new("tar");
+        c.arg("-xf").arg(archive).arg("-C").arg(vers);
+        c
+    };
+    c.creation_flags(0x0800_0000).status().is_ok_and(|s| s.success())
+}
+
 /// Ajoute `chemins` (fichiers, dossiers, archives) au dossier des jeux. `etape` : texte de progression.
 pub fn importer(chemins: &[String], classer: Classer, etape: &dyn Fn(String)) -> Bilan {
     importer_dans(&dossier::jeux(), chemins, classer, etape)
@@ -121,10 +145,8 @@ fn importer_dans(racine: &Path, chemins: &[String], classer: Classer, etape: &dy
         let _ = std::fs::create_dir_all(&ici);
         if p.is_file() && est_archive(&p) {
             etape(format!("Décompression de {nom}…"));
-            use std::os::windows::process::CommandExt;
-            let ok = std::process::Command::new("tar").arg("-xf").arg(&p).arg("-C").arg(&ici).creation_flags(0x0800_0000).status().is_ok_and(|s| s.success());
-            if !ok {
-                b.erreurs.push(format!("{nom} : archive illisible ou abîmée"));
+            if !decompresser(&p, &ici) {
+                b.erreurs.push(format!("{nom} : archive abîmée ou incomplète, seule une partie a pu être sortie (re-télécharge-la, ou répare-la avec WinRAR)"));
             }
         } else {
             etape(format!("Copie de {nom}…"));
@@ -202,6 +224,29 @@ mod tests {
     }
     /// Import réel (tar.exe de Windows) dans un dossier de jeux de test :
     /// `cargo test --release -- --ignored import_reel`.
+    /// Zip aux noms en ™ et 【】 : tout est décompressé (le tar de Windows en sautait).
+    #[test]
+    fn zip_noms_unicode() {
+        let d = std::env::temp_dir().join(format!("enlocal-zip-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(d.join("src")).unwrap();
+        let noms = ["Super Smash Bros.™ Ultimate - 【Pack 1】.nsp", "Super Smash Bros.™ Ultimate - 【Pack 2】.nsp", "Jeu.nsp"];
+        for n in noms {
+            std::fs::write(d.join("src").join(n), b"x").unwrap();
+        }
+        let zip = d.join("a.zip");
+        let ok = std::process::Command::new("powershell")
+            .args(["-NoProfile", "-Command", "Add-Type -AssemblyName System.IO.Compression.FileSystem; [IO.Compression.ZipFile]::CreateFromDirectory($env:S, $env:Z)"])
+            .env("S", d.join("src")).env("Z", &zip).status().unwrap().success();
+        assert!(ok);
+        std::fs::create_dir_all(d.join("out")).unwrap();
+        assert!(super::decompresser(&zip, &d.join("out")));
+        for n in noms {
+            assert!(d.join("out").join(n).is_file(), "{n} manquant");
+        }
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
     #[test]
     #[ignore]
     fn import_reel() {

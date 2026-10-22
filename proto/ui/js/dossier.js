@@ -105,8 +105,22 @@ function menuAjouterJeux() {
     { label: 'Retour', cancel: true },
   ]);
 }
+/** Dépôt : les fichiers des consoles (clés, firmware, boot9.bin) sont installés, le reste est rangé comme des jeux. */
+async function deposer(chemins) {
+  if (!chemins?.length) return;
+  const p = await invoke('poser_console', { chemins }).catch(() => ({ messages: [], erreurs: [], reste: chemins }));
+  if (p.messages.length || p.erreurs.length) {
+    son(p.erreurs.length ? 'erreur' : 'ok');
+    await Promise.all([chargerSwitch(), chargerTroisDs()]);
+    if (bienvenue) drawBienvenue();
+    else if (onglet === 'reglages') drawReglages();
+    if (p.erreurs.length) sheet('Pas le bon fichier', [...p.messages, ...p.erreurs].map(esc).join('<br>'), [{ label: 'OK', cancel: true }]);
+    else toast(p.messages.join(' · '));
+  }
+  if (p.reste.length) ajouterJeux(p.reste);
+}
 // Glisser-déposer n'importe où dans l'app.
 window.__TAURI__.webview.getCurrentWebview().onDragDropEvent(({ payload }) => {
   document.body.classList.toggle('depot', payload.type === 'over' || payload.type === 'enter');
-  if (payload.type === 'drop') ajouterJeux(payload.paths);
+  if (payload.type === 'drop') deposer(payload.paths);
 }).catch(() => {});

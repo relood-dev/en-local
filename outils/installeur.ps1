@@ -20,14 +20,24 @@ $emus = [ordered]@{
   'melondsds'       = @()
   'ffmpeg'          = @()   # clips vidéo (build LGPL de BtbN, avec sa licence)
   'nsz'             = @()   # jeux Switch .nsz/.xcz décompressés pour Eden (MIT, version portable 4.6.1)
+  '7zip'            = @()   # Ajouter des jeux : .rar et .7z (7-Zip 26.04 officiel, LGPL + restriction unRAR, License.txt)
   'pokedex'         = @()   # Pokédex : lit les sauvegardes Pokémon (PKHeX.Core, GPL ; sources dans outils\pokedex)
 }
 foreach ($e in $emus.Keys) {
   $exclus = @($emus[$e]) | ForEach-Object { Join-Path "$src\$e" $_ }
-  $args = @("$src\$e", "$dist\$e", '/E', '/NFL', '/NDL', '/NJH', '/NJS', '/NP', '/XF', '*.log', '*.pdb')
+  $args = @("$src\$e", "$dist\$e", '/E', '/NFL', '/NDL', '/NJH', '/NJS', '/NP', '/XF', '*.log', '*.pdb', 'enlocal-*.exe')  # enlocal-*.exe : copies faites par l'app au lancement
   if ($exclus.Count) { $args += '/XD'; $args += $exclus }
   robocopy @args | Out-Null
   if ($LASTEXITCODE -ge 8) { throw "Copie de $e impossible ($LASTEXITCODE)" }
+}
+
+# Bibliothèques Visual C++ de Microsoft à côté des émulateurs qui en ont besoin (déploiement local
+# autorisé par Microsoft) : sans elles, un PC qui ne les a pas n'arrive pas à lancer l'émulateur.
+# La plus récente (Visual Studio 2022 ou 2026) : elle marche aussi pour ce qui a été compilé avec une plus ancienne.
+$crt = Get-ChildItem 'C:\Program Files (x86)\Microsoft Visual Studio\*\BuildTools\VC\Redist\MSVC\*\x64\Microsoft.VC14*.CRT' -Directory | Sort-Object { [version]($_.FullName -replace '.*\\MSVC\\([\d.]+)\\.*', '$1') } | Select-Object -Last 1
+if (-not $crt) { throw 'Bibliothèques Visual C++ introuvables : installeur annulé.' }
+foreach ($e in 'azahar-enlocal', 'dolphin-enlocal', 'eden-enlocal') {
+  Copy-Item "$($crt.FullName)\*.dll" "$dist\$e\" -Force
 }
 
 # Rien de personnel ni de Nintendo : ni clés, ni firmware, ni jeux, ni sauvegardes.

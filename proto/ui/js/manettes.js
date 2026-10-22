@@ -117,3 +117,83 @@ window.__TAURI__.event.listen('pad-brut', (e) => {
   if (!c) return;
   allumerSchema(c, g ? emu.jeux[g.path] || {} : emu.consoles[c] || {}, g ? emu.consoles[c] : null, e.payload);
 });
+
+/*
+ * Manette inconnue de SDL (manettes génériques) : le joueur appuie sur chaque bouton demandé,
+ * En Local en fait une manette normale, pour l'app et pour toutes les consoles.
+ */
+const ETAPES_MANETTE = [
+  ['a', 'Le bouton du bas', 'Des quatre boutons à droite : celui du bas.'],
+  ['b', 'Le bouton de droite', 'Des quatre boutons : celui de droite.'],
+  ['x', 'Le bouton de gauche', 'Des quatre boutons : celui de gauche.'],
+  ['y', 'Le bouton du haut', 'Des quatre boutons : celui du haut.'],
+  ['dpup', 'La croix : haut', ''],
+  ['dpdown', 'La croix : bas', ''],
+  ['dpleft', 'La croix : gauche', ''],
+  ['dpright', 'La croix : droite', ''],
+  ['leftshoulder', 'La gâchette L (ou L1)', 'Sur la tranche, à gauche, celle du dessus.'],
+  ['rightshoulder', 'La gâchette R (ou R1)', 'Sur la tranche, à droite, celle du dessus.'],
+  ['lefttrigger', 'La gâchette ZL (ou L2)', 'Sur la tranche, à gauche, celle du dessous.'],
+  ['righttrigger', 'La gâchette ZR (ou R2)', 'Sur la tranche, à droite, celle du dessous.'],
+  ['back', 'Le bouton − (Select)', ''],
+  ['start', 'Le bouton + (Start)', ''],
+  ['guide', 'Le bouton Home', 'Le bouton rond du milieu, s\'il y en a un.'],
+  ['leftx', 'Le stick gauche : vers la droite', 'Pousse-le à fond vers la droite.', true],
+  ['lefty', 'Le stick gauche : vers le bas', 'Pousse-le à fond vers le bas.', true],
+  ['rightx', 'Le stick droit : vers la droite', 'Pousse-le à fond vers la droite.', true],
+  ['righty', 'Le stick droit : vers le bas', 'Pousse-le à fond vers le bas.', true],
+  ['leftstick', 'Clic du stick gauche', 'Enfonce le stick gauche.'],
+  ['rightstick', 'Clic du stick droit', 'Enfonce le stick droit.'],
+];
+let configManette = null; // { nom, guid, etape, choix }
+const manettesProposees = new Set();
+
+window.__TAURI__.event.listen('pad-inconnue', ({ payload: p }) => {
+  // Jamais par-dessus un jeu : la fenêtre prendrait la manette. Proposé au premier appui après.
+  if (current || configManette || manettesProposees.has(p.guid) || shown('#sheet')) return;
+  manettesProposees.add(p.guid);
+  sheet('Nouvelle manette', `<b>${esc(p.nom || 'Une manette')}</b> n'est pas reconnue. Configure-la en une minute : tu appuies sur chaque bouton demandé, et elle marchera dans En Local et sur toutes les consoles.`, [
+    { label: 'Configurer', fn: () => configurerManette(p) },
+    { label: 'Plus tard', cancel: true },
+  ]);
+});
+function configurerManette(p) {
+  configManette = { ...p, etape: 0, choix: {} };
+  etapeManette();
+}
+function etapeManette() {
+  const c = configManette;
+  if (c.etape >= ETAPES_MANETTE.length) return finirManette();
+  const [, titre, aide] = ETAPES_MANETTE[c.etape];
+  sheet(`${titre} (${c.etape + 1}/${ETAPES_MANETTE.length})`, `${aide ? `${esc(aide)}<br>` : ''}Appuie dessus sur ta manette.`, [
+    { label: 'Pas ce bouton, passer', fn: () => setTimeout(() => ((c.etape += 1), etapeManette())) },
+    { label: 'Annuler', cancel: true, fn: () => (configManette = null) },
+  ]);
+}
+window.__TAURI__.event.listen('pad-inconnue-appui', ({ payload: entree }) => {
+  const c = configManette;
+  if (!c) return;
+  const [cle, , , stick] = ETAPES_MANETTE[c.etape];
+  // Stick : l'axe compte, pas le sens ; poussé « à l'envers », l'axe est inversé.
+  const valeur = stick ? (entree.startsWith('-') ? `${entree.slice(1)}~` : entree.replace(/^\+/, '')) : entree;
+  if (stick && !/^a\d+~?$/.test(valeur)) return;
+  // Le même bouton ne sert pas deux fois.
+  if (Object.values(c.choix).some((v) => v.replace('~', '') === valeur.replace('~', ''))) return;
+  c.choix[cle] = valeur;
+  son('ok');
+  c.etape += 1;
+  etapeManette();
+});
+async function finirManette() {
+  const c = configManette;
+  configManette = null;
+  const nom = (c.nom || 'Manette').replace(/[,\n\r]/g, ' ').slice(0, 60);
+  const mapping = `${c.guid},${nom},${Object.entries(c.choix).map(([k, v]) => `${k}:${v}`).join(',')},platform:Windows,`;
+  try {
+    await invoke('manette_ajouter', { mapping });
+    toast(`${nom} est configurée`);
+  } catch (e) {
+    son('erreur');
+    sheet('Manette', esc(e), [{ label: 'OK', cancel: true }]);
+  }
+}

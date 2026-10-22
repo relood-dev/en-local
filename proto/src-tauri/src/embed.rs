@@ -20,6 +20,9 @@ static GAME: Mutex<Option<Game>> = Mutex::new(None);
 static ARRET_PROPRE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 /// Jeu caché et gelé (menu ouvert).
 static HIDDEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// Le jeu est dans un salon (session) : le menu ne le gèle pas, sinon le salon perd la connexion.
+/// L'émulateur se met lui-même en pause tant que le fichier menu_fichier() existe.
+static EN_SALON: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /* Habillage : le jeu garde son format, centré, avec le décor autour. Format 0 : plein écran. */
 static FORMAT: Mutex<f64> = Mutex::new(0.0);
@@ -354,52 +357,80 @@ fn child_of(parent: isize, pid: u32) -> Option<HWND> {
 
 
 /// Jeu 3DS lisible par Azahar ? Certaines copies dites « décryptées » ne le sont pas : on vérifie l'ExeFS.
-fn check_3ds(path: &str) -> Result<(), String> {
+/// Problème d'une copie 3DS : (bloquant, message). Bloquant : l'émulateur planterait, on ne lance pas.
+fn check_3ds(path: &str) -> Result<(), (bool, String)> {
+    let e = |x: std::io::Error| (false, x.to_string());
     use std::io::{Read, Seek, SeekFrom};
     let lower = path.to_lowercase();
     if !(lower.ends_with(".3ds") || lower.ends_with(".cci")) {
         return Ok(());
     }
-    let mut f = std::fs::File::open(path).map_err(|e| e.to_string())?;
+    let mut f = std::fs::File::open(path).map_err(e)?;
     let mut hdr = [0u8; 0x200];
-    f.read_exact(&mut hdr).map_err(|e| e.to_string())?;
+    f.read_exact(&mut hdr).map_err(e)?;
     if &hdr[0x100..0x104] != b"NCSD" {
         return Ok(());
     }
     let ncch = u32::from_le_bytes(hdr[0x120..0x124].try_into().unwrap()) as u64 * 0x200;
     let mut n = [0u8; 0x200];
-    f.seek(SeekFrom::Start(ncch)).and_then(|_| f.read_exact(&mut n)).map_err(|e| e.to_string())?;
+    f.seek(SeekFrom::Start(ncch)).and_then(|_| f.read_exact(&mut n)).map_err(e)?;
     const GM9: &str = "Décrypte-le avec GodMode9 sur ta 3DS (NCSD image options → Decrypt file).";
     let exefs = u32::from_le_bytes(n[0x1A0..0x1A4].try_into().unwrap()) as u64 * 0x200;
     let mut name = [0u8; 8];
-    f.seek(SeekFrom::Start(ncch + exefs)).and_then(|_| f.read_exact(&mut name)).map_err(|e| e.to_string())?;
+    f.seek(SeekFrom::Start(ncch + exefs)).and_then(|_| f.read_exact(&mut name)).map_err(e)?;
     let readable = &name[..5] == b".code";
     let marked = n[0x18F] & 0x04 != 0;
+    // Marqué décrypté : l'en-tête étendu est lu tel quel. Sa catégorie (0 à 3) doit être valable,
+    // sinon AzaharPlus plante au démarrage (« Unknown resource limit category »).
+    if marked {
+        let mut c = [0u8; 1];
+        f.seek(SeekFrom::Start(ncch + 0x56F)).and_then(|_| f.read_exact(&mut c)).map_err(e)?;
+        if c[0] > 3 {
+            return Err((true, format!("Ce jeu est marqué décrypté mais il est toujours chiffré (outil de décryptage sans la bonne clé) : il ne peut pas démarrer. {GM9}")));
+        }
+    }
     match (readable, marked) {
         (true, true) => Ok(()),
-        (true, false) => Err(format!("Ce jeu a été décrypté en partie seulement : son contenu est lisible mais son en-tête n'a pas été mis à jour (décryptage interrompu). {GM9}")),
-        (false, true) => Err(format!("Ce jeu est marqué décrypté mais son contenu est toujours chiffré (outil de décryptage sans la bonne clé). {GM9}")),
-        (false, false) => Err(format!("Ce jeu est encore chiffré. {GM9}")),
+        (true, false) => Err((false, format!("Ce jeu a été décrypté en partie seulement : son contenu est lisible mais son en-tête n'a pas été mis à jour (décryptage interrompu). {GM9}"))),
+        (false, true) => Err((true, format!("Ce jeu est marqué décrypté mais il est toujours chiffré (outil de décryptage sans la bonne clé) : il ne peut pas démarrer. {GM9}"))),
+        (false, false) => Err((false, format!("Ce jeu est encore chiffré. {GM9}"))),
     }
 }
 
 pub fn start(exe: &str, emu_dir: &str, game: &str, parent: isize, room: Option<&Room>, o: &crate::reglages::Opts) -> Result<String, String> {
-    // Simple avertissement : Azahar a le dernier mot.
-    let warning = check_3ds(game).err();
+    // Copie que l'émulateur ne peut pas lire : message clair au lieu d'un plantage. Sinon simple
+    // avertissement, Azahar a le dernier mot.
+    let warning = match check_3ds(game) {
+        Err((true, m)) => return Err(m),
+        r => r.err().map(|(_, m)| m),
+    };
     if GAME.lock().unwrap().is_some() {
         return Err("Un jeu tourne déjà".into());
     }
     write_config(emu_dir, o).map_err(|e| e.to_string())?;
+    if let Some(m) = crate::mii::du_joueur(o) {
+        crate::mii::trois_ds(emu_dir, &m);
+    }
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     let mut args = vec!["--parent".to_string(), parent.to_string()];
     args.extend(room_args(room));
+    EN_SALON.store(room.is_some(), std::sync::atomic::Ordering::Relaxed);
     args.push(game.into());
     let _ = std::fs::remove_file(salon_en_jeu_fichier());
+    let _ = std::fs::remove_file(menu_fichier());
+    let _ = std::fs::remove_file(clavier_fichier());
+    let _ = std::fs::remove_file(format!("{}.ok", clavier_fichier()));
+    crate::figurines::vider();
     let child = Command::new(exe)
         .args(&args)
         // Le style Windows 11 de Qt 6.9 fait planter les menus d'AzaharPlus.
         .env("QT_STYLE_OVERRIDE", "fusion")
         .env("ENLOCAL_SALON", salon_en_jeu_fichier())
+        .env("ENLOCAL_CLAVIER", clavier_fichier())
+        .env("ENLOCAL_AMIIBO", crate::figurines::fichier("amiibo"))
+        .env("ENLOCAL_MENU", menu_fichier())
+        .env("SDL_GAMECONTROLLERCONFIG", crate::pad::mappings())
+        .env("ENLOCAL_MII", crate::mii::hex(o))
         .creation_flags(CREATE_NO_WINDOW)
         .spawn()
         .map(tie)
@@ -411,12 +442,39 @@ pub fn start(exe: &str, emu_dir: &str, game: &str, parent: isize, room: Option<&
     })
 }
 
+/// Noms des émulateurs lancés par En Local.
+pub const EXE_3DS: &str = "enlocal-3ds.exe";
+pub const EXE_SWITCH: &str = "enlocal-switch.exe";
+pub const EXE_WII: &str = "enlocal-gc-wii.exe";
+pub const EXE_WIIU: &str = "enlocal-wiiu.exe";
+/// Copie de l'émulateur sous un nom d'En Local : les logiciels de clips (Medal…) reconnaissent les
+/// émulateurs à leur nom et filmeraient l'émulateur seul, sans En Local autour. Refaite après une mise à jour.
+pub fn exe(dir: &str, exe: &str, nom: &str) -> String {
+    let (src, dst) = (format!("{dir}\\{exe}"), format!("{dir}\\{nom}"));
+    let pareil = match (std::fs::metadata(&src), std::fs::metadata(&dst)) {
+        (Ok(a), Ok(b)) => a.len() == b.len() && a.modified().ok() == b.modified().ok(),
+        _ => false,
+    };
+    if pareil || std::fs::copy(&src, &dst).is_ok() { dst } else { src }
+}
+
+/// Menu d'En Local ouvert pendant une session : Eden et Azahar mettent le jeu en pause tant qu'il existe.
+pub fn menu_fichier() -> String {
+    format!("{}\\data\\menu-en-jeu.txt", crate::root())
+}
+
+/// Clavier du jeu (3DS et Switch) : l'émulateur y écrit sa demande quand le jeu attend un texte, En Local répond dans <fichier>.ok.
+pub fn clavier_fichier() -> String {
+    format!("{}\\data\\clavier-3ds.txt", crate::root())
+}
+
 /// Fichier surveillé par Eden pendant la partie, pour entrer dans un salon.
 fn salon_en_jeu_fichier() -> String {
     format!("{}\\data\\salon-en-jeu.txt", crate::root())
 }
 /// Session lancée en pleine partie : Eden ou Azahar entre dans le salon sans relancer le jeu.
 pub fn salon_en_jeu(r: &Room) -> Result<(), String> {
+    EN_SALON.store(!r.host.is_empty(), std::sync::atomic::Ordering::Relaxed);
     let places = crate::salon::places_heberges(r.port).filter(|_| r.host == "127.0.0.1").unwrap_or(0);
     let propre = |v: &str| v.replace(['\n', '\r'], "");
     std::fs::write(salon_en_jeu_fichier(), format!("{}:{}\n{}\n{}\n{places}\n", propre(&r.host), r.port, propre(&r.nickname), propre(&r.password))).map_err(|e| e.to_string())
@@ -550,12 +608,37 @@ fn dolphin_config(dir: &str, game: &str, o: &crate::reglages::Opts) -> std::io::
         ("Nunchuk/Stick/Up", "Left Y+"), ("Nunchuk/Stick/Down", "Left Y-"), ("Nunchuk/Stick/Left", "Left X-"), ("Nunchuk/Stick/Right", "Left X+"),
     ];
     let source = if id.starts_with("RSB") { 0 } else { 1 };
-    let mut ini = format!("[Wiimote1]\nDevice = SDL/0/{name}\nSource = {source}\nExtension = Nunchuk\n");
-    for (k, v) in wii {
-        ini += &format!("{k} = {}\n", b(v));
-    }
-    for (k, v) in crate::reglages::dolphin_wii(o) {
-        ini += &format!("{k} = {v}\n");
+    let mut ini = format!("[Wiimote1]\nDevice = SDL/0/{name}\nSource = {source}\n");
+    match crate::reglages::disposition_wii(&id, &crate::gametdb::manettes_wii(&id)) {
+        // Manette classique : les boutons d'une manette de salon, sans rien sur la Wiimote.
+        "classique" => {
+            ini += "Extension = Classic\n";
+            for (k, v) in crate::reglages::dolphin_classique() {
+                ini += &format!("{k} = {v}\n");
+            }
+        }
+        // À l'horizontale, sans Nunchuk : le stick gauche fait la croix et l'inclinaison.
+        "horizontale" => {
+            ini += "Extension = None\nOptions/Sideways Wiimote = True\n";
+            for (k, incl, pad, stick) in [("Up", "Forward", "Pad N", "Left Y+"), ("Down", "Backward", "Pad S", "Left Y-"), ("Left", "Left", "Pad W", "Left X-"), ("Right", "Right", "Pad E", "Left X+")] {
+                ini += &format!("D-Pad/{k} = {}|{}\nTilt/{incl} = {}\n", b(pad), b(stick), b(stick));
+            }
+            for (k, v) in wii.iter().filter(|(k, _)| !k.starts_with("D-Pad")) {
+                ini += &format!("{k} = {}\n", b(v));
+            }
+            for (k, v) in crate::reglages::dolphin_wii(o, true) {
+                ini += &format!("{k} = {v}\n");
+            }
+        }
+        _ => {
+            ini += "Extension = Nunchuk\n";
+            for (k, v) in wii {
+                ini += &format!("{k} = {}\n", b(v));
+            }
+            for (k, v) in crate::reglages::dolphin_wii(o, false) {
+                ini += &format!("{k} = {v}\n");
+            }
+        }
     }
     std::fs::write(format!("{cfg}\\WiimoteNew.ini"), ini)
 }
@@ -591,7 +674,13 @@ pub fn start_dolphin(dir: &str, game: &str, parent: isize, o: &crate::reglages::
     let reglages = dolphin_reglages(dir, game, o);
     gfx_ini(dir, &reglages).map_err(|e| e.to_string())?;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    let child = Command::new(format!("{dir}\\Dolphin.exe"))
+    if let Some(m) = crate::mii::du_joueur(o) {
+        crate::mii::wii(dir, &m);
+    }
+    crate::figurines::vider();
+    let child = Command::new(exe(dir, "Dolphin.exe", EXE_WII))
+        .env("SDL_GAMECONTROLLERCONFIG", crate::pad::mappings())
+        .env("ENLOCAL_SKYLANDERS", crate::figurines::fichier("skylanders"))
         .args(["-b", "--parent", &parent.to_string()])
         .args(reglages)
         .args(["-e", game])
@@ -625,7 +714,8 @@ pub fn show(visible: bool) {
         unsafe {
             let parent = GetParent(HWND(g.render as _)).map_or(0, |p| p.0 as isize);
             if visible {
-                freeze(&g.child, g.render, false);
+                freeze(&g.child, g.render, false); // sans effet s'il n'était pas gelé
+                let _ = std::fs::remove_file(menu_fichier());
                 let _ = ShowWindowAsync(HWND(g.render as _), SW_SHOWNA);
                 std::thread::sleep(Duration::from_millis(150));
                 place_webview(g.webview, false);
@@ -635,7 +725,11 @@ pub fn show(visible: bool) {
                 place_webview(g.webview, true);
                 std::thread::sleep(Duration::from_millis(50));
                 let _ = ShowWindowAsync(HWND(g.render as _), SW_HIDE);
-                freeze(&g.child, g.render, true);
+                if EN_SALON.load(std::sync::atomic::Ordering::Relaxed) {
+                    let _ = std::fs::write(menu_fichier(), b"1");
+                } else {
+                    freeze(&g.child, g.render, true);
+                }
             }
         }
     }
@@ -704,12 +798,13 @@ fn cemu_config(dir: &str, o: &crate::reglages::Opts) -> std::io::Result<()> {
     std::fs::write(
         format!("{cfg}\\settings.xml"),
         format!(
-            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<content>\n  <check_update>false</check_update>\n  <fullscreen>false</fullscreen>\n  <fullscreen_menubar>false</fullscreen_menubar>\n{}  <window_position>\n    <x>-20000</x>\n    <y>-20000</y>\n  </window_position>\n  <GraphicPack>\n{}  </GraphicPack>\n  <Graphic>\n    <api>{}</api>\n{}    <Notification>\n      <ControllerProfiles>false</ControllerProfiles>\n      <ControllerBattery>false</ControllerBattery>\n      <ShaderCompiling>false</ShaderCompiling>\n      <FriendService>false</FriendService>\n    </Notification>\n  </Graphic>\n  <Audio>\n    <api>3</api>\n    <TVDevice>default</TVDevice>\n    <TVVolume>{}</TVVolume>\n  </Audio>\n</content>\n",
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<content>\n  <check_update>false</check_update>\n  <fullscreen>false</fullscreen>\n  <fullscreen_menubar>false</fullscreen_menubar>\n{}  <window_position>\n    <x>-20000</x>\n    <y>-20000</y>\n  </window_position>\n  <GraphicPack>\n{}  </GraphicPack>\n  <Graphic>\n    <api>{}</api>\n{}    <Notification>\n      <ControllerProfiles>false</ControllerProfiles>\n      <ControllerBattery>false</ControllerBattery>\n      <ShaderCompiling>false</ShaderCompiling>\n      <FriendService>false</FriendService>\n    </Notification>\n  </Graphic>\n  <Audio>\n    <api>3</api>\n    <TVDevice>default</TVDevice>\n    <TVVolume>{}</TVVolume>\n    <InputDevice>{}</InputDevice>\n    <InputVolume>100</InputVolume>\n    <InputChannels>0</InputChannels>\n  </Audio>\n</content>\n",
             r.langue.map_or(String::new(), |l| format!("  <console_language>{l}</console_language>\n")),
             r.packs,
             r.api,
             r.graphic,
-            r.volume
+            r.volume,
+            r.micro
         ),
     )?;
     let name = crate::pad::NAME.lock().unwrap().clone();
@@ -723,11 +818,25 @@ fn cemu_config(dir: &str, o: &crate::reglages::Opts) -> std::io::Result<()> {
         (17, 45), (18, 39), (19, 44), (20, 38),
         (21, 47), (22, 41), (23, 46), (24, 40),
     ]);
+    // Manette Pro : mêmes boutons, mais HOME s'intercale après −, donc tout ce qui suit est décalé d'un.
+    let pro = crate::reglages::cemu_pro(o);
+    if pro {
+        for (m, _) in map.iter_mut() {
+            *m = pro_id(*m);
+        }
+    }
+    let modele = if pro { "Wii U Pro Controller" } else { "Wii U GamePad" };
     let entries: String = map.iter().map(|(m, b)| format!("        <entry>\n          <mapping>{m}</mapping>\n          <button>{b}</button>\n        </entry>\n")).collect();
+    let rumble = if crate::reglages::vibrations(o) { "0.5" } else { "0" };
     let xml = format!(
-        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<emulated_controller>\n  <type>Wii U GamePad</type>\n  <controller>\n    <api>SDLController</api>\n    <uuid>0_{guid}</uuid>\n    <display_name>{name}</display_name>\n    <rumble>0.5</rumble>\n    <axis>\n      <deadzone>0.15</deadzone>\n      <range>1</range>\n    </axis>\n    <rotation>\n      <deadzone>0.15</deadzone>\n      <range>1</range>\n    </rotation>\n    <trigger>\n      <deadzone>0.25</deadzone>\n      <range>1</range>\n    </trigger>\n    <mappings>\n{entries}    </mappings>\n  </controller>\n</emulated_controller>\n"
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<emulated_controller>\n  <type>{modele}</type>\n  <controller>\n    <api>SDLController</api>\n    <uuid>0_{guid}</uuid>\n    <display_name>{name}</display_name>\n    <rumble>{rumble}</rumble>\n    <axis>\n      <deadzone>0.15</deadzone>\n      <range>1</range>\n    </axis>\n    <rotation>\n      <deadzone>0.15</deadzone>\n      <range>1</range>\n    </rotation>\n    <trigger>\n      <deadzone>0.25</deadzone>\n      <range>1</range>\n    </trigger>\n    <mappings>\n{entries}    </mappings>\n  </controller>\n</emulated_controller>\n"
     );
     std::fs::write(format!("{cfg}\\controllerProfiles\\controller0.xml"), xml)
+}
+
+/// Numéro Cemu d'un bouton du GamePad pour la manette Pro (enum ProController::ButtonId : HOME en 11).
+fn pro_id(gamepad: u32) -> u32 {
+    if gamepad >= 11 { gamepad + 1 } else { gamepad }
 }
 
 /// GUID de la manette pour Cemu, demandé au SDL2.dll officiel : celui de SDL3 diffère parfois.
@@ -745,6 +854,8 @@ fn sdl2_guid(dir: &str, sdl3: &str) -> Option<String> {
         for h in ["PS4", "PS5", "GAMECUBE", "SWITCH", "JOY_CONS", "STADIA", "STEAM", "LUNA"] {
             hint(format!("SDL_JOYSTICK_HIDAPI_{h}\0").as_ptr(), b"1\0".as_ptr());
         }
+        // Les manettes configurées dans En Local sont aussi des manettes pour Cemu.
+        hint(b"SDL_GAMECONTROLLERCONFIG\0".as_ptr(), format!("{}\0", crate::pad::mappings().replace('\0', "")).as_ptr());
         const SDL_INIT_GAMECONTROLLER: u32 = 0x2000;
         if init(SDL_INIT_GAMECONTROLLER) < 0 {
             return None;
@@ -825,7 +936,10 @@ pub fn start_cemu(dir: &str, game: &str, parent: isize, o: &crate::reglages::Opt
     cemu_config(dir, o).map_err(|e| e.to_string())?;
     lier_contenus_wiiu(dir);
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    let mut child = Command::new(format!("{dir}\\Cemu.exe")).args(["-g", game]).creation_flags(CREATE_NO_WINDOW).spawn().map(tie).map_err(|e| e.to_string())?;
+    if let Some(m) = crate::mii::du_joueur(o) {
+        crate::mii::cemu(dir, &m);
+    }
+    let mut child = Command::new(exe(dir, "Cemu.exe", EXE_WIIU)).env("SDL_GAMECONTROLLERCONFIG", crate::pad::mappings()).args(["-g", game]).creation_flags(CREATE_NO_WINDOW).spawn().map(tie).map_err(|e| e.to_string())?;
     let deadline = Instant::now() + Duration::from_secs(30);
     let window = loop {
         if let Some(h) = top_window(child.id(), "Cemu") {
@@ -976,12 +1090,19 @@ pub fn start_eden(dir: &str, game: &str, parent: isize, room: Option<&Room>, con
         texte = crate::reglages::ini_set(&texte, "Network", &[("network_interface".to_string(), carte)]);
     }
     std::fs::write(&ini, texte).map_err(|e| e.to_string())?;
+    let distance = o.get("distance").is_some_and(|d| d == "oui");
+    let invites = distance || o.get("invites").is_some_and(|d| d == "oui");
     let mut args = vec!["--parent".to_string(), parent.to_string()];
     args.extend(room_args(room));
+    EN_SALON.store(room.is_some(), std::sync::atomic::Ordering::Relaxed);
     args.extend(["-g".into(), game.into()]);
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     let _ = std::fs::remove_file(salon_en_jeu_fichier());
-    let child = Command::new(format!("{dir}\\eden.exe")).args(&args).env("ENLOCAL_SALON", salon_en_jeu_fichier()).env("ENLOCAL_TOUCHES", crate::reglages::eden_touches(o)).env("ENLOCAL_MANETTE", *crate::pad::KIND.lock().unwrap()).env(if title_id.is_some_and(crate::reglages::en_main) { "ENLOCAL_EN_MAIN" } else { "ENLOCAL_PAS_EN_MAIN" }, "1").creation_flags(CREATE_NO_WINDOW).spawn().map(tie).map_err(|e| e.to_string())?;
+    let _ = std::fs::remove_file(menu_fichier());
+    let _ = std::fs::remove_file(clavier_fichier());
+    let _ = std::fs::remove_file(format!("{}.ok", clavier_fichier()));
+    crate::figurines::vider();
+    let child = Command::new(exe(dir, "eden.exe", EXE_SWITCH)).args(&args).env("ENLOCAL_CLAVIER", clavier_fichier()).env("ENLOCAL_AMIIBO", crate::figurines::fichier("amiibo")).env("SDL_GAMECONTROLLERCONFIG", crate::pad::mappings()).env("ENLOCAL_MII", crate::mii::hex(o)).env("ENLOCAL_MENU", menu_fichier()).env("ENLOCAL_SALON", salon_en_jeu_fichier()).env("ENLOCAL_TOUCHES", crate::reglages::eden_touches(o)).env("ENLOCAL_MANETTE", *crate::pad::KIND.lock().unwrap()).env(if title_id.is_some_and(crate::reglages::en_main) && !distance { "ENLOCAL_EN_MAIN" } else { "ENLOCAL_PAS_EN_MAIN" }, "1").env(if invites { "ENLOCAL_DISTANCE" } else { "ENLOCAL_SEUL" }, "1").creation_flags(CREATE_NO_WINDOW).spawn().map(tie).map_err(|e| e.to_string())?;
     let r = attach(child, parent, || "le jeu ne s'est pas affiché (Eden n'a pas pu le charger)".into());
     ARRET_PROPRE.store(r.is_ok(), std::sync::atomic::Ordering::Relaxed);
     r
@@ -1039,7 +1160,7 @@ pub fn start_netplay(dir: &str, game: &str, host_code: &str, name: &str, parent:
         args.extend(["--netplay-join".into(), host_code.into()]);
     }
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    let child = Command::new(format!("{dir}\\Dolphin.exe")).args(&args).creation_flags(CREATE_NO_WINDOW).spawn().map(tie).map_err(|e| e.to_string())?;
+    let child = Command::new(exe(dir, "Dolphin.exe", EXE_WII)).args(&args).env("SDL_GAMECONTROLLERCONFIG", crate::pad::mappings()).creation_flags(CREATE_NO_WINDOW).spawn().map(tie).map_err(|e| e.to_string())?;
     let pid = child.id();
     *LOBBY.lock().unwrap() = Some(child);
     std::thread::spawn(move || loop {
@@ -1113,11 +1234,39 @@ pub fn netplay_cancel() {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn manette_pro_wii_u() {
+        // A à − identiques ; croix, clics des sticks et sticks décalés d'un (HOME en 11).
+        assert_eq!(super::pro_id(1), 1);
+        assert_eq!(super::pro_id(10), 10);
+        assert_eq!(super::pro_id(11), 12);
+        assert_eq!(super::pro_id(24), 25);
+    }
+
+    #[test]
     #[ignore]
     fn carte_reseau() {
         println!("carte : {:?}", super::carte_reseau());
     }
     use super::*;
+
+    /// Aucun jeu 3DS du dossier des jeux n'est bloqué à tort : `cargo test --release -- --ignored copies_3ds --nocapture`.
+    #[test]
+    #[ignore]
+    fn copies_3ds() {
+        let dossier = std::fs::read_to_string(r"C:\Users\reloo\AppData\Local\En Local\data\dossier-jeux.txt").unwrap();
+        let mut n = 0;
+        for e in std::fs::read_dir(std::path::Path::new(dossier.trim()).join("3DS")).unwrap().flatten() {
+            let p = e.path().to_string_lossy().into_owned();
+            if !p.to_lowercase().ends_with(".3ds") {
+                continue;
+            }
+            n += 1;
+            let r = super::check_3ds(&p);
+            println!("{} : {:?}", e.file_name().to_string_lossy(), r.as_ref().err().map(|x| x.0));
+            assert!(!matches!(r, Err((true, _))), "bloqué à tort : {p}");
+        }
+        assert!(n > 0);
+    }
 
     #[test]
     fn dossier_maj_dlc_donne_a_eden() {

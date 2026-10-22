@@ -8,7 +8,8 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 const PORTS: std::ops::RangeInclusive<u16> = 24872..=24891;
-const REGLE: &str = "En Local - salon du jeu";
+// Le nom change avec le programme autorisé (la Switch est lancée sous le nom enlocal-switch.exe).
+const REGLE: &str = "En Local - salon du jeu (2)";
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 struct Salon {
@@ -27,7 +28,7 @@ fn pare_feu() -> Result<(), String> {
     }
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     let regle = |prog: &str| format!("netsh advfirewall firewall add rule name=\"{REGLE}\" dir=in action=allow protocol=UDP localport={}-{} profile=any program=\"{prog}\"", PORTS.start(), PORTS.end());
-    let cmd = format!("{} & {}", regle(&exe.to_string_lossy()), regle(&format!("{}\\eden.exe", crate::eden())));
+    let cmd = format!("{} & {}", regle(&exe.to_string_lossy()), regle(&crate::embed::exe(&crate::eden(), "eden.exe", crate::embed::EXE_SWITCH)));
     // Les guillemets simples sont doublés pour PowerShell.
     let ps = format!("Start-Process cmd -Verb RunAs -WindowStyle Hidden -Wait -ArgumentList '/c {}'", cmd.replace('\'', "''"));
     let ok = Command::new("powershell").args(["-NoProfile", "-Command", &ps]).creation_flags(CREATE_NO_WINDOW).status().is_ok_and(|s| s.success());

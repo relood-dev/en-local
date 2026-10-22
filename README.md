@@ -80,6 +80,6 @@ cargo build --release
 
 En Local est sous licence **GPL-3.0** (voir [LICENSE](LICENSE)).
 
-Les composants inclus gardent leur licence : Eden et melonDS (GPL-3.0), Azahar et Dolphin (GPL-2.0 ou plus), Cemu (MPL-2.0), PKHeX.Core (GPL-3.0), FFmpeg (LGPL), nsz (MIT), SDL (zlib), Tauri (MIT / Apache-2.0).
+Les composants inclus gardent leur licence : Eden et melonDS (GPL-3.0), Azahar et Dolphin (GPL-2.0 ou plus), Cemu (MPL-2.0), PKHeX.Core (GPL-3.0), FFmpeg (LGPL), 7-Zip (LGPL, avec la restriction unRAR), nsz (MIT), SDL (zlib), Tauri (MIT / Apache-2.0).
 
 Nintendo, les consoles et les jeux cités appartiennent à leurs propriétaires. En Local n'est ni affilié ni approuvé par Nintendo.

@@ -1,0 +1,125 @@
+From ded46907b4292093f751bf7841394555ecdddf88 Mon Sep 17 00:00:00 2001
+From: Relood <147659633+relood-dev@users.noreply.github.com>
+Date: Thu, 8 Oct 2026 00:03:40 +0200
+Subject: [PATCH] En Local : retour automatique dans le salon apres une coupure
+
+---
+ src/citra_qt/citra_qt.cpp | 67 +++++++++++++++++++++++++++++++--------
+ 1 file changed, 54 insertions(+), 13 deletions(-)
+
+diff --git a/src/citra_qt/citra_qt.cpp b/src/citra_qt/citra_qt.cpp
+index f00bae6..3b706e8 100644
+--- a/src/citra_qt/citra_qt.cpp
++++ b/src/citra_qt/citra_qt.cpp
+@@ -7,6 +7,8 @@
+ #include <memory>
+ #include <optional>
+ #include <thread>
++#include <chrono>
++#include <mutex>
+ #include <unordered_map>
+ #include <QFile>
+ #include <QFileDialog>
+@@ -1366,6 +1368,32 @@ static std::map<std::string, std::map<std::string, int>> amiibos_usages = {
+ static std::map<std::string, QAction*> amiibos_actions;
+ static std::map<std::string, QAction*> amiibos_file_actions;
+ 
++// En Local: the room asked by En Local, joined again when the connection is lost.
++namespace {
++struct EnLocalRoom {
++    std::string host;
++    u16 port = 0;
++    std::string nickname;
++    std::string password;
++    std::string console_id;
++    Network::MacAddress mac{};
++};
++std::mutex enlocal_room_mutex;
++std::optional<EnLocalRoom> enlocal_room;
++
++void EnLocalJoin(const EnLocalRoom& r) {
++    {
++        std::lock_guard lock(enlocal_room_mutex);
++        enlocal_room = r;
++    }
++    if (auto member = Network::GetRoomMember().lock()) {
++        if (member->IsConnected())
++            member->Leave();
++        member->Join(r.nickname, r.console_id, r.host.c_str(), r.port, 0, r.mac, r.password);
++    }
++}
++} // namespace
++
+ GMainWindow::GMainWindow(Core::System& system_)
+     : ui{std::make_unique<Ui::MainWindow>()}, system{system_}, movie{system.Movie()},
+       user_data_migrator{this}, config{std::make_unique<QtConfig>()}, emu_thread{nullptr} {
+@@ -1703,11 +1731,7 @@ GMainWindow::GMainWindow(Core::System& system_)
+         const std::string console_id = Service::CFG::GetConsoleIdHash(system);
+         const auto mac = Service::CFG::GetConsoleMacAddress(system);
+         // Join blocks while it connects: same as the Direct Connect dialog, off the UI thread.
+-        (void)QtConcurrent::run([=] {
+-            if (auto member = Network::GetRoomMember().lock()) {
+-                member->Join(nickname, console_id, host.c_str(), port, 0, mac, password);
+-            }
+-        });
++        (void)QtConcurrent::run([=] { EnLocalJoin({host, port, nickname, password, console_id, mac}); });
+     }
+ 
+     // En Local: room events in the log (join result, who arrives or leaves), to understand why two
+@@ -1718,6 +1742,26 @@ GMainWindow::GMainWindow(Core::System& system_)
+         });
+         member->BindOnError([](const Network::RoomMember::Error& error) {
+             LOG_ERROR(Frontend, "En Local: room error {}", static_cast<int>(error));
++            if (error != Network::RoomMember::Error::LostConnection)
++                return;
++            // Connection lost (network cut, game paused too long…): back in the same room.
++            (void)QtConcurrent::run([] {
++                for (int i = 0; i < 20; ++i) {
++                    std::this_thread::sleep_for(std::chrono::seconds(3));
++                    std::optional<EnLocalRoom> r;
++                    {
++                        std::lock_guard lock(enlocal_room_mutex);
++                        r = enlocal_room;
++                    }
++                    auto member = Network::GetRoomMember().lock();
++                    if (!r || !member || member->IsConnected())
++                        return;
++                    LOG_INFO(Frontend, "En Local: joining the room again ({})", i + 1);
++                    member->Join(r->nickname, r->console_id, r->host.c_str(), r->port, 0, r->mac, r->password);
++                    if (member->IsConnected())
++                        return;
++                }
++            });
+         });
+         member->BindOnStatusMessageReceived([](const Network::StatusMessageEntry& entry) {
+             LOG_INFO(Frontend, "En Local: room message {} {}", static_cast<int>(entry.type), entry.nickname);
+@@ -1743,6 +1787,10 @@ GMainWindow::GMainWindow(Core::System& system_)
+             if (sep <= 0) {
+                 // Empty host: the session was left, the game goes on without a room.
+                 LOG_INFO(Frontend, "En Local: room left");
++                {
++                    std::lock_guard lock(enlocal_room_mutex);
++                    enlocal_room.reset();
++                }
+                 (void)QtConcurrent::run([] {
+                     if (auto member = Network::GetRoomMember().lock(); member && member->IsConnected())
+                         member->Leave();
+@@ -1756,14 +1804,7 @@ GMainWindow::GMainWindow(Core::System& system_)
+             const std::string console_id = Service::CFG::GetConsoleIdHash(system);
+             const auto mac = Service::CFG::GetConsoleMacAddress(system);
+             LOG_INFO(Frontend, "En Local: room joined mid-game, {}", l[0].toStdString());
+-            (void)QtConcurrent::run([=] {
+-                auto member = Network::GetRoomMember().lock();
+-                if (!member)
+-                    return;
+-                if (member->IsConnected())
+-                    member->Leave();
+-                member->Join(nickname, console_id, host.c_str(), port, 0, mac, password);
+-            });
++            (void)QtConcurrent::run([=] { EnLocalJoin({host, port, nickname, password, console_id, mac}); });
+         });
+         salon_timer->start(1000);
+     }
+-- 
+2.55.0.windows.5
+

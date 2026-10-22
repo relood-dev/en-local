@@ -1,0 +1,29 @@
+From 6049779a10ac8f5ad571dce31153731e988b111d Mon Sep 17 00:00:00 2001
+From: Relood <147659633+relood-dev@users.noreply.github.com>
+Date: Thu, 8 Oct 2026 00:27:26 +0200
+Subject: [PATCH] En Local : le jeu lance est la cartouche inseree (jeu local
+ et telechargement)
+
+---
+ src/citra_qt/citra_qt.cpp | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/src/citra_qt/citra_qt.cpp b/src/citra_qt/citra_qt.cpp
+index 3b706e8..daed842 100644
+--- a/src/citra_qt/citra_qt.cpp
++++ b/src/citra_qt/citra_qt.cpp
+@@ -2746,6 +2746,11 @@ bool GMainWindow::LoadROM(const QString& filename) {
+     if (!UISettings::values.inserted_cartridge.GetValue().empty()) {
+         system.InsertCartridge(UISettings::values.inserted_cartridge.GetValue());
+     }
++    // En Local: the game is in the slot, like a real game card. Local play and Download Play read
++    // the card (the Download Play child, the title the other consoles look for).
++    else if (embed_parent) {
++        system.InsertCartridge(filename.toStdString());
++    }
+ 
+     const Core::System::ResultStatus result{
+         system.Load(*render_window, filename.toStdString(), secondary_window)};
+-- 
+2.55.0.windows.5
+

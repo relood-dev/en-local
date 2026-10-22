@@ -1,0 +1,87 @@
+From 5f35c4a3847566e4557e6bc9be01c8c0797c3135 Mon Sep 17 00:00:00 2001
+From: Relood <147659633+relood-dev@users.noreply.github.com>
+Date: Sun, 18 Oct 2026 16:47:13 +0200
+Subject: [PATCH] En Local : invites a distance branches en Joy-Con quand le
+ jeu refuse la manette Pro
+
+---
+ src/yuzu/main_window.cpp | 49 ++++++++++++++++++++++++----------------
+ 1 file changed, 29 insertions(+), 20 deletions(-)
+
+diff --git a/src/yuzu/main_window.cpp b/src/yuzu/main_window.cpp
+index 6df80d0..f5cd69a 100644
+--- a/src/yuzu/main_window.cpp
++++ b/src/yuzu/main_window.cpp
+@@ -322,6 +322,27 @@ enum class CalloutFlag : uint32_t {
+ 
+ const int MainWindow::max_recent_files_item;
+ 
++// En Local : branche le joueur `i` (0 = joueur 1) dans le premier type que le jeu accepte, dans
++// l'ordre de la fen├¬tre de choix : Pro, paire de Joy-Con, Joy-Con seul (gauche aux joueurs
++// impairs, droit aux pairs). Un jeu peut refuser la manette Pro (Super Mario Party : Joy-Con seul).
++static bool EnLocalBrancher(Core::HID::EmulatedController* pad, std::size_t i,
++                            const std::function<bool(Core::HID::NpadStyleIndex)>& permis) {
++    using T = Core::HID::NpadStyleIndex;
++    const T seul = i % 2 == 0 ? T::JoyconLeft : T::JoyconRight;
++    for (const T type : {T::Fullkey, T::JoyconDual, seul, seul == T::JoyconLeft ? T::JoyconRight : T::JoyconLeft}) {
++        if (!permis(type))
++            continue;
++        pad->SetNpadStyleIndex(type);
++        pad->Connect();
++        if (pad->IsConnected()) {
++            if (type != T::Fullkey)
++                LOG_INFO(Frontend, "En Local : joueur {} branch├® en type {}", i + 1, static_cast<int>(type));
++            return true;
++        }
++    }
++    return false;
++}
++
+ static void RemoveCachedContents() {
+     const auto cache_dir = Common::FS::GetEdenPath(Common::FS::EdenPath::CacheDir);
+     const auto offline_fonts = cache_dir / "fonts";
+@@ -639,8 +660,7 @@ MainWindow::MainWindow(bool has_broken_vulkan)
+                     joueur->SetButtonParam(Settings::NativeButton::Home, {});
+                     joueur->SetButtonParam(Settings::NativeButton::Screenshot, {});
+                     joueur->SaveCurrentConfig();
+-                    joueur->SetNpadStyleIndex(Core::HID::NpadStyleIndex::Fullkey);
+-                    joueur->Connect();
++                    EnLocalBrancher(joueur, j + 1, [](auto) { return true; });
+                     LOG_INFO(Frontend, "En Local : joueur {} ├á distance", j + 2);
+                 }
+             }
+@@ -1020,24 +1040,13 @@ void MainWindow::ControllerSelectorReconfigureControllers(
+                   });
+             if (!present || pad->IsConnected())
+                 continue;
+-            // Joy-Con seuls : gauche aux joueurs impairs, droit aux pairs, comme l'applet d'Eden.
+-            const bool gauche = parameters.allow_left_joycon && (i % 2 == 0 || !parameters.allow_right_joycon);
+-            const std::pair<bool, Core::HID::NpadStyleIndex> types[] = {
+-                {parameters.allow_pro_controller, Core::HID::NpadStyleIndex::Fullkey},
+-                {parameters.allow_dual_joycons, Core::HID::NpadStyleIndex::JoyconDual},
+-                {gauche, Core::HID::NpadStyleIndex::JoyconLeft},
+-                {parameters.allow_right_joycon, Core::HID::NpadStyleIndex::JoyconRight},
+-            };
+-            for (const auto& [permis, type] : types) {
+-                if (!permis)
+-                    continue;
+-                pad->SetNpadStyleIndex(type);
+-                pad->Connect();
+-                if (pad->IsConnected()) {
+-                    LOG_INFO(Frontend, "En Local : joueur {} rebranch├® en type {}", i + 1, static_cast<int>(type));
+-                    break;
+-                }
+-            }
++            EnLocalBrancher(pad, i, [&parameters](Core::HID::NpadStyleIndex type) {
++                using T = Core::HID::NpadStyleIndex;
++                return type == T::Fullkey ? parameters.allow_pro_controller
++                     : type == T::JoyconDual ? parameters.allow_dual_joycons
++                     : type == T::JoyconLeft ? parameters.allow_left_joycon
++                                             : parameters.allow_right_joycon;
++            });
+         }
+         QtCommon::system->ApplySettings();
+         config->SaveAllValues();
+-- 
+2.55.0.windows.5
+
