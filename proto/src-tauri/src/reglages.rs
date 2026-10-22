@@ -59,7 +59,7 @@ fn paire(k: &str, v: impl ToString) -> (String, String) {
  * touche_a = south : le bouton A de la console est le bouton du bas de la manette.
  */
 const PHYS: [&str; 16] = ["south", "west", "back", "start", "up", "down", "left", "right", "east", "north", "lb", "rb", "lt", "rt", "l3", "r3"];
-fn touche<'a>(o: &'a Opts, bouton: &str) -> Option<&'a str> {
+pub fn touche<'a>(o: &'a Opts, bouton: &str) -> Option<&'a str> {
     get(o, &format!("touche_{bouton}")).filter(|p| PHYS.contains(p))
 }
 
@@ -442,6 +442,46 @@ pub fn dolphin_profil_mods(dolphin: &str, game_id: &str, o: &Opts) -> std::io::R
     std::fs::write(dir.join(format!("{game_id}.json")), serde_json::to_string_pretty(&serde_json::json!({ "mods": mods }))?)
 }
 
+/* ---------- PS3 : RPCS3 ---------- */
+
+/// config.yml de RPCS3 : il complète lui-même les réglages absents.
+pub fn rpcs3(o: &Opts) -> String {
+    let langue = match get(o, "langue") {
+        Some("en") => "English (US)", Some("ja") => "Japanese", Some("de") => "German", Some("it") => "Italian", Some("es") => "Spanish",
+        Some("nl") => "Dutch", Some("pt") => "Portuguese (Portugal)", Some("ru") => "Russian", Some("ko") => "Korean",
+        Some("zh") => "Chinese (Simplified)", Some("tw") => "Chinese (Traditional)", _ => "French",
+    };
+    let echelle = nombre(o, "resolution", 1, 4).map_or(100, |n| [100, 150, 200, 300][n as usize - 1]);
+    let volume = nombre(o, "volume", 0, 100).unwrap_or(100);
+    // Réglages choisis seulement : RPCS3 garde ses valeurs par défaut pour le reste.
+    let choix = |cle: &str, valeurs: &[(&str, &str)]| get(o, cle).and_then(|v| valeurs.iter().find(|(x, _)| *x == v)).map(|(_, y)| y.to_string());
+    let mut video = format!("  Resolution Scale: {echelle}\n");
+    for (cle, nom, valeurs) in [
+        ("api", "Renderer", &[("vulkan", "Vulkan"), ("opengl", "OpenGL")][..]),
+        ("fps", "Frame limit", &[("auto", "Auto"), ("30", "30"), ("60", "60"), ("off", "Off")]),
+        ("vsync", "VSync Mode", &[("non", "Disabled"), ("adaptive", "Adaptive"), ("oui", "Full")]),
+        ("aa", "MSAA", &[("0", "Disabled"), ("1", "Auto")]),
+        ("aniso", "Anisotropic Filter Override", &[("0", "0"), ("2", "2"), ("4", "4"), ("8", "8"), ("16", "16")]),
+        ("shaders", "Shader Mode", &[("1", "Async Recompiler with Shader Interpreter"), ("2", "Async Recompiler (multi-threaded)")]),
+        ("precision", "Shader Precision", &[("0", "Low"), ("1", "High"), ("2", "Ultra")]),
+        ("rsx_mt", "Multithreaded RSX", &[("oui", "true"), ("non", "false")]),
+    ] {
+        if let Some(v) = choix(cle, valeurs) {
+            video += &format!("  {nom}: {v}\n");
+        }
+    }
+    let mut coeur = String::new();
+    if let Some(v) = choix("spu_bloc", &[("safe", "Safe"), ("mega", "Mega"), ("giga", "Giga")]) {
+        coeur += &format!("  SPU Block Size: {v}\n");
+    }
+    format!(
+        "{}Video:\n{video}Audio:\n  Master Volume: {volume}\nSystem:\n  Language: {langue}\n\
+         Miscellaneous:\n  Exit RPCS3 when process finishes: true\n  Start games in fullscreen mode: false\n  \
+         Pause emulation on RPCS3 focus loss: false\n  Show shader compilation hint: false\n  Prevent display sleep while running games: true\n",
+        if coeur.is_empty() { String::new() } else { format!("Core:\n{coeur}") }
+    )
+}
+
 /* ---------- Wii U : Cemu ---------- */
 
 /// Parties de settings.xml : langue, Graphic, Audio et packs graphiques.
@@ -784,6 +824,16 @@ mod tests {
         assert!(ini_set("[UI]\n", "System", &[paire("language_index", 2)]).ends_with("[System]\nlanguage_index\\default=false\nlanguage_index=2\n"));
     }
 
+    #[test]
+    fn rpcs3_config() {
+        let c = rpcs3(&opts(&[("langue", "en"), ("resolution", "3"), ("volume", "40")]));
+        assert!(c.contains("Resolution Scale: 200") && c.contains("Master Volume: 40") && c.contains("Language: English (US)"));
+        assert!(rpcs3(&opts(&[])).contains("Language: French"));
+        let g = rpcs3(&opts(&[("api", "opengl"), ("fps", "30"), ("aa", "0"), ("spu_bloc", "mega"), ("rsx_mt", "oui"), ("vsync", "pirate")]));
+        assert!(g.starts_with("Core:\n  SPU Block Size: Mega\nVideo:\n"));
+        assert!(g.contains("  Renderer: OpenGL\n") && g.contains("  Frame limit: 30\n") && g.contains("  MSAA: Disabled\n") && g.contains("  Multithreaded RSX: true\n"));
+        assert!(!g.contains("VSync") && !rpcs3(&opts(&[])).contains("Core:"));
+    }
     #[test]
     fn wii_a_l_horizontale() {
         let v = |cote, k: &str| dolphin_wii(&opts(&[]), cote).into_iter().find(|(c, _)| c == k).unwrap().1;

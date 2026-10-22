@@ -27,6 +27,15 @@ const ICONES_CONSOLES = {
   GC: '<path d="M12 2.5 20.5 7.25v9.5L12 21.5 3.5 16.75v-9.5Z"/><path d="M12 12l8.5-4.75M12 12v9.5M12 12 3.5 7.25"/>',
   Wii: '<rect x="8.5" y="2" width="7" height="20" rx="3.5"/><path d="M12 5.5v3M10.5 7h3"/><circle cx="12" cy="12.5" r="1"/><path d="M11 17.5h2"/>',
   WiiU: '<rect x="2" y="5.5" width="20" height="13" rx="4"/><rect x="7" y="8" width="10" height="8" rx="1"/><circle cx="4.6" cy="10" r=".6"/><circle cx="19.4" cy="14" r=".6"/>',
+  N64: '<path d="M5 6h14c1.7 0 3 1.3 3 3v2.5c0 1.5-.9 2.6-2 3.2l-1 4.3c-.3 1.2-1.9 1.3-2.3.1L15.5 15h-1.7l-.8 4.6c-.2 1.2-1.8 1.2-2 0L10.2 15H8.5l-1.2 4.1c-.4 1.2-2 1.1-2.3-.1l-1-4.3c-1.1-.6-2-1.7-2-3.2V9c0-1.7 1.3-3 3-3Z"/><circle cx="12" cy="11" r="1.4"/>',
+  SNES: '<path d="M7 7h10a5 5 0 0 1 0 10c-1.7 0-2.6-.7-3.2-1.5h-3.6C9.6 16.3 8.7 17 7 17A5 5 0 0 1 7 7Z"/><path d="M5.5 12h3M7 10.5v3"/><circle cx="17" cy="10.4" r=".7"/><circle cx="17" cy="13.6" r=".7"/><circle cx="15.4" cy="12" r=".7"/><circle cx="18.6" cy="12" r=".7"/>',
+  NES: '<rect x="2" y="7.5" width="20" height="9" rx="1.5"/><path d="M4.5 12h3M6 10.5v3"/><circle cx="16" cy="12.5" r="1.1"/><circle cx="19" cy="12.5" r="1.1"/><path d="M10 13h1.5M12.5 13H14"/>',
+  GBA: '<path d="M6 6.5h12c2.8 0 4.5 2.4 4.5 5.5s-1.7 5.5-4.5 5.5H6c-2.8 0-4.5-2.4-4.5-5.5S3.2 6.5 6 6.5Z"/><rect x="8" y="8.5" width="8" height="7" rx="1"/><path d="M3.6 12h2.4M4.8 10.8v2.4"/><circle cx="19.5" cy="11" r=".6"/><circle cx="18.4" cy="13" r=".6"/>',
+  GBC: '<path d="M6.5 2.5h11v16a3 3 0 0 1-3 3h-8a1 1 0 0 1-1-1v-17a1 1 0 0 1 1-1Z"/><rect x="8" y="4.5" width="8" height="6.5" rx=".8"/><path d="M8 15h2.4M9.2 13.8v2.4"/><circle cx="14.6" cy="15.6" r=".6"/><circle cx="16" cy="14.2" r=".6"/>',
+  GB: '<path d="M6.5 2.5h11v16a3 3 0 0 1-3 3h-8a1 1 0 0 1-1-1v-17a1 1 0 0 1 1-1Z"/><rect x="8" y="4.5" width="8" height="6.5" rx=".5"/><path d="M8 15h2.4M9.2 13.8v2.4"/><circle cx="14.6" cy="15.6" r=".6"/><circle cx="16" cy="14.2" r=".6"/>',
+  PS1: '<path d="M7 8.5h10c2.6 0 4.2 1.8 4.6 4.4l.8 5c.3 1.8-1.6 2.9-3 1.7L16.5 17h-9l-2.9 2.6c-1.4 1.2-3.3.1-3-1.7l.8-5C2.8 10.3 4.4 8.5 7 8.5Z"/><path d="M6.5 11.5v3M5 13h3"/><circle cx="17.5" cy="12" r=".6"/><circle cx="19.2" cy="13.6" r=".6"/>',
+  PS2: '<path d="M7 8.5h10c2.6 0 4.2 1.8 4.6 4.4l.8 5c.3 1.8-1.6 2.9-3 1.7L16.5 17h-9l-2.9 2.6c-1.4 1.2-3.3.1-3-1.7l.8-5C2.8 10.3 4.4 8.5 7 8.5Z"/><path d="M6.5 11.5v3M5 13h3"/><circle cx="17.5" cy="12" r=".6"/><circle cx="15.8" cy="13.6" r=".6"/><circle cx="19.2" cy="13.6" r=".6"/><circle cx="9.5" cy="15" r="1.2"/><circle cx="14.5" cy="15" r="1.2"/>',
+  PS3: '<path d="M7 8.5h10c2.6 0 4.2 1.8 4.6 4.4l.8 5c.3 1.8-1.6 2.9-3 1.7L16.5 17h-9l-2.9 2.6c-1.4 1.2-3.3.1-3-1.7l.8-5C2.8 10.3 4.4 8.5 7 8.5Z"/><path d="M6.5 11.5v3M5 13h3"/><circle cx="17.5" cy="12" r=".6"/><circle cx="15.8" cy="13.6" r=".6"/><circle cx="19.2" cy="13.6" r=".6"/>',
   Switch: '<rect x="2.5" y="5" width="4.5" height="14" rx="2.25"/><rect x="17" y="5" width="4.5" height="14" rx="2.25"/><rect x="8" y="6" width="8" height="12" rx="1"/><circle cx="4.75" cy="9" r=".6"/><circle cx="19.25" cy="15" r=".6"/>',
 };
 const iconeConsole = (c, cls = 'ico') => icone(ICONES_CONSOLES[c] || '', cls);

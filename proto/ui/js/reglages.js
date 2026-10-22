@@ -60,7 +60,9 @@ function lignesReglages() {
   };
   if (switchEtat === null) chargerSwitch().then(() => onglet === 'reglages' && !regPage && drawReglages());
   if (troisDsPret === null) chargerTroisDs().then(() => onglet === 'reglages' && !regPage && drawReglages());
-  const etatConsole = (c) => (c === 'Switch' && switchEtat ? (switchPret() ? 'Prête' : 'Clés ou firmware à ajouter') : c === '3DS' && troisDsPret === false ? 'boot9.bin à ajouter' : 'Configurer');
+  if (ps3Pret === null) chargerPs3().then(() => onglet === 'reglages' && !regPage && drawReglages());
+  if (ps2Pret === null) chargerPs2().then(() => onglet === 'reglages' && !regPage && drawReglages());
+  const etatConsole = (c) => (c === 'Switch' && switchEtat ? (switchPret() ? 'Prête' : 'Clés ou firmware à ajouter') : c === '3DS' && troisDsPret === false ? 'boot9.bin à ajouter' : c === 'PS3' && ps3Pret === false ? 'Firmware à ajouter' : c === 'PS2' && ps2Pret === false ? 'BIOS à ajouter' : 'Configurer');
   return [
     ['Général', 'Affichage, thème, langue, pseudo', [
       { label: 'Affichage', aide: 'Plein écran (comme une console), fenêtré sans bordure, ou fenêtré. F11 bascule aussi le plein écran.', ...choix('ecran', Object.fromEntries(MODES_ECRAN.map(([v, x]) => [v, x])), localStorage.ecran || 'plein', modeEcran, 'plein') },
@@ -94,7 +96,7 @@ function lignesReglages() {
     ]],
     ['Consoles', 'Graphismes, fichiers de tes consoles', [
       { label: 'Graphismes', valeur: NOMS_PROFILS[emu.profil] || 'Par défaut', aide: 'Recommandé : adapté à ton PC (carte graphique, processeur, écran). Performance, Équilibré, Qualité : pour toutes les consoles d\'un coup. Personnalisé : ce que tu règles toi-même dans chaque console.', fn: choisirProfil },
-      ...ORDRE.map((c) => ({ label: LONG[c], valeur: etatConsole(c), loc: 'manette', aide: `Langue, image, performances${['DS', '3DS'].includes(c) ? ', écrans' : ''}, son et touches de la ${LONG[c]}${c === 'Switch' ? ', et tes clés et firmware' : c === '3DS' ? ', et ton boot9.bin' : ''}. En Local les donne à l'émulateur à chaque lancement.`, fn: () => ouvrirPage({ console: c }) })),
+      ...ORDRE.map((c) => ({ label: LONG[c], valeur: etatConsole(c), loc: 'manette', aide: `Langue, image, performances${['DS', '3DS'].includes(c) ? ', écrans' : ''}, son et touches de la ${LONG[c]}${c === 'Switch' ? ', et tes clés et firmware' : c === '3DS' ? ', et ton boot9.bin' : c === 'PS3' ? ', et son firmware' : c === 'PS2' ? ', et ton BIOS' : ''}. En Local les donne à l'émulateur à chaque lancement.`, fn: () => ouvrirPage({ console: c }) })),
     ]],
     ['En jeu', 'Captures, clips, autour du jeu', [
       { label: 'Clips vidéo', aide: 'En jeu, le bouton de partage, puis « Clip vidéo ». Au clavier : F10. Les clips vont dans Médias, Vidéos. La carte graphique enregistre en continu pendant la partie (rien n\'est gardé sans ton appui). Désactivés : rien n\'est enregistré.', ...choix('clips', { 0: 'Désactivés', 15: '15 s', 30: '30 s', 60: '1 min', 120: '2 min' }, String(dureeClips()), (v) => (localStorage.clips = v), '30') },

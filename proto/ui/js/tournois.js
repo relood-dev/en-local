@@ -22,11 +22,24 @@ function jeuDeTournoi(g) {
 
 async function chargerTournois() {
   if (!me) return;
-  chargerClasses();
   tournoisListe = await api('GET', '/tournois').catch(() => tournoisListe);
+  noterTournois();
   if (onglet === 'tournois') drawTournois();
 }
 setInterval(() => onglet === 'tournois' && (!current || enAccueil) && chargerTournois(), 15000);
+
+/** Pour les défis : tournois joués (lancés), gagnés et organisés, gardés même quand Loc les oublie. */
+function noterTournois() {
+  let neuf = false;
+  const noter = (cle, id) => (compteurs[cle] ||= []).includes(id) || (compteurs[cle].push(id), (neuf = true));
+  for (const t of tournoisListe) {
+    if (t.etat === 'inscriptions') continue;
+    if (t.joueurs.some((j) => j.id === me.id)) noter('tournois', t.id);
+    if (t.organisateur === me.id) noter('tournoisOrganises', t.id);
+    if (t.etat === 'fini' && t.champion === me.id) noter('tournoisGagnes', t.id);
+  }
+  if (neuf) garderCompteurs(), verifierDefis();
+}
 
 const trnActuel = () => tournoisListe.find((t) => t.id === trnOuvert);
 const nomJoueur = (t, id) => t.joueurs.find((j) => j.id === id)?.name || '…';
@@ -70,8 +83,8 @@ function drawTournois() {
   if (!me) {
     html = `<div class="trn"><h1>Tournois</h1><p>Connecte-toi avec Discord pour jouer les tournois du Local.</p></div>`;
   } else if (!t) {
-    html = `<div class="trn"><h1>Compétition</h1><p>Joue en classé contre des membres de ton niveau, ou organise un tournoi : chaque match ouvre sa session tout seul.</p>
-      ${htmlClasse(action)}<div class="trn-grille">
+    html = `<div class="trn"><h1>Tournois</h1><p>Organise un tournoi ou inscris-toi : chaque match ouvre sa session tout seul.</p>
+      <div class="trn-grille">
         <button class="trn-el trn-carte nouveau" data-n="${action(organiserTournoi)}"><div class="icone">${icone('<path d="M12 5v14M5 12h14"/>')}</div><span><b>Organiser un tournoi</b><small>Switch, 3DS ou DS</small></span></button>
         ${tournoisListe.map((x) => {
           const inscrit = x.joueurs.some((j) => j.id === me.id);
@@ -107,7 +120,7 @@ function drawTournois() {
   }
   $('#section').innerHTML = html;
   $('#section').querySelectorAll('.trn-el').forEach((b) => (b.onclick = () => ((trnFocus = +b.dataset.n), trnActions[trnFocus]())));
-  $('#titre').textContent = t ? t.nom : 'Compétition';
+  $('#titre').textContent = t ? t.nom : 'Tournois';
   focusTournoi(trnFocus);
 }
 /** Le tableau façon console : principal, perdants, grande finale ; tes matchs et ceux en cours ressortent. */
@@ -243,121 +256,6 @@ function resultatMatch(t, m, gagnant) {
 function arbitrer(t, r, i, x) {
   sheet('Qui a gagné ?', 'En tant qu\'organisateur, tu peux donner le résultat de ce match.', [
     ...[x.a, x.b].map((id) => ({ label: nomJoueur(t, id), fn: () => appel('POST', `/tournois/${t.id}/resultat`, { r, i, gagnant: id }) })),
-    { label: 'Retour', cancel: true },
-  ]);
-}
-
-/*
- * Parties classées : une file par jeu, Loc trouve un adversaire de ton niveau et ouvre votre
- * session. Après le match, chacun dit qui a gagné ; d'accord, les cotes bougent.
- */
-let classes = {}; // clé du jeu -> classement (saison, top, moi)
-let fileClasse = null; // { g, depuis } pendant la recherche
-let matchClasse = null; // le match en cours, s'il y en a un
-const cleClasse = (g) => `${g.console}:${g.title_id || (g.console === 'DS' ? dsKey(g) : '') || titreDe(g).toLowerCase()}`;
-const corpsClasse = (g) => ({ jeu: titreDe(g), console: g.console, titleId: g.title_id || '', gameKey: g.console === 'DS' ? dsKey(g) : '' });
-// Jeux ouverts au classé (title ID Switch, comme côté Loc) : Mario Kart 8 Deluxe et Smash Ultimate.
-const JEUX_CLASSES = ['0100152000022000', '01006A800016E000'];
-const jeuxClasses = () => games.filter((g) => JEUX_CLASSES.includes((g.title_id || '').toUpperCase()));
-async function chargerClasses() {
-  if (!me) return;
-  await Promise.all(jeuxClasses().map(async (g) => {
-    classes[cleClasse(g)] = await api('GET', `/classe/classement?${new URLSearchParams(corpsClasse(g))}`).catch(() => classes[cleClasse(g)]);
-  }));
-  const e = await api('GET', '/classe/file').catch(() => null);
-  matchClasse = e?.etat === 'match' ? e.match : null;
-  if (onglet === 'tournois' && !trnOuvert) drawTournois();
-}
-const placeTexte = (c) => (c?.moi?.place ? `${c.moi.place}${c.moi.place === 1 ? 'er' : 'e'} · ` : '');
-/** Les cartes « Classé » en haut de Tournois : un jeu par carte, avec ta cote. */
-function htmlClasse(action) {
-  const jeux = jeuxClasses();
-  if (!me || !jeux.length) return '';
-  const m = matchClasse;
-  const match = m ? `<div class="trn-match classe"><img class="av" src="${esc(m.contre.avatar || 'img/hang-coucou.png')}" alt=""><span><small>Partie classée · ${esc(m.jeu)}</small><b>Contre ${esc(m.contre.name)} (${+m.contre.cote || 0})</b><small>${m.salon ? 'Persos, bans, résultats et chat : tout se passe dans le salon.' : m.declare ? 'Résultat donné, en attente de ton adversaire.' : m.sienne ? `${esc(m.contre.name)} a donné le résultat : à toi.` : 'Après le match, dis qui a gagné.'}</small></span>
-    <div class="trn-boutons">${m.salon ? `<button class="trn-el choix" data-n="${action(ouvrirSalonClasse)}">Ouvrir le salon</button>` : m.code ? `<button class="trn-el choix" data-n="${action(() => join(m.code))}">Rejoindre</button>` : ''}${m.declare || m.salon ? '' : `<button class="trn-el choix" data-n="${action(() => resultatClasse(m, me.id))}">J'ai gagné</button><button class="trn-el choix" data-n="${action(() => resultatClasse(m, m.contre.id))}">J'ai perdu</button>`}</div></div>` : '';
-  return `<div class="titre-groupe">Classé${classes[cleClasse(jeux[0])]?.saison ? ` · saison ${esc(classes[cleClasse(jeux[0])].saison)}` : ''}</div>${match}
-    <div class="trn-grille classe">${jeux.map((g) => {
-      const c = classes[cleClasse(g)];
-      return `<button class="trn-el trn-carte classe" data-n="${action(() => menuClasse(g))}"><div class="icone">${iconeHtml(g)}</div><span><b>${esc(titreDe(g))}</b><small>${placeTexte(c)}${c?.moi?.matchs ? `${c.moi.victoires} victoire${c.moi.victoires > 1 ? 's' : ''} sur ${c.moi.matchs}` : 'Pas encore classé'}${c?.enFile ? ` · ${c.enFile} en file` : ''}</small></span><i class="cote">${+c?.moi?.cote || 1000}</i></button>`;
-    }).join('')}</div><div class="titre-groupe">Tournois</div>`;
-}
-function menuClasse(g) {
-  const c = classes[cleClasse(g)];
-  sheet(titreDe(g), `Partie classée : Loc te trouve un adversaire de ton niveau et ouvre votre session. Ta cote : ${+c?.moi?.cote || 1000}${c?.moi?.place ? ` (${placeTexte(c)}de la saison)`.replace(' · ', ' ') : ''}.`, [
-    { label: 'Chercher un adversaire', fn: () => chercherClasse(g) },
-    { label: 'Voir le classement', fn: () => voirClassement(g) },
-    { label: 'Annuler', cancel: true },
-  ]);
-}
-function voirClassement(g) {
-  const c = classes[cleClasse(g)];
-  const top = c?.top || [];
-  sheet(`Classement · ${titreDe(g)}`, top.length ? `Saison ${esc(c.saison)}. La cote monte quand tu gagnes, surtout contre plus fort que toi.` : 'Personne n\'a encore joué en classé sur ce jeu cette saison.', [
-    ...top.slice(0, 20).map((x, k) => ({ html: `<span class="cl-ligne${x.id === me?.id ? ' moi' : ''}"><em>${k + 1}</em><img class="av" src="${esc(x.avatar || 'img/hang-coucou.png')}" alt=""><b>${esc(x.name || '…')}</b><small>${x.victoires}/${x.matchs}</small><i>${x.cote}</i></span>`, fn: () => voirClassement(g) })),
-    { label: 'Retour', cancel: true, fn: () => menuClasse(g) },
-  ]);
-}
-
-async function chercherClasse(g) {
-  try {
-    const e = await api('POST', '/classe/file', corpsClasse(g));
-    fileClasse = { g, depuis: Date.now(), e };
-    ouvrirSalle({ mode: 'file', actions: [{ label: 'Annuler', k: 'b', fn: annulerClasse }] });
-    suivreClasse();
-  } catch (e) {
-    oops(e);
-  }
-}
-let suiviClasse = null;
-function suivreClasse() {
-  clearTimeout(suiviClasse);
-  if (!fileClasse) return;
-  suiviClasse = setTimeout(async () => {
-    const e = await api('GET', '/classe/file').catch(() => fileClasse?.e);
-    if (!fileClasse) return;
-    fileClasse.e = e;
-    if (e?.etat === 'match' && e.match.code) {
-      matchClasse = e.match;
-      fileClasse.trouve = true;
-      son('notif', true);
-      drawSalle();
-      const code = e.match.code;
-      // Smash et Mario Kart : le salon du match d'abord (persos, bans…), le jeu ensuite.
-      setTimeout(() => (fermerSalle(), (fileClasse = null), e.match.salon ? ouvrirSalonClasse() : join(code)), 1800);
-      return;
-    }
-    if (e?.etat === 'libre') return annulerClasse();
-    drawSalle();
-    suivreClasse();
-  }, 3000);
-}
-function annulerClasse() {
-  clearTimeout(suiviClasse);
-  fileClasse = null;
-  api('DELETE', '/classe/file').catch(() => {});
-  fermerSalle();
-}
-/** L'écran de recherche, dans la salle : le jeu, le temps d'attente, la cote. */
-function drawFile() {
-  const { g, depuis, e, trouve } = fileClasse || {};
-  if (!g) return;
-  const s = Math.floor((Date.now() - depuis) / 1000);
-  const m = e?.match;
-  $('#salle').innerHTML = `<div class="salle-carte file-classe${trouve ? ' trouve' : ''}">
-    <div class="salle-jeu"><div class="icone grande">${iconeHtml(g)}</div><div><h2>${esc(titreDe(g))}</h2><span>Partie classée · ${LONG[g.console]}</span></div></div>
-    <div class="file-centre">${trouve && m ? `<img class="av" src="${esc(m.contre.avatar || 'img/hang-coucou.png')}" alt=""><b>${esc(m.contre.name)}</b><span>Cote ${+m.contre.cote || 0} · lancement…</span>`
-      : `<div class="file-ondes"><i></i><i></i><i></i><img class="av" src="${esc(me?.avatar || 'img/hang-coucou.png')}" alt=""></div><b>Recherche d'un adversaire</b><span>${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')} · ta cote ${+e?.cote || 1000}${e?.joueurs > 1 ? ` · ${e.joueurs} dans la file` : ''}</span>`}</div>
-    <div class="salle-actions">${trouve ? '' : `<button class="choix focus" data-a="non">${glyphs.b}Annuler</button>`}</div>
-    <img class="salle-loc" src="img/loc/loc_${trouve ? 'gg' : 'cherche'}.gif" alt="">
-  </div>`;
-  $('#salle [data-a="non"]')?.addEventListener('click', annulerClasse);
-}
-setInterval(() => salle?.mode === 'file' && !fileClasse?.trouve && drawFile(), 1000);
-function resultatClasse(m, gagnant) {
-  const moi = gagnant === me.id;
-  sheet(moi ? 'Tu as gagné ?' : `${m.contre.name} a gagné ?`, 'Ton adversaire donne aussi le résultat. S\'il n\'est pas d\'accord, le match ne compte pas.', [
-    { label: 'Confirmer', fn: () => api('POST', '/classe/resultat', { match: m.id, gagnant }).then((e) => ((matchClasse = e?.etat === 'match' ? e.match : null), chargerClasses())).catch(oops) },
     { label: 'Retour', cancel: true },
   ]);
 }

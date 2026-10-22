@@ -32,6 +32,7 @@ fn base(console: &str) -> Option<&'static str> {
         "DS" => "dstdb",
         "3DS" => "3dstdb",
         "WiiU" => "wiiutdb",
+        "PS3" => "ps3tdb",
         "Switch" => "switchtdb",
         _ => return None,
     })

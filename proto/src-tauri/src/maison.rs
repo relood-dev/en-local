@@ -35,6 +35,7 @@ pub fn icone(path: &str, console: &str) -> Response {
         "DS" => icone_ds(path),
         "3DS" => icone_3ds(path),
         "WiiU" => icone_wiiu(path),
+        "PS3" => crate::ps3::icone(path),
         _ => None,
     };
     Response::new(img.map(|(w, h, px)| {
@@ -410,6 +411,12 @@ pub fn jaquette(urls: &[String]) -> Option<(String, usize)> {
     let dir = dossier("jaquettes");
     let _ = std::fs::create_dir_all(&dir);
     let nom = |u: &str| -> Option<String> {
+        // Anciennes Nintendo : jaquettes de libretro, au nom du jeu (encodé) ; le fichier prend une empreinte de l'adresse.
+        if let Some(reste) = u.strip_prefix("https://thumbnails.libretro.com/") {
+            let ok = reste.len() < 400 && reste.bytes().all(|b| b.is_ascii_alphanumeric() || b"%/._-".contains(&b)) && !reste.contains("..");
+            let h = reste.bytes().fold(0xcbf2_9ce4_8422_2325u64, |h, b| (h ^ b as u64).wrapping_mul(0x100_0000_01b3));
+            return ok.then(|| format!("libretro_{h:016x}.png"));
+        }
         let reste = u.strip_prefix("https://art.gametdb.com/")?;
         (reste.len() < 120 && reste.bytes().all(|b| b.is_ascii_alphanumeric() || b"/._-".contains(&b)) && !reste.contains("..")).then(|| reste.replace('/', "_"))
     };

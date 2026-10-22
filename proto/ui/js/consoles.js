@@ -49,6 +49,25 @@ const REGLAGES_CONSOLE = {
     { id: 'shaders_async', label: 'Shaders en arrière-plan', aide: 'Moins de saccades quand le jeu affiche quelque chose de nouveau.', valeurs: OUI_NON },
     VOLUME,
   ],
+  // Anciennes Nintendo (RetroArch) : l'image et le son.
+  ...Object.fromEntries(['N64', 'SNES', 'NES', 'GBA', 'GBC', 'GB', 'PS1', 'PS2'].map((c) => [c, [
+    { id: 'lissage', label: 'Image', aide: 'Nette : chaque pixel reste carré, comme sur la console. Lissée : plus douce mais floue.', valeurs: [['net', 'Nette (pixels)'], ['lisse', 'Lissée']] },
+    VOLUME,
+  ]])),
+  PS3: [
+    { ...LANGUE, valeurs: [...LANGUES, ['pt', 'Português'], ['ru', 'Русский']] },
+    { id: 'resolution', label: 'Résolution', aide: 'La plupart des jeux PS3 sont en 720p : plus haut, l\'image est plus nette mais bien plus lourde pour la carte graphique.', valeurs: [['1', '1× (720p)'], ['2', '1,5× (1080p)'], ['3', '2× (1440p)'], ['4', '3× (4K)']] },
+    { id: 'api', label: 'Pilote graphique', parDefaut: 'Vulkan', aide: 'Vulkan : le plus rapide, presque toujours. OpenGL : si un jeu s\'affiche mal en Vulkan.', valeurs: [['vulkan', 'Vulkan'], ['opengl', 'OpenGL']] },
+    { id: 'fps', label: 'Limite d\'images', parDefaut: 'Auto', aide: 'Auto : la vitesse prévue par le jeu. 30 : plus régulier dans un jeu qui saccade entre 30 et 60. Sans limite : certains jeux vont trop vite.', valeurs: [['auto', 'Auto'], ['30', '30 i/s'], ['60', '60 i/s'], ['off', 'Sans limite']] },
+    { id: 'shaders', label: 'Shaders', parDefaut: 'Avec interpréteur', aide: 'Avec interpréteur : pas de saccade quand un nouvel effet apparaît, un peu plus lourd. Sans : plus léger une fois tous les effets vus, mais des objets peuvent manquer un instant.', valeurs: [['1', 'Avec interpréteur'], ['2', 'Sans interpréteur']] },
+    { id: 'aa', label: 'Anticrénelage', parDefaut: 'Auto', aide: 'Lisse les bords en escalier. Le couper allège bien la carte graphique.', valeurs: [['1', 'Auto'], ['0', 'Aucun']] },
+    { id: 'aniso', label: 'Filtrage anisotrope', parDefaut: 'Selon le jeu', aide: 'Textures plus nettes au loin (sols, routes). Coûte peu.', valeurs: [['0', 'Selon le jeu'], ['2', '2×'], ['4', '4×'], ['8', '8×'], ['16', '16×']] },
+    { id: 'precision', label: 'Précision des shaders', parDefaut: 'Haute', aide: 'Basse : plus rapide, quelques effets moins justes. Ultra : la plus fidèle, la plus lourde.', valeurs: [['1', 'Haute'], ['0', 'Basse'], ['2', 'Ultra']] },
+    { id: 'rsx_mt', label: 'Graphismes sur plusieurs cœurs', parDefaut: 'Non', aide: 'RSX multithread : aide les processeurs à 8 cœurs ou plus dans les jeux lourds. Sur un petit processeur, ça peut ralentir.', valeurs: [['non', 'Non'], ['oui', 'Oui']] },
+    { id: 'spu_bloc', label: 'Calcul du processeur (SPU)', parDefaut: 'Sûr', aide: 'Mega : souvent plus rapide dans les jeux lourds. Sûr : le plus compatible. Giga : le plus rapide, peut faire planter certains jeux.', valeurs: [['safe', 'Sûr'], ['mega', 'Mega'], ['giga', 'Giga']] },
+    { id: 'info_ps3', label: 'Ton PC', info: 'Exigeant', aide: 'La PS3 est la console la plus dure à émuler : il faut un bon processeur récent (6 cœurs ou plus). Liste des jeux qui marchent : rpcs3.net/compatibility.' },
+    VOLUME,
+  ],
   Switch: [
     { ...LANGUE, valeurs: [...LANGUES, ['pt', 'Português'], ['ru', 'Русский']] },
     { id: 'api', label: 'Pilote graphique', parDefaut: 'Vulkan', aide: 'Vulkan : le plus rapide et le mieux suivi. OpenGL : si un jeu s\'affiche mal en Vulkan (GLASM : cartes NVIDIA seulement).', valeurs: [['1', 'Vulkan'], ['0', 'OpenGL (GLSL)'], ['3', 'OpenGL (GLASM, NVIDIA)'], ['4', 'OpenGL (SPIR-V)']] },
@@ -127,7 +146,10 @@ function formatJeu(g, o) {
   if (localStorage.habillage === 'noir') return 0;
   const c = g.console;
   if (c === 'Switch') return { 0: 16 / 9, 1: 4 / 3, 2: 21 / 9, 3: 16 / 10 }[o.format ?? '0'] || 0;
-  if (c === 'WiiU') return 16 / 9;
+  if (c === 'WiiU' || c === 'PS3') return 16 / 9;
+  if (c === 'GB' || c === 'GBC') return 10 / 9;
+  if (c === 'GBA') return 3 / 2;
+  if (['N64', 'SNES', 'NES', 'PS1', 'PS2'].includes(c)) return 4 / 3;
   // GameCube : 4:3. Wii : 16:9, sauf format choisi.
   if (c === 'GC') return o.format === '3' ? 0 : 4 / 3;
   if (c === 'Wii') return o.format === '2' ? 4 / 3 : o.format === '3' ? 0 : 16 / 9;
@@ -152,6 +174,15 @@ const TOUCHES_CONSOLE = {
   Wii: [['a', 'A', 'south'], ['b', 'B', 'rt'], ['un', '1', 'west'], ['deux', '2', 'north'], ['moins', '−', 'back'], ['plus', '+', 'start'], ['c', 'C (Nunchuk)', 'lb'], ['nz', 'Z (Nunchuk)', 'lt'], ['secouer', 'Secouer', 'r3']],
   WiiU: [...AB, ['l', 'L', 'lb'], ['r', 'R', 'rb'], ['zl', 'ZL', 'lt'], ['zr', 'ZR', 'rt'], ['plus', '+', 'start'], ['moins', '−', 'back'], ['l3', 'Stick gauche (clic)', 'l3'], ['r3', 'Stick droit (clic)', 'r3']],
   Switch: [...AB, ['l', 'L', 'lb'], ['r', 'R', 'rb'], ['zl', 'ZL', 'lt'], ['zr', 'ZR', 'rt'], ['plus', '+', 'start'], ['moins', '−', 'back'], ['l3', 'Stick gauche (clic)', 'l3'], ['r3', 'Stick droit (clic)', 'r3']],
+  // Mêmes ids que retro.rs : boutons de la console, place par défaut comme sur Switch (A à droite).
+  N64: [['a', 'A', 'south'], ['b', 'B', 'west'], ['z', 'Z', 'lt'], ['l', 'L', 'lb'], ['r', 'R', 'rb'], ['start', 'Start', 'start']],
+  SNES: [['a', 'A', 'east'], ['b', 'B', 'south'], ['x', 'X', 'north'], ['y', 'Y', 'west'], ['l', 'L', 'lb'], ['r', 'R', 'rb'], ['start', 'Start', 'start'], ['select', 'Select', 'back']],
+  NES: [['a', 'A', 'east'], ['b', 'B', 'south'], ['start', 'Start', 'start'], ['select', 'Select', 'back']],
+  GBA: [['a', 'A', 'east'], ['b', 'B', 'south'], ['l', 'L', 'lb'], ['r', 'R', 'rb'], ['start', 'Start', 'start'], ['select', 'Select', 'back']],
+  GBC: [['a', 'A', 'east'], ['b', 'B', 'south'], ['start', 'Start', 'start'], ['select', 'Select', 'back']],
+  GB: [['a', 'A', 'east'], ['b', 'B', 'south'], ['start', 'Start', 'start'], ['select', 'Select', 'back']],
+  // Mêmes ids que ps3.rs et retro.rs.
+  PS3: [['croix', '✕', 'south'], ['rond', '○', 'east'], ['carre', '□', 'west'], ['triangle', '△', 'north'], ['l1', 'L1', 'lb'], ['r1', 'R1', 'rb'], ['l2', 'L2', 'lt'], ['r2', 'R2', 'rt'], ['start', 'Start', 'start'], ['select', 'Select', 'back'], ['l3', 'L3 (clic)', 'l3'], ['r3', 'R3 (clic)', 'r3']],
 };
 const PHYS = ['south', 'east', 'west', 'north', 'lb', 'rb', 'lt', 'rt', 'start', 'back', 'l3', 'r3', 'up', 'down', 'left', 'right'];
 function glyphePhys(p) {
@@ -216,8 +247,8 @@ window.__TAURI__.event.listen('pad-brut', (e) => captureTouche?.(e.payload));
 /* ---------- Pages des Réglages ---------- */
 
 // Réglages d'une console rangés par thème ; les plus pointus restent repliés (« Réglages avancés »).
-const GROUPE_DE = { langue: 'Général', volume: 'Général', mode: 'Général', vitesse: 'Performances', cpu: 'Performances', api: 'Performances', info_api: 'Performances', vsync: 'Performances', precision: 'Performances', shaders_async: 'Performances', shaders: 'Performances', wfc: 'En ligne', shaders_partage: 'En ligne', manette: 'Manette' };
-const AVANCES = ['api', 'info_api', 'vsync', 'precision', 'cpu', 'vitesse', 'filtre_haut', 'filtre_bas', 'ecart', 'format', 'aniso', 'shaders'];
+const GROUPE_DE = { langue: 'Général', volume: 'Général', mode: 'Général', vitesse: 'Performances', cpu: 'Performances', api: 'Performances', info_api: 'Performances', vsync: 'Performances', precision: 'Performances', shaders_async: 'Performances', shaders: 'Performances', fps: 'Performances', rsx_mt: 'Performances', spu_bloc: 'Performances', info_ps3: 'Performances', wfc: 'En ligne', shaders_partage: 'En ligne', manette: 'Manette' };
+const AVANCES = ['api', 'info_api', 'vsync', 'precision', 'cpu', 'vitesse', 'filtre_haut', 'filtre_bas', 'ecart', 'format', 'aniso', 'shaders', 'rsx_mt', 'spu_bloc'];
 const ORDRE_GROUPES = ['Général', 'Image', 'Performances', 'En ligne', 'Manette'];
 function grouperReglages(liste, ligne) {
   const par = new Map(ORDRE_GROUPES.map((t) => [t, []]));
@@ -318,6 +349,49 @@ async function demanderTroisDs(force = false) {
   ]);
 }
 
+/* PS3 : le firmware vient du site de Sony (PS3UPDAT.PUP), RPCS3 l'installe. Jamais fourni. */
+let ps3Pret = null;
+const chargerPs3 = () => invoke('ps3_etat').then((b) => (ps3Pret = b)).catch(() => null);
+const AIDE_PS3 = 'Le firmware officiel de la PS3 : sur le site de Sony, télécharge PS3UPDAT.PUP, puis choisis ce fichier ici. RPCS3 l\'installe une fois (une minute environ, sa fenêtre s\'ouvre le temps de l\'installation).';
+async function poserPs3() {
+  toast('Installation du firmware PS3…');
+  try {
+    if (await invoke('ps3_poser')) toast('Firmware PS3 installé'), son('ok');
+  } catch (e) {
+    son('erreur');
+    sheet('Firmware non installé', esc(e), [{ label: 'OK', cancel: true }]);
+  }
+  await chargerPs3();
+}
+/* PS2 : le BIOS vient de la PS2 du joueur. Jamais fourni. La PS1 n'en a pas besoin. */
+let ps2Pret = null;
+const chargerPs2 = () => invoke('ps2_etat').then((b) => (ps2Pret = b)).catch(() => null);
+const AIDE_PS2 = 'Le BIOS de ta PS2 (un fichier de 4 Mo, souvent SCPH-xxxxx.bin), sorti de ta console avec un outil comme biosdrain. Choisis-le ou dépose-le sur En Local. Garde-le pour toi.';
+async function poserPs2() {
+  try {
+    const r = await invoke('ps2_poser');
+    if (r) toast(r), son('ok');
+  } catch (e) {
+    son('erreur');
+    sheet('Pas le bon fichier', esc(e), [{ label: 'OK', cancel: true }]);
+  }
+  await chargerPs2();
+}
+function demanderPs2() {
+  sheet('Il manque le BIOS de ta PS2', `Pour jouer aux jeux PS2, il faut le BIOS de ta propre PS2 (En Local n'en fournit pas).<br><br>${esc(AIDE_PS2)}`, [
+    { label: 'Choisir mon BIOS', fn: () => poserPs2() },
+    { label: 'Plus tard', cancel: true },
+  ]);
+}
+/** Jeu PS3 sans firmware : où le prendre. */
+function demanderPs3() {
+  sheet('Il manque le firmware de la PS3', `Pour jouer aux jeux PS3, RPCS3 a besoin du firmware officiel de Sony (En Local n'en fournit pas).<br><br>${esc(AIDE_PS3)}`, [
+    { label: 'Ouvrir le site de Sony', fn: () => (invoke('ouvrir_firmware_ps3').catch(oops), demanderPs3()) },
+    { label: 'Choisir PS3UPDAT.PUP', fn: () => poserPs3() },
+    { label: 'Plus tard', cancel: true },
+  ]);
+}
+
 async function poserSwitch(quoi) {
   if (quoi === 'firmware') toast('Copie du firmware… (quelques secondes)');
   try {
@@ -357,7 +431,16 @@ function pageConsole(c) {
   ]]] : [];
   const groupes = grouperReglages(REGLAGES_CONSOLE[c], (r) => perso(r, lignesReglage(r, ou, null, r.id === 'langue' ? `Comme En Local (${global})` : r.parDefaut ? `Par défaut (${r.parDefaut})` : 'Par défaut')));
   groupes[0][1].push({ label: 'Réglages d\'un seul jeu', aide: 'Chaque jeu peut avoir ses propres réglages (et ses mods) : dans ses actions (Share), « Réglages de ce jeu ».', valeur: 'Actions du jeu' });
-  return [...tienne, ...tienne3ds, ...avecTouches(groupes, ligneTouches(c, ou))];
+  if (c === 'PS3' && ps3Pret === null) chargerPs3().then(() => onglet === 'reglages' && regPage?.console === 'PS3' && drawReglages());
+  const tiennePs3 = c === 'PS3' ? [['Firmware', [
+    { label: 'Firmware de la PS3', valeur: ps3Pret === null ? '…' : ps3Pret ? 'Installé' : 'À ajouter', aide: AIDE_PS3, loc: 'dossier', fn: () => poserPs3().then(drawReglages) },
+    { label: 'Télécharger le firmware (site de Sony)', aide: 'Ouvre la page officielle de Sony dans ton navigateur : « Télécharger le fichier de mise à jour PS3 ».', loc: 'maj', fn: () => invoke('ouvrir_firmware_ps3').catch(oops) },
+  ]]] : [];
+  if (c === 'PS2' && ps2Pret === null) chargerPs2().then(() => onglet === 'reglages' && regPage?.console === 'PS2' && drawReglages());
+  const tiennePs2 = c === 'PS2' ? [['Ta console', [
+    { label: 'BIOS de la PS2', valeur: ps2Pret === null ? '…' : ps2Pret ? 'Installé' : 'À ajouter', aide: AIDE_PS2, loc: 'dossier', fn: () => poserPs2().then(drawReglages) },
+  ]]] : [];
+  return [...tienne, ...tienne3ds, ...tiennePs3, ...tiennePs2, ...avecTouches(groupes, ligneTouches(c, ou))];
 }
 
 /** Mods d'un jeu, lus une fois par visite. */
@@ -484,11 +567,11 @@ async function reglerJeu(i) {
 const CLES_GRAPHIQUES = ['api', 'resolution', 'filtre', 'aa', 'aniso', 'shaders', 'shaders_async', 'precision', 'mode', 'format'];
 const PROFILS = {
   performance: { nom: 'Performance', texte: 'Le plus fluide, même sur un petit PC : résolution d\'origine, effets légers.', wiiu: [1280, 720],
-    consoles: { '3DS': { resolution: '1', shaders_async: 'oui' }, GC: { resolution: '1', aa: '1', aniso: '-1', shaders: '2' }, Wii: { resolution: '1', aa: '1', aniso: '-1', shaders: '2' }, WiiU: { shaders_async: 'oui' }, Switch: { resolution: '3', mode: '0', precision: '1', aa: '0', filtre: '1', aniso: '1', shaders_async: 'oui' } } },
+    consoles: { '3DS': { resolution: '1', shaders_async: 'oui' }, GC: { resolution: '1', aa: '1', aniso: '-1', shaders: '2' }, Wii: { resolution: '1', aa: '1', aniso: '-1', shaders: '2' }, WiiU: { shaders_async: 'oui' }, PS3: { resolution: '1' }, Switch: { resolution: '3', mode: '0', precision: '1', aa: '0', filtre: '1', aniso: '1', shaders_async: 'oui' } } },
   equilibre: { nom: 'Équilibré', texte: 'Net et fluide sur la plupart des PC : environ 1080p, anticrénelage léger.', wiiu: [1920, 1080],
-    consoles: { '3DS': { resolution: '3', shaders_async: 'oui' }, GC: { resolution: '2', aa: '2', aniso: '3', shaders: '2' }, Wii: { resolution: '2', aa: '2', aniso: '3', shaders: '2' }, WiiU: { shaders_async: 'oui' }, Switch: { resolution: '3', mode: '1', precision: '1', aa: '1', filtre: '6', aniso: '0', shaders_async: 'oui' } } },
+    consoles: { '3DS': { resolution: '3', shaders_async: 'oui' }, GC: { resolution: '2', aa: '2', aniso: '3', shaders: '2' }, Wii: { resolution: '2', aa: '2', aniso: '3', shaders: '2' }, WiiU: { shaders_async: 'oui' }, PS3: { resolution: '2' }, Switch: { resolution: '3', mode: '1', precision: '1', aa: '1', filtre: '6', aniso: '0', shaders_async: 'oui' } } },
   qualite: { nom: 'Qualité', texte: 'La plus belle image : haute résolution, anticrénelage fort. Pour une bonne carte graphique.', wiiu: [2560, 1440],
-    consoles: { '3DS': { resolution: '5', shaders_async: 'oui' }, GC: { resolution: '6', aa: '4', aniso: '4', shaders: '1' }, Wii: { resolution: '6', aa: '4', aniso: '4', shaders: '1' }, WiiU: { shaders_async: 'oui' }, Switch: { resolution: '6', mode: '1', precision: '1', aa: '2', filtre: '6', aniso: '5', shaders_async: 'oui' } } },
+    consoles: { '3DS': { resolution: '5', shaders_async: 'oui' }, GC: { resolution: '6', aa: '4', aniso: '4', shaders: '1' }, Wii: { resolution: '6', aa: '4', aniso: '4', shaders: '1' }, WiiU: { shaders_async: 'oui' }, PS3: { resolution: '3' }, Switch: { resolution: '6', mode: '1', precision: '1', aa: '2', filtre: '6', aniso: '5', shaders_async: 'oui' } } },
 };
 
 /** Niveau de la carte graphique, de 0 (intégrée) à 3 (très bonne). */

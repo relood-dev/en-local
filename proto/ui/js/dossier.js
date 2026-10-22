@@ -91,12 +91,14 @@ async function ajouterJeux(chemins) {
   const parConsole = {};
   for (const [c] of b.ajoutes) parConsole[c] = (parConsole[c] || 0) + 1;
   const resume = Object.entries(parConsole).map(([c, n]) => `${NOMS[c] || c} : ${n}`).join(' · ');
+  if (b.messages?.length) await chargerPs2();
   const texte = [
-    b.ajoutes.length ? `${b.ajoutes.length} fichier${b.ajoutes.length > 1 ? 's' : ''} rangé${b.ajoutes.length > 1 ? 's' : ''} (${resume}). Les mises à jour et DLC sont avec leur jeu.` : 'Aucun jeu trouvé dans ce que tu as déposé.',
+    ...(b.messages || []),
+    b.ajoutes.length ? `${b.ajoutes.length} fichier${b.ajoutes.length > 1 ? 's' : ''} rangé${b.ajoutes.length > 1 ? 's' : ''} (${resume}). Les mises à jour et DLC sont avec leur jeu.` : b.messages?.length ? '' : 'Aucun jeu trouvé dans ce que tu as déposé.',
     b.ignores ? `${b.ignores} fichier${b.ignores > 1 ? 's' : ''} laissé${b.ignores > 1 ? 's' : ''} de côté (pas des jeux).` : '',
     ...(b.erreurs || []).slice(0, 4),
   ].filter(Boolean).map(esc).join('<br>');
-  sheet(b.ajoutes.length ? 'Jeux ajoutés' : 'Rien à ajouter', texte, [{ label: 'OK' }]);
+  sheet(b.ajoutes.length ? 'Jeux ajoutés' : b.messages?.length ? 'C\'est installé' : 'Rien à ajouter', texte, [{ label: 'OK' }]);
 }
 function menuAjouterJeux() {
   sheet('Ajouter des jeux', 'Choisis tes jeux, ou dépose-les sur En Local : un jeu seul, avec ses mises à jour et DLC, ou une archive (.zip, .7z, .rar). Tout se range tout seul.', [
@@ -105,13 +107,13 @@ function menuAjouterJeux() {
     { label: 'Retour', cancel: true },
   ]);
 }
-/** Dépôt : les fichiers des consoles (clés, firmware, boot9.bin) sont installés, le reste est rangé comme des jeux. */
+/** Dépôt : les fichiers des consoles (clés, firmware, boot9.bin, PS3UPDAT.PUP) sont installés, le reste est rangé comme des jeux. */
 async function deposer(chemins) {
   if (!chemins?.length) return;
   const p = await invoke('poser_console', { chemins }).catch(() => ({ messages: [], erreurs: [], reste: chemins }));
   if (p.messages.length || p.erreurs.length) {
     son(p.erreurs.length ? 'erreur' : 'ok');
-    await Promise.all([chargerSwitch(), chargerTroisDs()]);
+    await Promise.all([chargerSwitch(), chargerTroisDs(), chargerPs3(), chargerPs2()]);
     if (bienvenue) drawBienvenue();
     else if (onglet === 'reglages') drawReglages();
     if (p.erreurs.length) sheet('Pas le bon fichier', [...p.messages, ...p.erreurs].map(esc).join('<br>'), [{ label: 'OK', cancel: true }]);

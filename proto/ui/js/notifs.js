@@ -19,12 +19,6 @@ function notifier(n, { bulle = true } = {}) {
 /** Invitations envoyées par Loc avec la présence. */
 function recevoirNotifs(liste) {
   for (const x of Array.isArray(liste) ? liste : []) {
-    if (x?.type === 'classe' && typeof x.texte === 'string') {
-      son('notif', true);
-      notifier({ type: 'classe', texte: x.texte, image: 'img/loc/loc_gg.gif', code: typeof x.code === 'string' ? x.code : '' });
-      chargerClasses();
-      continue;
-    }
     if (x?.type === 'tournoi' && typeof x.texte === 'string' && typeof x.tournoi === 'string') {
       son('notif', true);
       notifier({ type: 'tournoi', texte: x.texte, image: 'img/loc/loc_gg.gif', tournoi: x.tournoi, code: typeof x.code === 'string' ? x.code : '' });
@@ -61,7 +55,7 @@ const ilYaNotif = (ms) => {
   const min = Math.round((Date.now() - ms) / 60000);
   return min < 1 ? 'à l\'instant' : min < 60 ? `il y a ${min} min` : min < 1440 ? `il y a ${Math.floor(min / 60)} h` : `il y a ${Math.floor(min / 1440)} j`;
 };
-const TYPES_NOTIF = { classe: 'Classé', lance: 'En jeu', invitation: 'Invitation', defi: 'Défi réussi', session: 'Session', maj: 'Mise à jour', tournoi: 'Tournoi' };
+const TYPES_NOTIF = { lance: 'En jeu', invitation: 'Invitation', defi: 'Défi réussi', session: 'Session', maj: 'Mise à jour', tournoi: 'Tournoi' };
 
 /** Ouvre le centre. Une invitation mène à sa session. */
 function ouvrirNotifs() {
@@ -69,7 +63,6 @@ function ouvrirNotifs() {
   const carte = (n) => `<img class="av" src="${esc(n.image || 'img/loc/loc_coucou.gif')}" alt=""><span class="nt"><small>${TYPES_NOTIF[n.type] || 'Info'} · ${ilYaNotif(n.at)}</small><b>${esc(n.texte)}</b>${n.type === 'invitation' || n.type === 'lance' ? `<small class="nt-action">${sessionsLocal.some((s) => s.code === n.code) ? (n.type === 'lance' ? 'Rejoindre' : 'Voir la session') : 'Session terminée'}</small>` : ''}</span>${n.lu ? '' : '<i class="point"></i>'}`;
   const action = (n) => () => {
     if (n.type === 'tournoi') return allerA('tournois').then(() => ouvrirTournoi(n.tournoi));
-    if (n.type === 'classe') return matchClasse?.salon ? ouvrirSalonClasse() : allerA('tournois');
     if (n.type === 'lance') return sessionsLocal.some((x) => x.code === n.code) ? join(n.code) : (toast('Cette session est terminée.'), ouvrirNotifs());
     if (n.type !== 'invitation') return ouvrirNotifs();
     const s = sessionsLocal.find((x) => x.code === n.code);

@@ -5,7 +5,7 @@ use windows::Win32::Media::Audio::{eRender, IAudioSessionControl2, IAudioSession
 use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED};
 use windows::Win32::System::Diagnostics::ToolHelp::{CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS};
 
-const EMULATEURS: [&str; 9] = ["eden.exe", "azahar.exe", "dolphin.exe", "cemu.exe", "azahar-plus.exe", "enlocal-3ds.exe", "enlocal-switch.exe", "enlocal-gc-wii.exe", "enlocal-wiiu.exe"];
+const EMULATEURS: [&str; 13] = ["eden.exe", "azahar.exe", "dolphin.exe", "cemu.exe", "azahar-plus.exe", "enlocal-3ds.exe", "enlocal-switch.exe", "enlocal-gc-wii.exe", "enlocal-wiiu.exe", "rpcs3.exe", "enlocal-ps3.exe", "retroarch.exe", "enlocal-retro.exe"];
 
 pub fn pids() -> Vec<u32> {
     let mut out = Vec::new();

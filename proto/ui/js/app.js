@@ -327,7 +327,7 @@ async function host(i) {
       throw e;
     });
     if (salon && !s.chezHote) invoke('salon_fermer'); // Loc a refusé le salon du PC : le serveur du Local
-    session = { code: s.code, members: s.members, players: s.players, slots: s.slots, gameKey: s.gameKey, distance: s.distance };
+    session = { code: s.code, members: s.members, players: s.players, slots: s.slots, gameKey: s.gameKey, distance: s.distance, hote: true };
     compter('sessionsCreees');
     compterJeu(g, 's');
     // Sans signe de vie de l'hôte pendant 2 min, Loc ferme la session.
@@ -459,6 +459,7 @@ async function netplayLobby(i, hostCode) {
     }
     if (l.playing && !playing) {
       playing = true;
+      compter('netplay');
       fermerSalle();
       current = g;
       dernierCompte = Date.now();
@@ -556,7 +557,7 @@ function cancelLobby() {
 }
 
 /* Statut Discord « Joue à En Local » */
-const CONSOLES = { DS: 'Nintendo DS', '3DS': 'Nintendo 3DS', GC: 'GameCube', Wii: 'Wii', WiiU: 'Wii U', Switch: 'Nintendo Switch' };
+const CONSOLES = { DS: 'Nintendo DS', '3DS': 'Nintendo 3DS', GC: 'GameCube', Wii: 'Wii', WiiU: 'Wii U', Switch: 'Nintendo Switch', PS3: 'PlayStation 3', PS2: 'PlayStation 2', PS1: 'PlayStation', N64: 'Nintendo 64', SNES: 'Super Nintendo', NES: 'NES', GBA: 'Game Boy Advance', GBC: 'Game Boy Color', GB: 'Game Boy' };
 let playStart = 0;
 let lobbyPresence = null;
 const appStart = Math.floor(Date.now() / 1000);
@@ -642,7 +643,7 @@ function leaveSession() {
 }
 
 /* ---------- Accueil ---------- */
-const NOMS = { DS: 'DS', '3DS': '3DS', GC: 'GameCube', Wii: 'Wii', WiiU: 'Wii U', Switch: 'Switch' };
+const NOMS = { DS: 'DS', '3DS': '3DS', GC: 'GameCube', Wii: 'Wii', WiiU: 'Wii U', Switch: 'Switch', PS3: 'PS3', PS2: 'PS2', PS1: 'PS1', N64: 'N64', SNES: 'Super NES', NES: 'NES', GBA: 'GBA', GBC: 'GB Color', GB: 'Game Boy' };
 let onglet = 'accueil', sessionsLocal = [], tileFocus = 0;
 
 // Temps de jeu par jeu, gardé dans data\stats.json.
@@ -751,6 +752,14 @@ const JAQUETTES = {
   '3DS': { ratio: 0.99, variantes: [['3ds/coverHQ', 'jpg', 'inset(0 12% 0 0)'], ['3ds/coverM', 'jpg', 'inset(0 12% 0 0)'], ['3ds/box', 'png', '']] },
   WiiU: { ratio: 0.8, variantes: [['wiiu/coverHQ', 'jpg', 'inset(11% 0 0 0)'], ['wiiu/cover3D', 'png', '']] },
   Switch: { ratio: 0.62, variantes: [['switch/coverHQ', 'jpg', ''], ['switch/coverM', 'jpg', ''], ['switch/box', 'png', '']] },
+  // Sans le bandeau « PS3 » du haut.
+  // Anciennes Nintendo : jaquettes de libretro, cherchées au nom du fichier (noms No-Intro).
+  // N64 européen : cadre noir « NINTENDO64 » autour de l'illustration, rogné. Américain : rien à rogner.
+  N64: { ratio: 1.43, libretro: 'Nintendo - Nintendo 64', rognePal: 'inset(16% 13.5% 11.5% 13.5%)' }, SNES: { ratio: 1.37, libretro: 'Nintendo - Super Nintendo Entertainment System' },
+  NES: { ratio: 0.72, libretro: 'Nintendo - Nintendo Entertainment System' }, GBA: { ratio: 1, libretro: 'Nintendo - Game Boy Advance' },
+  GBC: { ratio: 1, libretro: 'Nintendo - Game Boy Color' }, GB: { ratio: 1, libretro: 'Nintendo - Game Boy' },
+  PS1: { ratio: 1, libretro: 'Sony - PlayStation' }, PS2: { ratio: 0.74, libretro: 'Sony - PlayStation 2' },
+  PS3: { ratio: 0.94, variantes: [['ps3/coverHQ', 'jpg', 'inset(8.5% 0 0 0)'], ['ps3/coverM', 'jpg', 'inset(8.5% 0 0 0)'], ['ps3/cover', 'jpg', 'inset(8.5% 0 0 0)']] },
 };
 /** Jeu Switch eShop : la jaquette GameTDB est un modèle rouge, on garde l'image du milieu. */
 const cadreEshop = (g, url) => (fiche(g)?.eshop && /\/switch\/cover(HQ|M)\//.test(url) ? 'inset(30.2% 10.3% 42.8% 10.3%)' : null);
@@ -785,10 +794,18 @@ const idGametdb = (g) => g.gametdb || (g.console === 'Switch' ? fiche(g)?.id : g
 /** Jeu d'un membre que je n'ai pas : de quoi afficher sa jaquette. */
 const jeuDeMembre = (c, t, id) => ({ path: `membre:${c}:${id}`, console: c, name: t, gametdb: id });
 function covers(g) {
-  const id = idGametdb(g);
   const j = JAQUETTES[g.console];
+  if (j?.libretro) {
+    // Comme libretro : ces caractères deviennent « _ » dans les noms de fichiers.
+    const nom = (g.product_code || g.name).replace(/[&*/:`<>?\\|"]/g, '_');
+    const enc = (x) => encodeURIComponent(x).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+    const pal = /\((Europe|E|Germany|France|Italy|Spain|Australia)[,)]/.test(g.product_code || '');
+    return [{ url: `https://thumbnails.libretro.com/${enc(j.libretro)}/Named_Boxarts/${enc(nom)}.png`, crop: (pal && j.rognePal) || '' }];
+  }
+  const id = idGametdb(g);
   if (!id || !j) return [];
-  const region = { E: 'US', P: 'EN', F: 'FR', D: 'DE', S: 'ES', I: 'IT', J: 'JA', A: 'EN' }[id[3]] || 'EN';
+  // PS3 (ex. BLES00932) : la région est la 3e lettre.
+  const region = (g.console === 'PS3' ? { E: 'EN', U: 'US', J: 'JA', A: 'JA', K: 'KO' }[id[2]] : { E: 'US', P: 'EN', F: 'FR', D: 'DE', S: 'ES', I: 'IT', J: 'JA', A: 'EN' }[id[3]]) || 'EN';
   const regions = [...new Set([region, 'EN', 'US', 'FR', 'JA'])];
   return j.variantes.flatMap(([chemin, ext, crop]) => regions.map((r) => ({ url: `https://art.gametdb.com/${chemin}/${r}/${id}.${ext}`, crop })));
 }
@@ -812,7 +829,8 @@ function coverImg(g, cls, loin = false) {
       if (cr) for (const img of document.querySelectorAll(`img.jaquette[src="${CSS.escape(asset(j.fichier))}"]`)) (img.style.objectViewBox = cr), img.classList.add('eshop'), (img.dataset.cadre = 'attente'), cadrerEshop(img);
     });
   }
-  // Jaquette déjà sur le PC : affichée tout de suite.
+  // Jaquette déjà sur le PC : affichée tout de suite. Anciennes Nintendo : le cadrage suit la règle du moment.
+  if (j?.fichier && JAQUETTES[g.console]?.libretro) j.crop = covers(g)[0]?.crop || '';
   if (j?.fichier) return `<img class="${cls} jaquette${j.crop === CADRE_ESHOP ? ' eshop" data-cadre="attente' : ''}" src="${esc(asset(j.fichier))}" style="object-view-box:${esc(j.crop || 'none')}" data-k="${k}" alt=""${loin ? ' loading="lazy" decoding="async"' : ''}>`;
   chercherJaquette(g, k);
   return `<img class="${cls} jaquette" data-k="${k}" alt="">`;
@@ -1079,7 +1097,8 @@ const GENRES = {
 };
 
 // Consoles avec sessions en ligne (pas la Wii U).
-const EN_LIGNE = ['3DS', 'DS', 'GC', 'Wii', 'Switch'];
+// PS2 : trop lourde pour le netplay de RetroArch.
+const EN_LIGNE = ['3DS', 'DS', 'GC', 'Wii', 'Switch', 'N64', 'SNES', 'NES', 'GBA', 'GBC', 'GB', 'PS1'];
 /**
  * Jeu multijoueur d'après GameTDB. Pokémon compte comme multijoueur.
  * Sans information, on laisse créer une session.
@@ -1099,8 +1118,10 @@ function basculerSessions(g) {
 }
 
 /* ---------- Jeux : carrousel par console ---------- */
-const ORDRE = ['Switch', '3DS', 'WiiU', 'Wii', 'GC', 'DS'];
-const LONG = { DS: 'Nintendo DS', '3DS': 'Nintendo 3DS', GC: 'GameCube', Wii: 'Wii', WiiU: 'Wii U', Switch: 'Nintendo Switch' };
+const ORDRE = ['Switch', '3DS', 'WiiU', 'Wii', 'GC', 'DS', 'N64', 'SNES', 'NES', 'GBA', 'GBC', 'GB', 'PS3', 'PS2', 'PS1'];
+const LONG = { DS: 'Nintendo DS', '3DS': 'Nintendo 3DS', GC: 'GameCube', Wii: 'Wii', WiiU: 'Wii U', Switch: 'Nintendo Switch', PS3: 'PlayStation 3', PS2: 'PlayStation 2', PS1: 'PlayStation', N64: 'Nintendo 64', SNES: 'Super Nintendo', NES: 'NES', GBA: 'Game Boy Advance', GBC: 'Game Boy Color', GB: 'Game Boy' };
+// Anciennes Nintendo : RetroArch, netplay par le relais du Local.
+const RETRO = ['N64', 'SNES', 'NES', 'GBA', 'GBC', 'GB', 'PS1', 'PS2'];
 let conSel = null;
 let zone = 'consoles'; // 'consoles' puis 'jeux'
 const choix = {};
@@ -1146,8 +1167,9 @@ function drawJeux() {
   const st = stats[g.path];
 
   $('#titre').textContent = creation ? 'Créer une session' : `${LONG[conSel]}, ${liste.length} jeu${liste.length > 1 ? 'x' : ''}`;
-  $('#consoles').innerHTML = cons.map((k) => `<div class="con ${k === conSel ? 'on' : ''}" data-c="${k}">${iconeConsole(k)}${k === 'WiiU' ? 'Wii U' : k}</div>`).join('');
+  $('#consoles').innerHTML = cons.map((k) => `<div class="con ${k === conSel ? 'on' : ''}" data-c="${k}">${iconeConsole(k)}${NOMS[k] || k}</div>`).join('');
   $('#consoles').querySelectorAll('.con').forEach((el) => (el.onclick = () => { zone = 'consoles'; el.dataset.c === conSel ? drawJeux() : choisirConsole(el.dataset.c); }));
+  $('#consoles .con.on')?.scrollIntoView({ block: 'nearest' });
   $('#carrousel').classList.toggle('zone-consoles', zone === 'consoles');
 
   // Les éléments sont gardés d'un dessin à l'autre pour que le carrousel glisse.
@@ -1459,6 +1481,20 @@ async function recevoirShaders(g) {
   localStorage[`shaders:${t}`] = String(brut.byteLength);
 }
 
+/** Anciennes Nintendo en session : l'hôte héberge par le relais du Local, les autres attendent que sa partie soit lancée. */
+async function netplayRetro(g) {
+  if (!RETRO.includes(g.console) || !session || session.distance) return {};
+  if (session.hote) return { netplay: 'hote' };
+  for (let k = 0; k < 60; k++) {
+    const r = await api('GET', `/sessions/${encodeURIComponent(session.code)}/relais`).catch(() => null);
+    if (r?.session) return { netplay: 'invite', relais: r.session };
+    status(`Session ${session.code} : en attente de l'hôte, il doit lancer ${g.name}…`);
+    await new Promise((ok) => setTimeout(ok, 3000));
+    if (!session) throw new Error('Session quittée.');
+  }
+  throw new Error('L\'hôte n\'a pas lancé la partie : réessaie quand il est en jeu.');
+}
+
 async function play(i, room = null) {
   if (current && enAccueil) return games[i] === current ? closeMenu() : libererJeu(() => play(i, room));
   const g = games[i];
@@ -1478,6 +1514,13 @@ async function play(i, room = null) {
     }
     status('');
   }
+  let netRetro = {};
+  try {
+    netRetro = await netplayRetro(g);
+  } catch (e) {
+    status('');
+    return oops(e);
+  }
   await envoyerJournaux();
   await pokedexAvantPartie(g);
   if (partageShaders(g)) await recevoirShaders(g).catch(() => {});
@@ -1495,7 +1538,7 @@ async function play(i, room = null) {
   status(`Lancement de ${g.name}…`);
   try {
     canvas.classList.toggle('lisse', lissageDs(g));
-    await invoke('play', { path: g.path, console: g.console, room, update, opts: { ...optsDe(g), ...(session?.distance ? { distance: 'oui' } : invitesEnSession(g) ? { invites: 'oui' } : {}) }, frames });
+    await invoke('play', { path: g.path, console: g.console, room, update, opts: { ...optsDe(g), ...netRetro, ...(session?.distance ? { distance: 'oui' } : invitesEnSession(g) ? { invites: 'oui' } : {}) }, frames });
     status('');
     if (session?.distance || invitesEnSession(g)) distanceHote();
     for (const ms of [0, 2000, 6000, 15000, 40000]) setTimeout(() => current === g && volumeJeu(), ms);
@@ -1514,6 +1557,8 @@ async function play(i, room = null) {
     status(`Échec : ${e}`);
     if (g.console === 'Switch' && /clés de ta Switch|firmware de ta Switch/.test(String(e))) (status(''), demanderSwitch());
     if (g.console === '3DS' && /3DS est chiffré/.test(String(e))) (status(''), demanderTroisDs(true));
+    if (g.console === 'PS3' && /firmware PS3 manquant/.test(String(e))) (status(''), demanderPs3());
+    if (g.console === 'PS2' && /BIOS PS2 manquant/.test(String(e))) (status(''), demanderPs2());
   }
 }
 
@@ -1522,7 +1567,7 @@ async function setMenu(open) {
   const seq = ++menuSeq;
   if (current?.console === 'DS' && open) ($('#jeu').classList.remove('habille'), invoke('habillage_ds', { format: 0, visible: false }).catch(() => {}));
   // 3DS, GameCube, Wii : on affiche la dernière image du jeu sous le menu.
-  if (['3DS', 'GC', 'Wii', 'WiiU', 'Switch'].includes(current?.console)) {
+  if (['3DS', 'GC', 'Wii', 'WiiU', 'Switch', 'PS3', ...RETRO].includes(current?.console)) {
     if (open) {
       const buf = await invoke('snapshot');
       // Menu refermé pendant l'attente : on n'affiche plus rien.
@@ -1613,13 +1658,6 @@ async function act(name) {
     $('#jeu').style.display = 'none';
     status('');
     await apresPartie();
-    // Après une partie classée : son salon, ou qui a gagné ?
-    if (matchClasse?.salon) ouvrirSalonClasse();
-    else if (matchClasse && !matchClasse.declare && joue.console === matchClasse.console) sheet(`Partie classée contre ${esc(matchClasse.contre.name)}`, 'Qui a gagné ?', [
-      { label: 'J\'ai gagné', fn: () => resultatClasse(matchClasse, me.id) },
-      { label: 'J\'ai perdu', fn: () => resultatClasse(matchClasse, matchClasse.contre.id) },
-      { label: 'Plus tard (dans Compétition)', cancel: true },
-    ]);
     // Envoi après la fermeture d'Eden : le cache est complet.
     if (partageShaders(joue)) envoyerShaders(joue).catch(() => {});
     drawHome();
@@ -1652,8 +1690,6 @@ async function entrerAccueil() {
   drawEnCours();
   drawHome();
   rafraichirSessions();
-  // Partie classée en cours : le menu HOME s'ouvre sur son salon (résultat de la manche, bans…).
-  if (matchClasse?.salon) ouvrirSalonClasse();
 }
 /** Options du jeu fermées : retour au menu HOME. */
 function fermerOptions() {

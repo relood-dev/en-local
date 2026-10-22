@@ -8,9 +8,9 @@
 
 ## Ce que c'est
 
-En Local réunit six consoles dans une seule app pour Windows, pensée comme le menu d'une console et pilotable à la manette.
+En Local réunit quinze consoles dans une seule app pour Windows, pensée comme le menu d'une console et pilotable à la manette.
 
-- **DS, 3DS, GameCube, Wii, Wii U et Switch** : les jeux se lancent dans la fenêtre d'En Local, sans ouvrir d'émulateur à part.
+- **NES, Super Nintendo, N64, Game Boy, Game Boy Color, GBA, DS, 3DS, GameCube, Wii, Wii U, Switch, PlayStation, PS2 et PS3** : les jeux se lancent dans la fenêtre d'En Local, sans ouvrir d'émulateur à part.
 - **Sessions avec un code** : on crée une session, les autres la rejoignent avec un code à 6 caractères, même en pleine partie.
 - **Tournois** : un membre organise, les autres s'inscrivent, chaque match se joue dans une session avec son code.
 - **Ajouter des jeux** : dépose un jeu ou une archive (.zip, .7z, .rar) sur l'app, il se range tout seul avec ses mises à jour et DLC.
@@ -62,6 +62,8 @@ Les émulateurs utilisés :
 - **GameCube et Wii** : Dolphin
 - **Wii U** : Cemu
 - **Switch** : Eden
+- **NES, Super Nintendo, N64, Game Boy, GBA, PlayStation et PS2** : RetroArch, avec Mesen, Snes9x, Mupen64Plus-Next, Gambatte, mGBA, PCSX ReARMed et LRPS2
+- **PS3** : RPCS3
 
 L'app parle à **Loc**, le bot du serveur, pour la connexion Discord, les sessions et les mises à jour.
 
@@ -80,6 +82,6 @@ cargo build --release
 
 En Local est sous licence **GPL-3.0** (voir [LICENSE](LICENSE)).
 
-Les composants inclus gardent leur licence : Eden et melonDS (GPL-3.0), Azahar et Dolphin (GPL-2.0 ou plus), Cemu (MPL-2.0), PKHeX.Core (GPL-3.0), FFmpeg (LGPL), 7-Zip (LGPL, avec la restriction unRAR), nsz (MIT), SDL (zlib), Tauri (MIT / Apache-2.0).
+Les composants inclus gardent leur licence : Eden et melonDS (GPL-3.0), Azahar et Dolphin (GPL-2.0 ou plus), Cemu (MPL-2.0), RetroArch (GPL-3.0) et ses cœurs (chacun sa licence, dans `emu\retroarch\cores`), RPCS3 (GPL-2.0), PKHeX.Core (GPL-3.0), FFmpeg (LGPL), 7-Zip (LGPL, avec la restriction unRAR), nsz (MIT), SDL (zlib), Tauri (MIT / Apache-2.0).
 
-Nintendo, les consoles et les jeux cités appartiennent à leurs propriétaires. En Local n'est ni affilié ni approuvé par Nintendo.
+Nintendo, Sony, les consoles et les jeux cités appartiennent à leurs propriétaires. En Local n'est ni affilié ni approuvé par Nintendo ou Sony.

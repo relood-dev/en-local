@@ -14,6 +14,8 @@ pub struct Bilan {
     /// Fichiers qui ne sont pas des jeux (textes, images…), laissés de côté.
     pub ignores: usize,
     pub erreurs: Vec<String>,
+    /// Fichiers de console installés au passage (BIOS de la PS2 dans une archive…).
+    pub messages: Vec<String>,
 }
 
 fn est_archive(p: &Path) -> bool {
@@ -67,7 +69,8 @@ fn id_wiiu(d: &Path) -> Option<String> {
     (id.len() == 16 && id.bytes().all(|b| b.is_ascii_hexdigit())).then_some(id)
 }
 
-/// Les dossiers Wii U décompressés (code, content, meta) sous `d`, et tous les autres fichiers.
+/// Les dossiers Wii U décompressés (code, content, meta) et les disques PS3 (PS3_GAME) sous `d`,
+/// et tous les autres fichiers.
 /// Les liens (symboliques, jonctions) sont ignorés : une archive piégée ne peut pas faire sortir de la zone.
 fn trier(d: &Path, profondeur: u32, wiiu: &mut Vec<PathBuf>, fichiers: &mut Vec<PathBuf>) {
     for e in std::fs::read_dir(d).into_iter().flatten().flatten() {
@@ -77,7 +80,7 @@ fn trier(d: &Path, profondeur: u32, wiiu: &mut Vec<PathBuf>, fichiers: &mut Vec<
         }
         let p = e.path();
         if t.is_dir() {
-            if p.join("code").is_dir() && (p.join("meta").is_dir() || p.join("content").is_dir()) {
+            if (p.join("code").is_dir() && (p.join("meta").is_dir() || p.join("content").is_dir())) || p.join("PS3_GAME").join("PARAM.SFO").is_file() {
                 wiiu.push(p);
             } else if profondeur > 0 {
                 trier(&p, profondeur - 1, wiiu, fichiers);
@@ -86,6 +89,11 @@ fn trier(d: &Path, profondeur: u32, wiiu: &mut Vec<PathBuf>, fichiers: &mut Vec<
             fichiers.push(p);
         }
     }
+}
+/// Nom de dossier tiré d'un texte du jeu : jamais de chemin (ni séparateur, ni « .. »), vide sinon.
+fn nom_dossier(x: &str) -> String {
+    let n: String = x.chars().filter(|c| !c.is_control() && !"\\/:*?\"<>|".contains(*c)).collect();
+    n.trim().trim_matches('.').trim().chars().take(100).collect()
 }
 /// Un dossier Wii U sans aucun lien dedans (sinon il n'est pas déplacé).
 fn sans_liens(d: &Path) -> bool {
@@ -158,11 +166,27 @@ fn importer_dans(racine: &Path, chemins: &[String], classer: Classer, etape: &dy
     etape("Rangement…".into());
     let (mut wiiu, mut fichiers) = (Vec::new(), Vec::new());
     trier(&travail, 6, &mut wiiu, &mut fichiers);
-    // Wii U décompressé : jeu dans Wii U\<nom>, MAJ et DLC dans Wii U\MAJ et DLC\<nom>.
+    // Wii U décompressé : jeu dans Wii U\<nom>, MAJ et DLC dans Wii U\MAJ et DLC\<nom>. PS3 : PS3\<nom>.
     let dossier_wiiu = racine.join(CONSOLES.iter().find(|(id, _)| *id == "WiiU").unwrap().1);
     for d in wiiu {
         if !sans_liens(&d) {
             b.erreurs.push(format!("{} : contient des liens, ignoré", d.file_name().unwrap_or_default().to_string_lossy()));
+            continue;
+        }
+        // Disque PS3 : PS3\<titre du jeu>.
+        if let Some(info) = crate::ps3::infos(&d.join("PS3_GAME").join("PARAM.SFO").to_string_lossy()) {
+            let nom = [nom_dossier(&info.0), nom_dossier(&info.1)].into_iter().find(|n| !n.is_empty()).unwrap_or_else(|| "Jeu PS3".into());
+            let parent = racine.join(CONSOLES.iter().find(|(id, _)| *id == "PS3").unwrap().1);
+            let _ = std::fs::create_dir_all(&parent);
+            let cible = libre(&parent, &nom);
+            if cible.parent() != Some(parent.as_path()) {
+                b.erreurs.push(format!("{nom} : nom de jeu invalide"));
+                continue;
+            }
+            match std::fs::rename(&d, &cible) {
+                Ok(()) => b.ajoutes.push(("PS3".into(), cible.file_name().unwrap().to_string_lossy().into_owned())),
+                Err(e) => b.erreurs.push(format!("{nom} : {e}")),
+            }
             continue;
         }
         let id = id_wiiu(&d).unwrap_or_default();
@@ -179,8 +203,30 @@ fn importer_dans(racine: &Path, chemins: &[String], classer: Classer, etape: &dy
             Err(e) => b.erreurs.push(format!("{nom} : {e}")),
         }
     }
+    // Disques PlayStation en .cue : le .cue et ses pistes ensemble, dans PS1\<titre> ou PS2\<titre>.
+    let cues: Vec<PathBuf> = fichiers.iter().filter(|f| f.extension().is_some_and(|e| e.eq_ignore_ascii_case("cue"))).cloned().collect();
+    let mut pris = std::collections::HashSet::new();
+    for cue in cues {
+        let console = crate::retro::console_de(&cue).unwrap_or("PS1");
+        let pistes: Vec<PathBuf> = crate::retro::pistes(&cue).into_iter().filter(|p| p.is_file()).collect();
+        let stem = cue.file_stem().map(|x| x.to_string_lossy().into_owned()).unwrap_or_default();
+        let nom = Some(nom_dossier(&crate::retro::titre(&stem))).filter(|n| !n.is_empty()).unwrap_or_else(|| "Jeu".into());
+        let parent = racine.join(CONSOLES.iter().find(|(id, _)| *id == console).unwrap().1);
+        let cible = libre(&parent, &nom);
+        if std::fs::create_dir_all(&cible).is_err() {
+            b.erreurs.push(format!("{nom} : dossier impossible à créer"));
+            continue;
+        }
+        for f in std::iter::once(&cue).chain(pistes.iter()) {
+            if let Err(e) = std::fs::rename(f, cible.join(f.file_name().unwrap_or_default())) {
+                b.erreurs.push(format!("{nom} : {e}"));
+            }
+            pris.insert(f.clone());
+        }
+        b.ajoutes.push((console.into(), nom));
+    }
     // Autres fichiers : les jeux, MAJ et DLC reconnus vont à la racine, puis le rangement les place.
-    for f in fichiers {
+    for f in fichiers.into_iter().filter(|f| !pris.contains(f)) {
         let nom = f.file_name().map(|x| x.to_string_lossy().into_owned()).unwrap_or_default();
         if nom.starts_with("._") || nom == ".DS_Store" {
             continue;
@@ -190,6 +236,13 @@ fn importer_dans(racine: &Path, chemins: &[String], classer: Classer, etape: &dy
                 let cible = libre(&racine, &nom);
                 match std::fs::rename(&f, &cible) {
                     Ok(()) => b.ajoutes.push((console.into(), nom)),
+                    Err(e) => b.erreurs.push(format!("{nom} : {e}")),
+                }
+            }
+            // BIOS de la PS2 (souvent livré en archive) : installé, pas rangé avec les jeux.
+            None if std::fs::metadata(&f).is_ok_and(|m| (1 << 20..=8 << 20).contains(&m.len())) && std::fs::read(&f).is_ok_and(|x| crate::retro::bios_ps2_valide(&x)) => {
+                match crate::retro::poser_bios_ps2(&crate::emu("retroarch"), &f) {
+                    Ok(_) => b.messages.push(format!("BIOS PS2 installé : {nom}")),
                     Err(e) => b.erreurs.push(format!("{nom} : {e}")),
                 }
             }
@@ -221,6 +274,41 @@ mod tests {
         trier(&d, 3, &mut w, &mut f);
         assert_eq!((w.len(), f.len()), (1, 1));
         assert!(est_archive(Path::new("x.ZIP")) && !est_archive(Path::new("x.nsp")));
+    }
+    #[test]
+    fn noms_de_dossier_sans_chemin() {
+        assert_eq!(nom_dossier("..\\..\\Windows"), "Windows");
+        assert_eq!(nom_dossier(".."), "");
+        assert_eq!(nom_dossier("C:/x\ty"), "Cxy");
+        assert_eq!(nom_dossier("Demon's Souls"), "Demon's Souls");
+    }
+    #[test]
+    fn cue_avec_ses_pistes() {
+        let d = std::env::temp_dir().join(format!("enlocal-cue-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(d.join("src")).unwrap();
+        std::fs::write(d.join("src").join("Crash Bandicoot (Europe).cue"), "FILE \"Crash Bandicoot (Europe).bin\" BINARY\n  TRACK 01 MODE2/2352\n").unwrap();
+        std::fs::write(d.join("src").join("Crash Bandicoot (Europe).bin"), b"x").unwrap();
+        let b = importer_dans(&d.join("Jeux"), &[d.join("src").to_string_lossy().into_owned()], &|_| None, &|_| {});
+        assert_eq!(b.ajoutes, [("PS1".to_string(), "Crash Bandicoot".to_string())]);
+        let jeu = d.join("Jeux").join("PS1").join("Crash Bandicoot");
+        assert!(jeu.join("Crash Bandicoot (Europe).cue").is_file() && jeu.join("Crash Bandicoot (Europe).bin").is_file());
+        assert_eq!(b.ignores, 0);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn disque_ps3() {
+        let d = std::env::temp_dir().join(format!("enlocal-ps3-import-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        let jeu = d.join("src").join("BLES00932");
+        std::fs::create_dir_all(jeu.join("PS3_GAME").join("USRDIR")).unwrap();
+        std::fs::write(jeu.join("PS3_GAME").join("PARAM.SFO"), crate::ps3::tests::sfo_test()).unwrap();
+        std::fs::write(jeu.join("PS3_GAME").join("USRDIR").join("EBOOT.BIN"), b"x").unwrap();
+        let b = importer_dans(&d.join("Jeux"), &[jeu.to_string_lossy().into_owned()], &|_| None, &|_| {});
+        assert_eq!(b.ajoutes, [("PS3".to_string(), "Demon's Souls".to_string())]);
+        assert!(d.join("Jeux").join("PS3").join("Demon's Souls").join("PS3_GAME").join("USRDIR").join("EBOOT.BIN").is_file());
+        let _ = std::fs::remove_dir_all(&d);
     }
     /// Import réel (tar.exe de Windows) dans un dossier de jeux de test :
     /// `cargo test --release -- --ignored import_reel`.

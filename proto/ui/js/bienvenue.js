@@ -34,7 +34,7 @@ function ouvrirBienvenue() {
   entree($('#bienvenue .bv-carte'), 'pop-salle');
   invoke('pad_info').then((p) => ((manetteNom = p.name || ''), bienvenue && ETAPES[bienvenue.etape] === 'manette' && drawBienvenue())).catch(() => {});
   chargerDossier().then(() => bienvenue && ETAPES[bienvenue.etape] === 'jeux' && drawBienvenue());
-  Promise.all([chargerSwitch(), chargerTroisDs()]).then(() => bienvenue && ETAPES[bienvenue.etape] === 'consoles' && drawBienvenue());
+  Promise.all([chargerSwitch(), chargerTroisDs(), chargerPs3(), chargerPs2()]).then(() => bienvenue && ETAPES[bienvenue.etape] === 'consoles' && drawBienvenue());
   chargerDossiersMedias().then(() => bienvenue && ETAPES[bienvenue.etape] === 'medias' && drawBienvenue());
   invoke('materiel').then((m) => {
     if (!bienvenue) return;
@@ -69,7 +69,10 @@ function choixEtape() {
     ['titres', `Switch, clés des jeux : ${switchEtat ? texteTitres() : '…'}`, AIDE_TITRES],
     ['firmware', `Switch, firmware : ${switchEtat ? texteFirmware() : '…'}`, AIDE_FIRMWARE],
     ['boot9', `3DS, boot9.bin : ${troisDsPret === null ? '…' : troisDsPret ? 'Installé' : 'À ajouter'}`, AIDE_BOOT9],
-    ['plus-tard', switchPret() || troisDsPret ? 'C\'est bon' : 'Plus tard', 'Ça s\'ajoute aussi dans Réglages, Nintendo Switch et Nintendo 3DS.'],
+    ['ps2', `PS2, BIOS : ${ps2Pret === null ? '…' : ps2Pret ? 'Installé' : 'À ajouter'}`, AIDE_PS2],
+    ['ps3', `PS3, firmware : ${ps3Pret === null ? '…' : ps3Pret ? 'Installé' : 'À ajouter'}`, AIDE_PS3],
+    ...(ps3Pret ? [] : [['ps3-site', 'PS3 : télécharger le firmware chez Sony', 'Ouvre la page officielle de Sony dans ton navigateur (PS3UPDAT.PUP), puis reviens choisir le fichier juste au-dessus.']]),
+    ['plus-tard', switchPret() || troisDsPret || ps3Pret || ps2Pret ? 'C\'est bon' : 'Plus tard', 'Ça s\'ajoute aussi dans Réglages, avec chaque console.'],
   ];
   if (e === 'manette') return Object.entries(GLYPHES_NOMS).map(([v, t]) => [v, t, v === 'auto' ? 'Les symboles de la manette que tu tiens.' : `Toujours les symboles ${t}.`]);
   if (e === 'succes') return ra.token ? [['ok', `Connecté : ${ra.user}`, 'Tes succès se débloquent en jeu.']] : [['connecter', 'Connecter RetroAchievements', 'Les vrais succès des jeux GameCube et Wii, avec un compte gratuit.'], ['plus-tard', 'Plus tard', 'Dans les Réglages, partie Succès, quand tu veux.']];
@@ -89,14 +92,14 @@ function drawBienvenue() {
   const e = ETAPES[b.etape];
   const choix = choixEtape();
   const actuel = { son: niveauSon(), pseudo: localStorage.pseudo ? 'autre' : 'discord', ecran: b.choix.ecran, jeux: dossierInfo?.chemin, manette: b.choix.glyphes, graphismes: b.choix.profil }[e];
-  const titres = { son: 'Le son', discord: 'Bienvenue sur En Local', pseudo: 'Ton pseudo pour les consoles', consoles: 'Ta Switch et ta 3DS', ecran: 'Comment afficher En Local ?', medias: 'Ta musique, tes vidéos, tes captures', jeux: 'Où ranger tes jeux ?', manette: 'Ta manette', graphismes: 'Les graphismes', succes: 'Les succès', fin: `C'est prêt${me ? `, ${esc(me.name)}` : ''} !` };
+  const titres = { son: 'Le son', discord: 'Bienvenue sur En Local', pseudo: 'Ton pseudo pour les consoles', consoles: 'Tes consoles', ecran: 'Comment afficher En Local ?', medias: 'Ta musique, tes vidéos, tes captures', jeux: 'Où ranger tes jeux ?', manette: 'Ta manette', graphismes: 'Les graphismes', succes: 'Les succès', fin: `C'est prêt${me ? `, ${esc(me.name)}` : ''} !` };
   const textes = {
     pseudo: 'Dans En Local, tu gardes ton pseudo Discord. Sur les consoles (DS, 3DS, Switch), c\'est ce pseudo que les autres voient en jeu. Il se change dans les Réglages.',
     son: 'Choisis le volume d\'En Local : tu entends la différence tout de suite. Chaque son se règle ensuite dans Réglages, Son (et le volume des jeux dans leur menu).',
     discord: 'L\'app du Local pour jouer ensemble. Pour commencer, connecte-toi avec ton compte Discord : tes sessions, les membres et ton profil en dépendent.',
-    consoles: 'Pour les jeux Switch, il faut les clés et le firmware de ta propre Switch ; pour les jeux 3DS chiffrés, le boot9.bin de ta propre 3DS (En Local n\'en fournit pas). Choisis-les, ou dépose-les tous d\'un coup sur cette fenêtre : En Local les reconnaît et les range.',
+    consoles: 'Pour les jeux Switch, il faut les clés et le firmware de ta propre Switch ; pour les jeux 3DS chiffrés, le boot9.bin de ta propre 3DS ; pour la PS2, le BIOS de ta propre PS2 ; pour la PS3, le firmware officiel de Sony (En Local n\'en fournit pas). Les autres consoles n\'ont besoin de rien. Choisis-les, ou dépose-les tous d\'un coup sur cette fenêtre : En Local les reconnaît et les range.',
     medias: 'Où En Local les trouve (et range tes captures en jeu). Choisis un dossier existant ou crées-en un ; ça se change dans les Réglages.',
-    jeux: 'En Local y crée un dossier par console (Switch, 3DS, Wii U, Wii, GameCube, DS). Switch : un dossier par jeu, ses mises à jour et DLC dans un sous-dossier. Mets-y les copies de tes cartouches et disques ; un fichier posé au mauvais endroit, En Local le range pour toi (Réglages, Ranger mes jeux).',
+    jeux: 'En Local y crée un dossier par console (Switch, 3DS, Wii U, Wii, GameCube, DS, N64, Super Nintendo, NES, Game Boy, PS3…). Switch : un dossier par jeu, ses mises à jour et DLC dans un sous-dossier. Mets-y les copies de tes cartouches et disques ; un fichier posé au mauvais endroit, En Local le range pour toi (Réglages, Ranger mes jeux).',
     succes: 'Les trophées d\'En Local marchent sur toutes les consoles, sans compte. Pour les vrais succès des jeux : RetroAchievements.',
     ecran: 'Tu pourras changer ça quand tu veux dans les Réglages (ou avec F11).',
     manette: '',
@@ -165,7 +168,8 @@ async function activerBienvenue() {
   }
   if (e === 'medias') return choisirDossierMedia(v);
   if (e === 'discord') return login();
-  if (e === 'consoles') return v === 'plus-tard' ? etapeBienvenue(1) : (v === 'boot9' ? poserTroisDs() : poserSwitch(v)).then(() => bienvenue && drawBienvenue());
+  if (e === 'consoles' && v === 'ps3-site') return invoke('ouvrir_firmware_ps3').catch(oops);
+  if (e === 'consoles') return v === 'plus-tard' ? etapeBienvenue(1) : (v === 'boot9' ? poserTroisDs() : v === 'ps3' ? poserPs3() : v === 'ps2' ? poserPs2() : poserSwitch(v)).then(() => bienvenue && drawBienvenue());
   if (e === 'succes' && v === 'connecter') return connecterRa();
   if (e === 'succes' && v === 'plus-tard') return etapeBienvenue(1);
   drawBienvenue();

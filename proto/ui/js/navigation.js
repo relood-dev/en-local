@@ -5,7 +5,7 @@ const SECTIONS = [
   { id: 'accueil', nom: 'Accueil', rang: 1 },
   { id: 'jeux', nom: 'Bibliothèque', rang: 1 },
   { id: 'collections', nom: 'Collections', rang: 3 },
-  { id: 'tournois', nom: 'Compétition', rang: 3 },
+  { id: 'tournois', nom: 'Tournois', rang: 3 },
   { id: 'medias', nom: 'Médias', rang: 3 },
   { id: 'recherche', nom: 'Recherche', rang: 4, apres: true },
   { id: 'reglages', nom: 'Réglages', rang: 4 },

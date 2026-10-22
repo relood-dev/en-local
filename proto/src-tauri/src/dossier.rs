@@ -3,7 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
-pub const CONSOLES: [(&str, &str); 6] = [("Switch", "Switch"), ("3DS", "3DS"), ("WiiU", "Wii U"), ("Wii", "Wii"), ("GC", "GameCube"), ("DS", "DS")];
+pub const CONSOLES: [(&str, &str); 15] = [("Switch", "Switch"), ("3DS", "3DS"), ("WiiU", "Wii U"), ("Wii", "Wii"), ("GC", "GameCube"), ("DS", "DS"), ("PS3", "PS3"), ("PS2", "PS2"), ("PS1", "PS1"), ("N64", "Nintendo 64"), ("SNES", "Super Nintendo"), ("NES", "NES"), ("GBA", "Game Boy Advance"), ("GBC", "Game Boy Color"), ("GB", "Game Boy")];
 pub const MAJ: &str = "MAJ et DLC";
 
 fn reglage() -> PathBuf {
@@ -40,6 +40,15 @@ fn lisez_moi(console: &str) -> &'static str {
         "WiiU" => "Tes jeux Wii U : un dossier par jeu (code, content, meta), ou .wua / .wud / .wux.\r\nMises à jour et DLC : dans « MAJ et DLC ».\r\n",
         "Wii" => "Tes jeux Wii (.iso, .wbfs, .rvz), sortis de ta console.\r\n",
         "GC" => "Tes jeux GameCube (.iso, .rvz, .gcm), sortis de ta console.\r\n",
+        "N64" => "Tes jeux Nintendo 64 (.z64, .n64, .v64), sortis de tes cartouches.\r\n",
+        "SNES" => "Tes jeux Super Nintendo (.sfc, .smc), sortis de tes cartouches.\r\n",
+        "NES" => "Tes jeux NES (.nes), sortis de tes cartouches.\r\n",
+        "GBA" => "Tes jeux Game Boy Advance (.gba), sortis de tes cartouches.\r\n",
+        "GBC" => "Tes jeux Game Boy Color (.gbc), sortis de tes cartouches.\r\n",
+        "GB" => "Tes jeux Game Boy (.gb), sortis de tes cartouches.\r\n",
+        "PS2" => "Tes jeux PS2 (.iso, .chd, .cso, ou .cue avec ses .bin), sortis de tes disques.\r\nLe BIOS de ta PS2 s'ajoute dans Réglages, PlayStation 2.\r\n",
+        "PS1" => "Tes jeux PS1 (.cue avec ses .bin, .chd, .pbp, .iso), sortis de tes disques. Pas besoin de BIOS.\r\n",
+        "PS3" => "Tes jeux PS3, sortis de ta console : un dossier par jeu (avec PS3_GAME dedans), ou un .iso déchiffré.\r\nLe firmware se télécharge sur le site de Sony (PS3UPDAT.PUP) et s'installe depuis Réglages, PS3.\r\n",
         _ => "Tes jeux DS (.nds), sortis de tes cartouches.\r\n",
     }
 }
@@ -211,7 +220,7 @@ pub fn selectionner_plusieurs(owner: isize, titre: &str) -> Vec<String> {
         let Ok(d) = CoCreateInstance::<_, IFileOpenDialog>(&FileOpenDialog, None, CLSCTX_INPROC_SERVER) else { return out };
         let Ok(o) = d.GetOptions() else { return out };
         let _ = d.SetOptions(o | FOS_ALLOWMULTISELECT | FOS_FILEMUSTEXIST | FOS_FORCEFILESYSTEM);
-        let (n, m) = (HSTRING::from("Jeux et archives"), HSTRING::from("*.zip;*.7z;*.rar;*.nsp;*.nsz;*.xci;*.xcz;*.3ds;*.cci;*.cia;*.nds;*.iso;*.rvz;*.wbfs;*.gcm;*.wua;*.wud;*.wux"));
+        let (n, m) = (HSTRING::from("Jeux et archives"), HSTRING::from("*.zip;*.7z;*.rar;*.nsp;*.nsz;*.xci;*.xcz;*.3ds;*.cci;*.cia;*.nds;*.iso;*.rvz;*.wbfs;*.gcm;*.wua;*.wud;*.wux;*.nes;*.sfc;*.smc;*.z64;*.n64;*.v64;*.gb;*.gbc;*.gba;*.cue;*.bin;*.chd;*.pbp;*.cso;*.zso"));
         let (n2, m2) = (HSTRING::from("Tous les fichiers"), HSTRING::from("*.*"));
         let _ = d.SetFileTypes(&[COMDLG_FILTERSPEC { pszName: PCWSTR(n.as_ptr()), pszSpec: PCWSTR(m.as_ptr()) }, COMDLG_FILTERSPEC { pszName: PCWSTR(n2.as_ptr()), pszSpec: PCWSTR(m2.as_ptr()) }]);
         let _ = d.SetTitle(&HSTRING::from(titre));

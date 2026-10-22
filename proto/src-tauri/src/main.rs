@@ -11,6 +11,8 @@ mod pad;
 mod perf;
 mod presence;
 mod pseudo;
+mod ps3;
+mod retro;
 mod clips;
 mod dossier;
 mod distance;
@@ -58,6 +60,12 @@ fn dolphin() -> String {
 fn cemu() -> String {
     emu("cemu")
 }
+fn rpcs3() -> String {
+    emu("rpcs3")
+}
+fn retroarch() -> String {
+    emu("retroarch")
+}
 pub fn eden() -> String {
     emu("eden-enlocal")
 }
@@ -92,13 +100,17 @@ struct Game {
     added: u64,
 }
 
-/// Fichiers de jeu sous dir. Un jeu Wii U décompressé compte pour son .rpx.
+/// Fichiers de jeu sous dir. Un jeu Wii U décompressé compte pour son .rpx, un disque PS3 pour son PARAM.SFO.
 fn game_files(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
     menage_mac(dir);
     let Ok(entries) = std::fs::read_dir(dir) else { return };
     let (dirs, files): (Vec<_>, Vec<_>) = entries.flatten().map(|e| e.path()).partition(|p| p.is_dir());
     if let Some(rpx) = std::fs::read_dir(dir.join("code")).into_iter().flatten().flatten().map(|e| e.path()).find(|p| p.extension().is_some_and(|x| x.eq_ignore_ascii_case("rpx"))) {
         out.push(rpx);
+        return;
+    }
+    if let Some(sfo) = Some(dir.join("PS3_GAME").join("PARAM.SFO")).filter(|p| p.is_file()) {
+        out.push(sfo);
         return;
     }
     out.extend(files);
@@ -158,31 +170,40 @@ fn list_games() -> Vec<Game> {
             let console = match ext.as_str() {
                 "nds" => "DS",
                 "3ds" | "cci" | "cia" | "cxi" | "zcci" | "zcxi" | "3dsx" => "3DS",
+                "iso" if ps3::est_iso(&path.to_string_lossy()) => "PS3",
+                "sfo" => "PS3",
+                _ if retro::console_de(&path).is_some() => retro::console_de(&path)?,
                 "iso" | "gcm" | "rvz" | "wia" | "wbfs" | "ciso" | "gcz" | "wad" => embed::dolphin_console(&path.to_string_lossy())?,
                 "wua" | "wud" | "wux" | "wuhb" | "rpx" => "WiiU",
                 "nsp" | "nsz" | "xci" | "xcz" => "Switch",
                 _ => return None,
             };
             // Wii U décompressé : le nom du dossier (le .rpx a un nom de code).
-            let name = if ext == "rpx" { path.parent()?.parent()?.file_name()? } else { path.file_stem()? }.to_string_lossy().into_owned();
+            let ps3 = (console == "PS3").then(|| ps3::infos(&path.to_string_lossy())).flatten();
+            // Anciennes Nintendo : nom No-Intro du fichier gardé pour la jaquette, titre lisible affiché.
+            let no_intro = retro::console_connue(console).then(|| path.file_stem().map(|s| s.to_string_lossy().into_owned())).flatten();
+            let name = if let Some((titre, _)) = &ps3 { titre.clone() } else { if ext == "rpx" { path.parent()?.parent()?.file_name()? } else { path.file_stem()? }.to_string_lossy().into_owned() };
             // Switch : le nom du dossier du jeu, souvent plus complet que celui du fichier.
             let name = match (console, path.parent()) {
                 ("Switch", Some(d)) if d.parent().and_then(|p| p.file_name()).is_some_and(|n| n.eq_ignore_ascii_case("Switch")) => d.file_name().map_or(name, |n| n.to_string_lossy().into_owned()),
                 _ => name,
             };
+            let name = if no_intro.is_some() { retro::titre(&name) } else { name };
             let path = path.to_string_lossy().into_owned();
             let (title_id, product_code) = match console {
                 "3DS" => (embed::title_id(&path), embed::product_code(&path)),
                 "DS" => (ds_game_code(&path), ds_game_code(&path)),
                 "WiiU" => (reglages::wiiu_title_id(&path), wiiu_id(&path)),
                 "Switch" => (switch_title_id(&path), None),
+                "PS3" => (ps3.as_ref().map(|x| x.1.clone()), ps3.map(|x| x.1)),
+                _ if no_intro.is_some() => (None, no_intro.clone()),
                 _ => (None, None),
             };
             if console == "Switch" && title_id.as_deref().and_then(|x| u64::from_str_radix(x, 16).ok()).is_some_and(contenu_switch) {
                 return None;
             }
             let disc_id = if console == "GC" || console == "Wii" { embed::dolphin_game_id(&path) } else { None };
-            let file = if ext == "rpx" { std::path::Path::new(&path).parent()?.parent()?.to_path_buf() } else { std::path::PathBuf::from(&path) };
+            let file = if ext == "rpx" || ext == "sfo" { std::path::Path::new(&path).parent()?.parent()?.to_path_buf() } else { std::path::PathBuf::from(&path) };
             let added = std::fs::metadata(&file).and_then(|m| m.created().or_else(|_| m.modified())).ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map_or(0, |d| d.as_secs());
             Some(Game { name, path, console, title_id, product_code, disc_id, added })
         })
@@ -413,6 +434,37 @@ async fn pokedex(relire: bool) -> Result<String, String> {
 fn boot9() -> std::path::PathBuf {
     std::path::PathBuf::from(format!("{}\\user\\sysdata\\boot9.bin", azahar()))
 }
+/// PS2 : BIOS installé.
+#[tauri::command]
+fn ps2_etat() -> bool {
+    retro::bios_ps2(&retroarch())
+}
+#[tauri::command]
+async fn ps2_poser(app: AppHandle) -> Result<Option<String>, String> {
+    let owner = main_hwnd(&app)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let Some(f) = dossier::selectionner_fichier(owner, "Choisis le BIOS de ta PS2", ("BIOS de la PS2", "*.bin;*.rom*")) else { return Ok(None) };
+        retro::poser_bios_ps2(&retroarch(), std::path::Path::new(&f)).map(Some)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+/// PS3 : firmware installé dans RPCS3.
+#[tauri::command]
+fn ps3_etat() -> bool {
+    ps3::firmware(&rpcs3())
+}
+/// PS3 : le joueur choisit le PS3UPDAT.PUP téléchargé chez Sony, RPCS3 l'installe.
+#[tauri::command]
+async fn ps3_poser(app: AppHandle) -> Result<bool, String> {
+    let owner = main_hwnd(&app)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let Some(f) = dossier::selectionner_fichier(owner, "Choisis le firmware PS3 de Sony (PS3UPDAT.PUP)", ("Firmware PS3 (PS3UPDAT.PUP)", "*.pup")) else { return Ok(false) };
+        ps3::installer_firmware(&rpcs3(), &f).map(|_| true)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
 #[tauri::command]
 fn trois_ds_etat() -> bool {
     std::fs::read(boot9()).is_ok_and(|o| boot9_valide(&o))
@@ -494,6 +546,10 @@ async fn poser_console(chemins: Vec<String>) -> Poses {
                 note(switch::poser_titres(f).map(|n| format!("Clés des jeux installées ({n})")));
             } else if nom.starts_with("boot9") && nom.ends_with(".bin") {
                 note(poser_boot9(f));
+            } else if nom.ends_with(".bin") && std::fs::metadata(f).is_ok_and(|m| (1 << 20..=8 << 20).contains(&m.len())) && std::fs::read(f).is_ok_and(|b| retro::bios_ps2_valide(&b)) {
+                note(retro::poser_bios_ps2(&retroarch(), f));
+            } else if nom.ends_with(".pup") {
+                note(ps3::installer_firmware(&rpcs3(), &c).map(|_| "Firmware PS3 installé".into()));
             } else if nom.ends_with(".nca") {
                 ncas.extend(f.parent().map(|d| d.to_path_buf()));
             } else {
@@ -575,6 +631,10 @@ fn classer(p: &std::path::Path) -> Option<(&'static str, bool, Option<u64>)> {
         "3ds" | "cci" | "cxi" | "zcci" | "zcxi" | "3dsx" => Some(("3DS", false, None)),
         "cia" => Some(("3DS", id.is_some_and(|x| matches!(x >> 32, 0x0004_000E | 0x0004_008C)), None)),
         "wua" | "wud" | "wux" | "wuhb" => Some(("WiiU", id.is_some_and(|x| matches!(x >> 32, 0x0005_000E | 0x0005_000C)), None)),
+        "iso" if ps3::est_iso(&p.to_string_lossy()) => Some(("PS3", false, None)),
+        // Un .cue se range avec ses pistes : l'import s'en charge.
+        "cue" => None,
+        _ if retro::console_de(p).is_some() => retro::console_de(p).map(|c| (c, false, None)),
         "iso" | "gcm" | "rvz" | "wia" | "wbfs" | "ciso" | "gcz" | "wad" => embed::dolphin_console(&p.to_string_lossy()).map(|c| (c, false, None)),
         _ => None,
     }
@@ -812,6 +872,12 @@ fn start_game(app: AppHandle, path: String, console: String, room: Option<embed:
     } else if console == "WiiU" {
         let log = embed::start_cemu(&cemu(), &path, main_hwnd(&app)?, &o)?;
         Ok(format!("Wii U lancé (Cemu) — {log}"))
+    } else if retro::console_connue(&console) {
+        let log = retro::start(&retroarch(), &path, &console, main_hwnd(&app)?, &o)?;
+        Ok(format!("{console} lancée (RetroArch) — {log}"))
+    } else if console == "PS3" {
+        let log = ps3::start(&rpcs3(), &path, main_hwnd(&app)?, &o)?;
+        Ok(format!("PS3 lancée (RPCS3) — {log}"))
     } else if console == "Switch" {
         // Mise à jour choisie : les autres de ce jeu sont écartées.
         let tid = switch_title_id(&path);
@@ -884,6 +950,8 @@ fn journaux() -> serde_json::Value {
         ("azahar", format!("{}\\user\\log\\azahar_log.txt", azahar())),
         ("dolphin", format!("{}\\User\\Logs\\dolphin.log", dolphin())),
         ("cemu", format!("{}\\log.txt", cemu())),
+        ("rpcs3", format!("{}\\log\\RPCS3.log", rpcs3())),
+        ("retroarch", format!("{}\\enlocal.log", retroarch())),
     ];
     let profil = std::env::var("USERPROFILE").unwrap_or_default();
     let masquer = |t: String| if profil.len() > 3 { t.replace(&profil, "%USERPROFILE%").replace(&profil.to_lowercase(), "%USERPROFILE%").replace(&profil.replace('\\', "/"), "%USERPROFILE%") } else { t };
@@ -1290,6 +1358,12 @@ fn ouvrir_site() -> Result<(), String> {
     std::process::Command::new("rundll32").args(["url.dll,FileProtocolHandler", "https://loc-lab.fr/en-local/"]).spawn().map(|_| ()).map_err(|e| e.to_string())
 }
 
+/// PS3 : la page officielle de Sony où télécharger le firmware.
+#[tauri::command]
+fn ouvrir_firmware_ps3() -> Result<(), String> {
+    std::process::Command::new("rundll32").args(["url.dll,FileProtocolHandler", "https://www.playstation.com/fr-fr/support/hardware/ps3/system-software/"]).spawn().map(|_| ()).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 fn pad_info() -> serde_json::Value {
     serde_json::json!({ "name": pad::NAME.lock().unwrap().clone(), "kind": *pad::KIND.lock().unwrap() })
@@ -1617,7 +1691,7 @@ fn main() {
                 embed::stop();
             }
         })
-        .invoke_handler(tauri::generate_handler![verifier_maj, journaux, installer_maj, ouvrir_site, micro::micros, importer_jeux, choisir_jeux, oublier_jaquettes, jaquette, journal, habillage_ds, switch_etat, switch_poser, volume_jeux, list_games, medias_liste, ouvrir_medias, dossiers_medias, choisir_dossier_media, creer_dossier_media, dossier_jeux, definir_dossier_jeux, choisir_dossier, creer_dossier_jeux, ranger_jeux, contenus_jeux, ra_connexion, ouvrir_ra, mode_ecran, materiel, switch_updates, cemu_packs, cemu_packs_maj, dolphin_mods, eden_mods, open_folder, open_games_folder, ouvrir_saves, reset_jeu, salon_en_jeu, pokedex, sprite, perf::performances, trois_ds_etat, trois_ds_poser, clips::clip, clips::miniature, garder_photo, nsz::preparer_switch, salon::salon_preparer, salon::salon_sonde, salon::salon_lancer, salon::salon_fermer, pad_info, open_discord_user, game_icon, save_image, capture, list_captures, load_stats, save_stats, game_infos, play, login, menu_shown, resume, quit_game, quit_app, home, snapshot, game_shot, autoplay, lien_initial, ds_friend_code, netplay, netplay_launch, netplay_stop, netplay_message, netplay_cancel, presence, presence_clear, pointer, clavier_reponse, poser_console, pad::manette_ajouter, shaders_lire, shaders_taille, shaders_ecrire, figurines::figurines, figurines::figurines_poser, distance::distance_debut, distance::distance_pad, distance::distance_fin, distance::distance_arret, pad::distance_manette])
+        .invoke_handler(tauri::generate_handler![verifier_maj, journaux, installer_maj, ouvrir_site, micro::micros, importer_jeux, choisir_jeux, oublier_jaquettes, jaquette, journal, habillage_ds, switch_etat, switch_poser, volume_jeux, list_games, medias_liste, ouvrir_medias, dossiers_medias, choisir_dossier_media, creer_dossier_media, dossier_jeux, definir_dossier_jeux, choisir_dossier, creer_dossier_jeux, ranger_jeux, contenus_jeux, ra_connexion, ouvrir_ra, mode_ecran, materiel, switch_updates, cemu_packs, cemu_packs_maj, dolphin_mods, eden_mods, open_folder, open_games_folder, ouvrir_saves, reset_jeu, salon_en_jeu, pokedex, sprite, perf::performances, trois_ds_etat, trois_ds_poser, ps3_etat, ps3_poser, ouvrir_firmware_ps3, ps2_etat, ps2_poser, clips::clip, clips::miniature, garder_photo, nsz::preparer_switch, salon::salon_preparer, salon::salon_sonde, salon::salon_lancer, salon::salon_fermer, pad_info, open_discord_user, game_icon, save_image, capture, list_captures, load_stats, save_stats, game_infos, play, login, menu_shown, resume, quit_game, quit_app, home, snapshot, game_shot, autoplay, lien_initial, ds_friend_code, netplay, netplay_launch, netplay_stop, netplay_message, netplay_cancel, presence, presence_clear, pointer, clavier_reponse, poser_console, pad::manette_ajouter, shaders_lire, shaders_taille, shaders_ecrire, figurines::figurines, figurines::figurines_poser, distance::distance_debut, distance::distance_pad, distance::distance_fin, distance::distance_arret, pad::distance_manette])
         .run(tauri::generate_context!())
         .expect("En Local n'a pas pu démarrer");
 }

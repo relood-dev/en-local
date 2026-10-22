@@ -29,8 +29,6 @@ function salleSession(etat) {
 function drawSalle() {
   if (!salle) return;
   if (salle.mode === 'code') return drawCode();
-  if (salle.mode === 'file') return drawFile();
-  if (salle.mode === 'match') return drawSalonClasse();
   const g = games[salle.i];
   const titre = fiche(g)?.title || g.name;
   const parId = new Map(membres.map((m) => [m.id, m]));
@@ -146,7 +144,6 @@ function taperCode(touche) {
 /* ---------- Touches ---------- */
 
 function navSalle(k) {
-  if (salle.mode === 'match') return navSalonClasse(k);
   if (salle.mode === 'code') {
     if (k === 'up' || k === 'down') return tourner(k === 'up' ? -1 : 1);
     if (k === 'left' || k === 'right') return ((salle.pos = Math.max(0, Math.min(5, salle.pos + (k === 'left' ? -1 : 1)))), drawCode());

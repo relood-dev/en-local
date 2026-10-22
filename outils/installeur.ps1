@@ -17,6 +17,8 @@ $emus = [ordered]@{
   'dolphin-enlocal' = @('User', 'Tests')
   'eden-enlocal'    = @('user')
   'cemu'            = @('portable')
+  'rpcs3'           = @('config', 'dev_flash', 'dev_flash2', 'dev_flash3', 'dev_hdd0', 'dev_hdd1', 'dev_usb000', 'dev_bdvd', 'cache', 'log', 'savestates', 'captures', 'games', 'ppu_progs', 'spu_progs', 'shaderlog', 'patches', 'sounds')  # PS3 (RPCS3 officiel, GPL) : jamais le firmware de Sony
+  'retroarch'       = @('saves', 'states', 'system', 'screenshots', 'playlists', 'logs', 'config', 'downloads', 'thumbnails', 'cache', 'records', 'recordings', 'assets', 'shaders', 'overlays', 'database', 'cheats')  # NES à GBA, PS1, PS2 (RetroArch officiel et ses cœurs, GPL ; system : BIOS PS2 du joueur, jamais livré)
   'melondsds'       = @()
   'ffmpeg'          = @()   # clips vidéo (build LGPL de BtbN, avec sa licence)
   'nsz'             = @()   # jeux Switch .nsz/.xcz décompressés pour Eden (MIT, version portable 4.6.1)
@@ -25,7 +27,7 @@ $emus = [ordered]@{
 }
 foreach ($e in $emus.Keys) {
   $exclus = @($emus[$e]) | ForEach-Object { Join-Path "$src\$e" $_ }
-  $args = @("$src\$e", "$dist\$e", '/E', '/NFL', '/NDL', '/NJH', '/NJS', '/NP', '/XF', '*.log', '*.pdb', 'enlocal-*.exe')  # enlocal-*.exe : copies faites par l'app au lancement
+  $args = @("$src\$e", "$dist\$e", '/E', '/NFL', '/NDL', '/NJH', '/NJS', '/NP', '/XF', '*.log', '*.pdb', 'enlocal-*.exe', 'enlocal.cfg', 'retroarch.cfg', 'CurrentSettings.ini')  # enlocal-*.exe : copies faites par l'app au lancement
   if ($exclus.Count) { $args += '/XD'; $args += $exclus }
   robocopy @args | Out-Null
   if ($LASTEXITCODE -ge 8) { throw "Copie de $e impossible ($LASTEXITCODE)" }
@@ -41,9 +43,9 @@ foreach ($e in 'azahar-enlocal', 'dolphin-enlocal', 'eden-enlocal') {
 }
 
 # Rien de personnel ni de Nintendo : ni clés, ni firmware, ni jeux, ni sauvegardes.
-$interdits = '*.keys', 'keys.txt', 'otp.bin', 'seeprom.bin', '*.nca', '*.nsp', '*.nsz', '*.xci', '*.3ds', '*.cci', '*.cia', '*.nds', '*.iso', '*.rvz', '*.wbfs', '*.gcm', '*.wua', '*.wud', '*.wux', '*.rpx', '*.sav', '*.gci', '*.raw'
+$interdits = '*.keys', 'keys.txt', 'otp.bin', 'seeprom.bin', '*.nca', '*.nsp', '*.nsz', '*.xci', '*.3ds', '*.cci', '*.cia', '*.nds', '*.iso', '*.rvz', '*.wbfs', '*.gcm', '*.wua', '*.wud', '*.wux', '*.rpx', '*.sav', '*.gci', '*.raw', '*.pup', '*.rap', '*.pkg', '*.edat', '*.sprx', '*.nes', '*.sfc', '*.smc', '*.z64', '*.n64', '*.v64', '*.gb', '*.gbc', '*.gba', '*.srm', '*.state', '*.cue', '*.chd', '*.pbp', '*.cso', '*.zso', 'scph*'
 $trouves = Get-ChildItem -Recurse -File $dist -Include $interdits
-$dossiers = Get-ChildItem -Recurse -Directory $dist | Where-Object { $_.Name -in 'nand', 'mlc01', 'sysdata', 'sdmc', 'keys', 'saves' -and (Get-ChildItem -Recurse -File $_.FullName | Measure-Object).Count }
+$dossiers = Get-ChildItem -Recurse -Directory $dist | Where-Object { $_.Name -in 'nand', 'mlc01', 'sysdata', 'sdmc', 'keys', 'saves', 'dev_flash', 'dev_hdd0'  -and (Get-ChildItem -Recurse -File $_.FullName | Measure-Object).Count }
 if ($trouves -or $dossiers) {
   ($trouves + $dossiers) | ForEach-Object { "INTERDIT : $($_.FullName)" }
   throw 'Des fichiers personnels sont dans la copie : installeur annulé.'

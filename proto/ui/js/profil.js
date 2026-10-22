@@ -2,19 +2,19 @@
  * Profil : temps de jeu, défis, jeux les plus joués et temps par console.
  * Tout est compté sur ce PC (data\stats.json).
  */
-const compteurs = JSON.parse(localStorage.compteurs || '{}'); // sessionsCreees, sessionsRejointes, clips, nuit, matin, jours: ['2026-10-04', …]
+const compteurs = JSON.parse(localStorage.compteurs || '{}'); // sessionsCreees, sessionsRejointes, clips, netplay, distance, figurines, nuit, matin, jours: ['2026-10-04', …], tournois et tournoisGagnes: [id, …]
 const garderCompteurs = () => (localStorage.compteurs = JSON.stringify(compteurs));
 function compter(cle) {
   compteurs[cle] = (compteurs[cle] || 0) + 1;
   garderCompteurs();
   verifierDefis();
 }
-/** Note le jour de jeu et le moment (nuit, petit matin). Appelé chaque minute de jeu. */
+/** Note le jour de jeu et le moment (nuit, petit matin), une fois par jour. Appelé chaque minute de jeu. */
 function jourDeJeu() {
   const heure = new Date().getHours();
   const moment = heure < 5 ? 'nuit' : heure < 8 ? 'matin' : '';
-  if (moment && !compteurs[moment]) compter(moment);
   const j = new Date().toLocaleDateString('sv'); // AAAA-MM-JJ
+  if (moment && compteurs[`${moment}Jour`] !== j) (compteurs[`${moment}Jour`] = j), compter(moment);
   const jours = (compteurs.jours ||= []);
   if (jours.at(-1) === j) return;
   jours.push(j);
@@ -54,11 +54,21 @@ function defis() {
   const chromas = pk.filter(([, x]) => x.c).length;
   const unBit = (b) => (b > 0 ? b.toString(2).replace(/0/g, '').length : 0);
   const badges = Math.max(0, ...(pokedexDonnees?.jeux || []).map((j) => unBit(j.badges)));
+  const regions = (pokedexDonnees?.jeux || []).filter((j) => unBit(j.badges) >= 8).length;
+  const secsConsole = (c) => games.filter((g) => g.console === c).reduce((t, g) => t + (stats[g.path]?.secs || 0), 0);
+  const parJ = Object.values(compteurs.jeux || {});
+  const n = (cle) => compteurs[cle] || 0;
+  const nb = (cle) => (compteurs[cle] || []).length;
+  // Par console : 10 h, puis 5 jeux joués. Une nouvelle console a ses défis toute seule.
+  const consolesDefis = ORDRE.flatMap((c) => [
+    [`heures-${c}`, `Habitué de la ${LONG[c]}`, `Jouer 10 h sur ${LONG[c]}`, 10, h(secsConsole(c)), 'manette'],
+    [`jeux-${c}`, `Ludothèque ${LONG[c]}`, `Jouer à 5 jeux ${LONG[c]}`, 5, joues().filter((g) => g.console === c).length, 'dossier'],
+  ]);
   return [
     ['premier', 'Première partie', 'Lancer un jeu', 1, joues().length, 'coucou'],
     ['curieux', 'Curieux', 'Jouer à 5 jeux différents', 5, joues().length, 'nerd'],
     ['consoles', 'Tour des consoles', 'Jouer sur 3 consoles différentes', 3, consoles, 'idee'],
-    ['toutes', 'Collection complète', 'Jouer sur les 6 consoles', 6, consoles, 'fete'],
+    ['toutes', 'Collection complète', `Jouer sur les ${ORDRE.length} consoles`, ORDRE.length, consoles, 'fete'],
     ['fidele', 'Fidèle', 'Jouer 5 h au même jeu', 5, h(plusLong), 'love'],
     ['marathon', 'Marathon', 'Jouer 10 h en tout', 10, h(tempsTotal()), 'cafe'],
     ['veteran', 'Vétéran', 'Jouer 50 h en tout', 50, h(tempsTotal()), 'gg'],
@@ -108,6 +118,54 @@ function defis() {
     ['chromatique', 'Éclat', 'Avoir un Pokémon chromatique', 1, chromas, 'idee'],
     ['brillant', 'Collection brillante', 'Avoir 10 Pokémon chromatiques', 10, chromas, 'love'],
     ['patient', 'Patience de moine', 'Faire 500 resets en chasse aux chromatiques', 500, resets, 'attente'],
+    ['apprenti', 'Apprenti', 'Attraper 10 espèces de Pokémon', 10, especes, 'content'],
+    ['encyclopedie', 'Encyclopédie', 'Attraper 250 espèces de Pokémon', 250, especes, 'nerd'],
+    ['savant', 'Savant', 'Attraper 700 espèces de Pokémon', 700, especes, 'idee'],
+    ['regions', 'Conquérant', 'Gagner les 8 badges dans 3 jeux Pokémon', 3, regions, 'gg'],
+    ['generations', 'Voyageur des régions', 'Avoir 3 cartes de dresseur', 3, (pokedexDonnees?.jeux || []).length, 'enligne'],
+    ['legendaire', 'Chasseur légendaire', 'Avoir 50 Pokémon chromatiques', 50, chromas, 'fete'],
+    ['moine', 'Sérénité absolue', 'Faire 2000 resets en chasse aux chromatiques', 2000, resets, 'dodo'],
+    // Encore plus de jeu
+    ['centaine', 'Centaine', 'Jouer à 100 jeux différents', 100, joues().length, 'gg'],
+    ['degustateur', 'Dégustateur', 'Jouer 1 h à 25 jeux différents', 25, uneHeure, 'popcorn'],
+    ['multi', 'Cœur partagé', 'Jouer 10 h à 5 jeux différents', 5, Object.values(stats).filter((s) => s.secs >= 36000).length, 'love'],
+    ['devoue', 'Dévoué', 'Jouer 100 h au même jeu', 100, h(plusLong), 'love'],
+    ['rituel', 'Rituel', 'Jouer 10 jours différents au même jeu', 10, Math.max(0, ...parJ.map((p) => p.j.length)), 'cafe'],
+    ['compagnon', 'Compagnon de route', 'Jouer 30 jours différents au même jeu', 30, Math.max(0, ...parJ.map((p) => p.j.length)), 'love'],
+    ['cinq-cents', 'Infatigable', 'Jouer 500 h en tout', 500, h(tempsTotal()), 'gg'],
+    ['mille', 'Mille heures', 'Jouer 1000 h en tout', 1000, h(tempsTotal()), 'fete'],
+    ['quinzaine', 'Quinzaine', 'Jouer 14 jours de suite', 14, serie(), 'content'],
+    ['inarretable', 'Inarrêtable', 'Jouer 100 jours de suite', 100, serie(), 'gg'],
+    ['un-an', 'Un an au Local', 'Jouer 365 jours différents', 365, (compteurs.jours || []).length, 'fete'],
+    ['insomniaque', 'Insomniaque', 'Jouer entre minuit et 5 h, 10 nuits', 10, n('nuit'), 'dodo'],
+    ['aube', 'Aube', 'Jouer entre 5 h et 8 h, 10 matins', 10, n('matin'), 'cafe'],
+    // Encore plus ensemble
+    ['ame', 'Âme du Local', 'Jouer 100 sessions', 100, sessions, 'love'],
+    ['grand-orga', 'Grand organisateur', 'Créer 50 sessions', 50, n('sessionsCreees'), 'fete'],
+    ['inseparable', 'Inséparable', 'Rejoindre 50 sessions de membres', 50, n('sessionsRejointes'), 'enligne'],
+    ['rendez-vous', 'Rendez-vous habituel', 'Jouer 10 sessions au même jeu', 10, Math.max(0, ...parJ.map((p) => p.s || 0)), 'musique'],
+    ['eclectique', 'Éclectique', 'Jouer en session à 5 jeux différents', 5, parJ.filter((p) => p.s).length, 'idee'],
+    ['netplay', 'En ligne', 'Jouer une partie netplay (GameCube ou Wii)', 1, n('netplay'), 'enligne'],
+    ['netplay-10', 'Habitué du netplay', 'Jouer 10 parties netplay', 10, n('netplay'), 'enligne'],
+    ['distance', 'Téléporté', 'Jouer une partie à distance', 1, n('distance'), 'enligne'],
+    ['distance-10', 'Sans frontières', 'Jouer 10 parties à distance', 10, n('distance'), 'enligne'],
+    // Tournois
+    ['inscrit', 'Compétiteur', 'Participer à un tournoi', 1, nb('tournois'), 'manette'],
+    ['habitue-tournois', 'Habitué des tournois', 'Participer à 5 tournois', 5, nb('tournois'), 'manette'],
+    ['vainqueur', 'Vainqueur', 'Gagner un tournoi', 1, nb('tournoisGagnes'), 'gg'],
+    ['dynastie', 'Dynastie', 'Gagner 5 tournois', 5, nb('tournoisGagnes'), 'fete'],
+    ['arbitre', 'Organisateur de tournoi', 'Organiser un tournoi', 1, nb('tournoisOrganises'), 'reglages'],
+    // Bibliothèque, accueil et souvenirs
+    ['musee', 'Musée', 'Avoir 250 jeux dans sa bibliothèque', 250, games.length, 'dossier'],
+    ['etagere', 'Étagère complète', 'Avoir des jeux de toutes les consoles', ORDRE.length, new Set(games.map((g) => g.console)).size, 'dossier'],
+    ['curateur-10', 'Conservateur', 'Créer 10 collections', 10, collections.filter((c) => c.id !== 'favoris').length, 'nerd'],
+    ['coups-de-coeur', 'Coups de cœur', 'Mettre 10 jeux en favoris', 10, collections.find((c) => c.id === 'favoris')?.jeux.length || 0, 'love'],
+    ['architecte', 'Architecte d\'intérieur', 'Poser 10 éléments sur l\'accueil', 10, maison.length, 'content'],
+    ['photojournaliste', 'Photojournaliste', 'Prendre 200 captures en jeu', 200, capturesListe.length, 'photo'],
+    ['globe-trotteur', 'Globe-trotteur', 'Prendre des captures dans 10 jeux différents', 10, parJ.filter((p) => p.c).length, 'photo'],
+    ['cineaste', 'Cinéaste', 'Enregistrer 50 clips vidéo', 50, n('clips'), 'popcorn'],
+    ['figurine', 'Figurine posée', 'Utiliser un amiibo ou un Skylander', 1, n('figurines'), 'idee'],
+    ...consolesDefis,
   ].map(([id, titre, texte, but, v, loc]) => ({ id, titre, texte, but, v: Math.min(v, but), fait: v >= but, loc }));
 }
 

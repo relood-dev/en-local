@@ -65,6 +65,7 @@ const invitesEnSession = (g) => Boolean(session && !session.distance && INVITES_
 function distanceHote() {
   if (!session || distance) return;
   distance = { role: 'hote', code: session.code, pairs: new Map() };
+  compter('distance');
   boucleSignaux(distance);
 }
 async function capturer(d) {
@@ -156,6 +157,7 @@ function fermerPair(d, id) {
 async function distanceInvite(s, ecran = s.host) {
   const d = { role: 'invite', code: s.code, hote: ecran, n: 0 };
   distance = d;
+  compter('distance');
   if (!musique.paused) musique.pause();
   const el = document.createElement('section');
   el.id = 'distance';

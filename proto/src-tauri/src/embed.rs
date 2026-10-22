@@ -447,6 +447,8 @@ pub const EXE_3DS: &str = "enlocal-3ds.exe";
 pub const EXE_SWITCH: &str = "enlocal-switch.exe";
 pub const EXE_WII: &str = "enlocal-gc-wii.exe";
 pub const EXE_WIIU: &str = "enlocal-wiiu.exe";
+pub const EXE_PS3: &str = "enlocal-ps3.exe";
+pub const EXE_RETRO: &str = "enlocal-retro.exe";
 /// Copie de l'émulateur sous un nom d'En Local : les logiciels de clips (Medal…) reconnaissent les
 /// émulateurs à leur nom et filmeraient l'émulateur seul, sans En Local autour. Refaite après une mise à jour.
 pub fn exe(dir: &str, exe: &str, nom: &str) -> String {
@@ -939,23 +941,30 @@ pub fn start_cemu(dir: &str, game: &str, parent: isize, o: &crate::reglages::Opt
     if let Some(m) = crate::mii::du_joueur(o) {
         crate::mii::cemu(dir, &m);
     }
-    let mut child = Command::new(exe(dir, "Cemu.exe", EXE_WIIU)).env("SDL_GAMECONTROLLERCONFIG", crate::pad::mappings()).args(["-g", game]).creation_flags(CREATE_NO_WINDOW).spawn().map(tie).map_err(|e| e.to_string())?;
-    let deadline = Instant::now() + Duration::from_secs(30);
+    let child = Command::new(exe(dir, "Cemu.exe", EXE_WIIU)).env("SDL_GAMECONTROLLERCONFIG", crate::pad::mappings()).args(["-g", game]).creation_flags(CREATE_NO_WINDOW).spawn().map(tie).map_err(|e| e.to_string())?;
+    coller(child, parent, "Cemu", "Cemu", "FPS", Duration::from_secs(30))
+}
+
+/// Fenêtre d'un émulateur collée dans la nôtre, sans menu ni cadre, une fois le jeu lancé.
+/// titre : début du titre de sa fenêtre ; pret : texte du titre une fois le jeu lancé (FPS), "" pour ne pas attendre.
+/// attente : temps laissé pour que cette fenêtre apparaisse.
+pub fn coller(mut child: Child, parent: isize, titre: &str, nom: &str, pret: &str, attente: Duration) -> Result<String, String> {
+    let echec = || format!("le jeu ne s'est pas affiché ({nom} n'a pas pu le charger)");
+    let deadline = Instant::now() + attente;
     let window = loop {
-        if let Some(h) = top_window(child.id(), "Cemu") {
+        if let Some(h) = top_window(child.id(), titre) {
             break h;
         }
         if Instant::now() > deadline || matches!(child.try_wait(), Ok(Some(_))) {
             let _ = child.kill();
-            return Err("le jeu ne s'est pas affiché (Cemu n'a pas pu le charger)".into());
+            return Err(echec());
         }
         std::thread::sleep(Duration::from_millis(100));
     };
-    // Fenêtre de Cemu montrée seulement une fois le jeu lancé (son titre affiche alors les FPS).
     let ready = Instant::now() + Duration::from_secs(120);
-    while Instant::now() < ready && !title_of(window).contains("FPS") {
+    while !pret.is_empty() && Instant::now() < ready && !title_of(window).contains(pret) {
         if matches!(child.try_wait(), Ok(Some(_))) {
-            return Err("le jeu ne s'est pas affiché (Cemu n'a pas pu le charger)".into());
+            return Err(echec());
         }
         std::thread::sleep(Duration::from_millis(100));
     }

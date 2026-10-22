@@ -85,6 +85,7 @@ async function choisirFigurine() {
   const liste = amiibo ? (deja ? [] : [x.chemin]) : deja ? posees.filter((c) => c !== x.chemin) : [...posees, x.chemin];
   try {
     await invoke('figurines_poser', { sorte: fig.sorte, chemins: liste });
+    if (!deja) compter('figurines');
   } catch (e) {
     return toast(`Impossible : ${e}`);
   }
