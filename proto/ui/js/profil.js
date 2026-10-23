@@ -57,8 +57,8 @@ function defis() {
   const especes = new Set(pk.map(([k]) => k.split(':')[0])).size;
   const chromas = pk.filter(([, x]) => x.c).length;
   const unBit = (b) => (b > 0 ? b.toString(2).replace(/0/g, '').length : 0);
-  const badges = Math.max(0, ...(pokedexDonnees?.jeux || []).map((j) => unBit(j.badges)));
-  const regions = (pokedexDonnees?.jeux || []).filter((j) => unBit(j.badges) >= 8).length;
+  const badges = Math.max(0, ...cartesPokedex().map((j) => unBit(j.badges)));
+  const regions = cartesPokedex().filter((j) => unBit(j.badges) >= 8).length;
   const parJ = Object.values(compteurs.jeux || {});
   const n = (cle) => compteurs[cle] || 0;
   const nb = (cle) => (compteurs[cle] || []).length;
@@ -125,7 +125,7 @@ function defis() {
     ['encyclopedie', 'Encyclopédie', 'Attraper 250 espèces de Pokémon', 250, especes, 'nerd'],
     ['savant', 'Savant', 'Attraper 700 espèces de Pokémon', 700, especes, 'idee'],
     ['regions', 'Conquérant', 'Gagner les 8 badges dans 3 jeux Pokémon', 3, regions, 'gg'],
-    ['generations', 'Voyageur des régions', 'Avoir 3 cartes de dresseur', 3, (pokedexDonnees?.jeux || []).length, 'enligne'],
+    ['generations', 'Voyageur des régions', 'Avoir 3 cartes de dresseur', 3, cartesPokedex().length, 'enligne'],
     ['legendaire', 'Chasseur légendaire', 'Avoir 50 Pokémon chromatiques', 50, chromas, 'fete'],
     ['moine', 'Sérénité absolue', 'Faire 2000 resets en chasse aux chromatiques', 2000, resets, 'dodo'],
     // Encore plus de jeu

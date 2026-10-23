@@ -113,13 +113,14 @@ fn profil_eden() -> Option<(String, String)> {
 /// Chemin dans la zone, tel qu'envoyé à Loc (« / », profil Eden remplacé par @moi), ou None s'il ne se synchronise pas.
 fn vers_loc(zone: &str, morceaux: &[String], profil: Option<&(String, String)>) -> Option<Vec<String>> {
     let nom = morceaux.last()?;
-    if nom.starts_with("._") || nom == ".DS_Store" || nom.ends_with(".tmp") || morceaux.iter().any(|m| m == "content") {
+    // Sans tenir compte des majuscules : Windows et macOS ne les distinguent pas.
+    if nom.starts_with("._") || nom.eq_ignore_ascii_case(".DS_Store") || nom.to_ascii_lowercase().ends_with(".tmp") || morceaux.iter().any(|m| m.eq_ignore_ascii_case("content")) {
         return None;
     }
     let mut m = morceaux.to_vec();
     match zone {
         "wii" if m[0] == "00000001" => return None,
-        "wiiu" if m[0] == "system" => return None,
+        "wiiu" if m[0].eq_ignore_ascii_case("system") => return None,
         "switch" => {
             if m[0] != "0000000000000000" || m.len() < 3 {
                 return None;
@@ -189,11 +190,13 @@ fn garder_json<T: serde::Serialize>(nom: &str, v: &T) {
     }
 }
 
-fn empreinte_fichier(p: &Path) -> Option<String> {
-    let mut f = std::fs::File::open(p).ok()?;
-    let mut h = Sha256::new();
-    std::io::copy(&mut f, &mut h).ok()?;
-    Some(format!("{:x}", h.finalize()))
+/// Empreinte d'un fichier, et s'il n'a que des zéros.
+fn empreinte_fichier(p: &Path) -> Option<(String, bool)> {
+    let contenu = std::fs::read(p).ok()?;
+    Some((format!("{:x}", Sha256::digest(&contenu)), abime(&contenu)))
+}
+fn abime(contenu: &[u8]) -> bool {
+    !contenu.is_empty() && contenu.iter().all(|&b| b == 0)
 }
 /// Empreinte d'un jeu : ses fichiers triés, « chemin\0empreinte\n » (même calcul que Loc).
 pub fn empreinte_jeu(f: &BTreeMap<String, (String, u64)>) -> String {
@@ -215,10 +218,13 @@ const MAX_FICHIER: u64 = 128 * 1024 * 1024;
 
 /// Tous les jeux sauvegardés sur ce disque. Les empreintes déjà calculées (même taille, même date) sont reprises.
 fn jeux_locaux() -> BTreeMap<String, Jeu> {
-    let mut cache: std::collections::HashMap<String, (u64, u64, String)> = lire_json("saves-empreintes.json");
+    let mut cache: std::collections::HashMap<String, (u64, u64, String, bool)> = lire_json("saves-empreintes-2.json");
     let mut nouveau = std::collections::HashMap::new();
     let profil = profil_eden();
     let mut jeux: BTreeMap<String, Jeu> = BTreeMap::new();
+    // Par jeu : son plus gros fichier (taille, que des zéros ?). Ce fichier vidé, c'est une sauvegarde
+    // abîmée par une coupure de courant (un petit fichier de zéros peut être normal : Smash en a).
+    let mut plus_gros: std::collections::HashMap<String, (u64, bool)> = std::collections::HashMap::new();
     for z in zones() {
         let mut fichiers = Vec::new();
         parcourir(&z.dossier, &mut Vec::new(), &mut fichiers);
@@ -230,16 +236,20 @@ fn jeux_locaux() -> BTreeMap<String, Jeu> {
             }
             let mtime = meta.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map_or(0, |d| d.as_millis() as u64);
             let cle_cache = disque.to_string_lossy().into_owned();
-            let h = match cache.remove(&cle_cache) {
-                Some((n, t, h)) if n == meta.len() && t == mtime => h,
+            let (h, zeros) = match cache.remove(&cle_cache) {
+                Some((n, t, h, z)) if n == meta.len() && t == mtime => (h, z),
                 _ => match empreinte_fichier(&disque) {
-                    Some(h) => h,
+                    Some(x) => x,
                     None => continue,
                 },
             };
-            nouveau.insert(cle_cache, (meta.len(), mtime, h.clone()));
+            nouveau.insert(cle_cache, (meta.len(), mtime, h.clone(), zeros));
             // Le jeu : les premiers dossiers ; un fichier moins profond est un jeu à lui seul.
             let unite = m[..z.profondeur.min(m.len())].join("/");
+            let gros = plus_gros.entry(format!("{}/{unite}", z.nom)).or_insert((0, false));
+            if meta.len() > gros.0 {
+                *gros = (meta.len(), zeros);
+            }
             let rel = m.join("/");
             let jeu = jeux.entry(format!("{}/{unite}", z.nom)).or_default();
             jeu.f.insert(rel.clone(), (h, meta.len()));
@@ -247,7 +257,9 @@ fn jeux_locaux() -> BTreeMap<String, Jeu> {
             jeu.mtime = jeu.mtime.max(mtime);
         }
     }
-    garder_json("saves-empreintes.json", &nouveau);
+    garder_json("saves-empreintes-2.json", &nouveau);
+    // Sauvegarde abîmée : le jeu ne part pas (il écraserait la bonne version des autres appareils).
+    jeux.retain(|cle, _| !plus_gros.get(cle).is_some_and(|g| g.1));
     jeux
 }
 
@@ -299,6 +311,13 @@ pub fn appliquer(cle: &str, f: BTreeMap<String, (String, u64)>, h: &str) -> Resu
     }
     if f.is_empty() || !empreinte_valide(h) || f.values().any(|(e, _)| !empreinte_valide(e)) || empreinte_jeu(&f) != h {
         return Err("sauvegarde incomplète".into());
+    }
+    // Le plus gros fichier n'a que des zéros : sauvegarde abîmée sur l'autre appareil, jamais posée ici.
+    if let Some((e, _)) = f.values().max_by_key(|(_, n)| *n) {
+        let deja = jeux_locaux().get(cle).is_some_and(|j| j.f.values().any(|(x, _)| x == e));
+        if !deja && std::fs::read(recus().join(e)).is_ok_and(|c| abime(&c)) {
+            return Err("sauvegarde vide (que des zéros) refusée".into());
+        }
     }
     let (zone, unite) = cle.split_once('/').ok_or("jeu invalide")?;
     let z = zones().into_iter().find(|z| z.nom == zone).ok_or("zone inconnue")?;
@@ -365,6 +384,13 @@ mod tests {
     use super::*;
 
     #[test]
+    fn sauvegarde_videe_refusee() {
+        assert!(super::abime(&[0u8; 512]));
+        assert!(!super::abime(&[]), "un fichier vide n'est pas abîmé");
+        assert!(!super::abime(&[0, 0, 1]));
+    }
+
+    #[test]
     fn synchro_chemins_et_empreinte() {
         let m = |x: &str| x.split('/').map(String::from).collect::<Vec<_>>();
         let p = ("B1B83DBA185BB8D5D0EC55CCAB2D9118".to_string(), "D5D0EC55CCAB2D911800000000000000".to_string());
@@ -374,6 +400,8 @@ mod tests {
         assert_eq!(vers_loc("switch", &m("cache/0000000000000000/x"), Some(&p)), None);
         assert_eq!(vers_loc("switch", &m("0000000000000000/AAAA000000000000000000000000AAAA/0100/x"), Some(&p)), None);
         assert_eq!(vers_loc("3ds", &m("x/y/title/00040000/00055e00/content/00000000.app"), None), None);
+        assert_eq!(vers_loc("3ds", &m("x/y/title/00040000/00055e00/CONTENT/00000000.app"), None), None);
+        assert!(vers_disque("wiiu", "SYSTEM/x/y").is_err());
         assert_eq!(vers_loc("wii", &m("00000001/00000002/data/setting.txt"), None), None);
         assert_eq!(vers_loc("ds", &m("._Pokemon.sav"), None), None);
         let piege: BTreeMap<String, (String, u64)> = [("Jeu.sav".to_string(), ("../../../.ssh/id_ed25519".to_string(), 1))].into_iter().collect();

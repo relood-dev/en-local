@@ -39,7 +39,7 @@ function carteDresseur(j, k, action) {
   const vus = prisDuDex + (j.regional?.length ? j.regional.filter(([n]) => (j.vus || []).includes(n)).length : (j.vus || []).length);
   const badges = j.badges >= 0 && ids.length ? `<div class="cd-badges">${ids.map((b, i) => `<span class="cd-badge${j.badges & (1 << i) ? ' obtenu' : ''}"><img data-badge="${b}" alt=""></span>`).join('')}</div>` : '';
   return `<button class="prof-el carte-dresseur${pokedexJeu === k ? ' choisie' : ''}" style="--cd:${couleur}" data-n="${action(() => ((pokedexJeu = pokedexJeu === k ? -1 : k), (pokedexFiltre = 'tous'), drawProfil()))}">
-    <div class="cd-tete"><small>Carte de dresseur</small><b>${esc(j.jeu)}</b></div>
+    <div class="cd-tete"><small>Carte de dresseur${j.ailleurs ? ' · sur ton autre appareil' : ''}</small><b>${esc(j.jeu)}</b></div>
     <div class="cd-corps">
       <div class="cd-nom"><small>Nom</small><b>${esc(j.dresseur || '—')}</b></div>
       <div><small>N° ID</small><b>${String(j.id ?? 0).padStart(j.generation >= 7 ? 6 : 5, '0')}</b></div>
@@ -61,6 +61,12 @@ const GENS = [[1, 151], [152, 251], [252, 386], [387, 493], [494, 649], [650, 72
 let pokedexCredit = JSON.parse(localStorage.pokedexCredit || 'null'); // { 'n:f': { c: chromatique, j: [versions] } }
 let pokedexAvant = null; // sauvegardes lues au lancement de la partie
 const garderCredit = () => (localStorage.pokedexCredit = JSON.stringify(pokedexCredit));
+/** Cartes de dresseur : les sauvegardes lues ici, puis celles de mes autres appareils (une fois chacune). */
+function cartesPokedex() {
+  const ici = pokedexDonnees?.jeux || [];
+  const vues = new Set(ici.map((j) => j.cle));
+  return [...ici, ...(typeof cartesAutres === 'undefined' ? [] : cartesAutres).filter((j) => !vues.has(j.cle) && vues.add(j.cle))];
+}
 const RYTHME_MAX = (minutes) => 10 + Math.ceil(minutes * 3); // nouvelles espèces par partie, au plus
 
 /** Contenu de chaque sauvegarde : cle -> { version, pris: Set, poss: Set('n:f:c') }. */
@@ -82,6 +88,7 @@ function nouveautes(avant, apres) {
 /** Première fois : le contenu actuel compte s'il tient dans le temps joué aux jeux Pokémon dans En Local. */
 function creditInitial() {
   pokedexCredit = {};
+  localStorage.pokedexSavesVues = JSON.stringify([...etatSaves(pokedexDonnees).keys()]);
   const minutes = games.filter(estPokemon).reduce((t, g) => t + (stats[g.path]?.secs || 0), 0) / 60;
   const saves = [...etatSaves(pokedexDonnees).values()];
   const total = new Set(saves.flatMap((s) => [...nouveautes(null, s).especes])).size;
@@ -94,6 +101,27 @@ function creditInitial() {
     notifier({ type: 'defi', texte: `Pokédex : ${total} Pokémon déjà dans tes sauvegardes pour ${Math.round(minutes)} min de jeu dans En Local. Ils compteront en les attrapant ici.`, image: 'img/loc/loc_question.gif' });
   }
   garderCredit();
+}
+
+/**
+ * Sauvegarde jamais vue ici (reçue d'un autre de mes appareils, ou partie dont le crédit a été perdu,
+ * par une coupure de courant pendant la partie) : même règle qu'au premier lancement, avec le temps
+ * passé aux jeux Pokémon sur tous mes appareils.
+ */
+function creditNouvellesSaves() {
+  const vues = new Set(JSON.parse(localStorage.pokedexSavesVues || '[]'));
+  const neuves = [...etatSaves(pokedexDonnees)].filter(([cle]) => !vues.has(cle));
+  if (!neuves.length) return;
+  const minutes = games.filter(estPokemon).reduce((t, g) => t + tempsDe(g), 0) / 60;
+  const total = new Set(neuves.flatMap(([, s]) => [...nouveautes(null, s).especes])).size;
+  if (total <= minutes) {
+    for (const [, s] of neuves) {
+      for (const n of s.pris) crediter(n, 0, 0, s.version);
+      for (const x of s.poss) { const [n, f, c] = x.split(':').map(Number); crediter(n, f, c, s.version); }
+    }
+    garderCredit();
+  }
+  localStorage.pokedexSavesVues = JSON.stringify([...vues, ...neuves.map(([cle]) => cle)]);
 }
 
 /** Avant une partie Pokémon : les sauvegardes telles qu'elles sont. */
@@ -129,6 +157,8 @@ function pokedexEspeces() {
   const m = new Map();
   const espece = (n) => m.get(n) || m.set(n, { n, vu: false, pris: false, chroma: false, formes: [], jeux: new Set() }).get(n);
   for (const p of pokedexDonnees?.pokemon || []) if (p.vu) espece(p.n).vu = true;
+  // Vus dans les parties de mes autres appareils (attrapés : seulement par le crédit, comme ici).
+  for (const j of cartesPokedex()) if (j.ailleurs) for (const n of [...j.pris, ...j.vus]) if (n >= 1 && n <= 1025) espece(n).vu = true;
   for (const [cle, x] of Object.entries(pokedexCredit || {})) {
     const [n, f] = cle.split(':').map(Number);
     const e = espece(n);
@@ -142,7 +172,7 @@ function pokedexEspeces() {
 function pokedexChiffres() {
   const m = pokedexEspeces();
   const l = [...m.values()];
-  return { pris: l.filter((e) => e.pris).length, vus: l.filter((e) => e.vu).length, chroma: l.filter((e) => e.chroma).length, formes: l.reduce((t, e) => t + e.formes.length, 0), jeux: pokedexDonnees?.jeux?.length || 0 };
+  return { pris: l.filter((e) => e.pris).length, vus: l.filter((e) => e.vu).length, chroma: l.filter((e) => e.chroma).length, formes: l.reduce((t, e) => t + e.formes.length, 0), jeux: cartesPokedex().length };
 }
 
 /** Lit le Pokédex gardé, et relit les sauvegardes si besoin. */
@@ -157,6 +187,7 @@ async function chargerPokedex(relire = false) {
   // Pokédex gardé par une version d'avant : relu pour avoir l'identité des sauvegardes.
   if (!relire && pokedexDonnees.jeux?.some((j) => !j.cle)) return chargerPokedex(true);
   if (!pokedexCredit) creditInitial();
+  else creditNouvellesSaves();
   crediterPartie();
   const apres = pokedexChiffres().pris;
   if (avant !== null && apres > avant) notifier({ type: 'defi', texte: `Pokédex : +${apres - avant} Pokémon attrapé${apres - avant > 1 ? 's' : ''} (${apres} sur 1025)`, image: 'img/loc/loc_fete.gif' });
@@ -167,7 +198,7 @@ function pokedexApresPartie(g) {
 }
 
 function blocPokedex(action) {
-  if (!pokedexDonnees) return '';
+  if (!pokedexDonnees && !cartesPokedex().length) return '';
   const c = pokedexChiffres();
   return `<div class="titre-groupe">Pokédex <span>${c.pris} sur 1025</span></div>
     <button class="prof-el pokedex-bloc" data-n="${action(() => ((pokedexOuvert = true), (pokedexJeu = -1), (profFocus = 0), drawProfil()))}">
@@ -190,7 +221,7 @@ function vuePokedex(action) {
   const especes = pokedexEspeces();
   const noms = pokedexDonnees?.noms || [];
   const c = pokedexChiffres();
-  const jeux = pokedexDonnees?.jeux || [];
+  const jeux = cartesPokedex();
   const jeu = jeux[pokedexJeu];
   const dansJeu = jeu && { pris: new Set(jeu.pris || []), vus: new Set(jeu.vus || []) };
   const [de, a] = pokedexGen && !jeu ? GENS[pokedexGen - 1] : [1, 1025];
@@ -200,7 +231,7 @@ function vuePokedex(action) {
   const haut = `<div class="prof pokedex">
     <div class="prof-tete">
       <img class="av" src="img/loc/loc_nerd.gif" alt="">
-      <div><h1>Pokédex</h1><p>${c.pris} attrapés sur 1025 · ${c.vus} vus · ${c.chroma} chromatiques · ${c.formes} formes</p><p>${c.jeux ? `D'après ${pokedexDonnees.jeux.map((j) => esc(j.jeu)).join(', ')}` : 'Aucune sauvegarde Pokémon lue pour l\'instant'}</p></div>
+      <div><h1>Pokédex</h1><p>${c.pris} attrapés sur 1025 · ${c.vus} vus · ${c.chroma} chromatiques · ${c.formes} formes</p><p>${c.jeux ? `D'après ${jeux.map((j) => esc(j.jeu)).join(', ')}` : 'Aucune sauvegarde Pokémon lue pour l\'instant'}</p></div>
       <button class="prof-el prof-bouton" data-n="${action(() => (toast('Lecture des sauvegardes…'), chargerPokedex(true).then(() => toast('Pokédex à jour'))))}">Relire les sauvegardes</button>
     </div>
     ${jeux.length ? `<div class="titre-groupe">Tes cartes de dresseur <span>${jeux.length}</span></div><div class="cd-liste">${jeux.map((j, k) => carteDresseur(j, k, action)).join('')}</div>` : ''}

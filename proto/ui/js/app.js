@@ -226,7 +226,7 @@ async function salonSurMonPc(g, places) {
     const port = await invoke('salon_preparer');
     const { jeton } = await api('POST', '/sessions/sonde', { port });
     if (!(await invoke('salon_sonde', { jeton }))) throw new Error('ton PC n\'est pas joignable depuis Internet (box sans UPnP, ou adresse partagée par ton opérateur)');
-    return { port, password: await invoke('salon_lancer', { places: places || 4 }) };
+    return { port, password: await invoke('salon_lancer', { places: places || 4 }), ipLocale: await invoke('salon_ip_locale').catch(() => null) };
   } catch (e) {
     invoke('salon_fermer');
     toast(`Salon sur ton PC impossible : ${e.message || e}. La partie passe par le serveur du Local.`);
@@ -651,9 +651,14 @@ const stats = {};
 const saveStats = () => invoke('save_stats', { json: JSON.stringify(stats) }).catch(() => {});
 async function chargerStats() {
   const fichier = await invoke('load_stats').catch(() => '');
-  if (fichier) Object.assign(stats, JSON.parse(fichier));
-  // Ancienne version : les comptes étaient dans le cache, on les déplace.
-  else if (localStorage.stats) (Object.assign(stats, JSON.parse(localStorage.stats)), await saveStats());
+  // Fichier abîmé (coupure de courant) : on repart de zéro plutôt que de bloquer le démarrage.
+  try {
+    if (fichier) Object.assign(stats, JSON.parse(fichier));
+    // Ancienne version : les comptes étaient dans le cache, on les déplace.
+    else if (localStorage.stats) (Object.assign(stats, JSON.parse(localStorage.stats)), await saveStats());
+  } catch (e) {
+    invoke('journal', { texte: `temps de jeu illisible, remis à zéro : ${e}` }).catch(() => {});
+  }
   delete localStorage.stats;
   if (rattacherStats()) await saveStats();
 }

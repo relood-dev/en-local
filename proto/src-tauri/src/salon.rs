@@ -36,7 +36,7 @@ fn pare_feu() -> Result<(), String> {
 }
 
 /// Adresse locale de ce PC (celle de la route vers Internet).
-fn ip_locale() -> Option<std::net::Ipv4Addr> {
+pub fn ip_locale() -> Option<std::net::Ipv4Addr> {
     let s = UdpSocket::bind("0.0.0.0:0").ok()?;
     s.connect("1.1.1.1:53").ok()?;
     match s.local_addr().ok()? {
@@ -61,6 +61,12 @@ fn fermer_box(port: u16) {
     if let Ok(box_) = search_gateway(options) {
         let _ = box_.remove_port(PortMappingProtocol::UDP, port);
     }
+}
+
+/// Adresse de ce PC sur sa box, donnée à Loc avec le salon.
+#[tauri::command]
+pub fn salon_ip_locale() -> Option<String> {
+    ip_locale().map(|ip| ip.to_string())
 }
 
 /// Étape 1 : pare-feu, port libre, box. On écoute en attendant la sonde.

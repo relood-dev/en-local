@@ -108,6 +108,10 @@ pub struct Room {
     pub port: u16,
     pub password: String,
     pub nickname: String,
+    /// Salon sur le PC de l'hôte : son adresse sur sa box. Pour un autre appareil du même compte
+    /// (son Mac), qui reçoit sinon 127.0.0.1 comme l'hôte.
+    #[serde(default, rename = "ipLocale")]
+    pub ip_locale: Option<String>,
 }
 
 /// Code produit d'un jeu 3DS (ex. « EKJA »), pour connaître son nombre de joueurs.

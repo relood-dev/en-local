@@ -5,7 +5,15 @@
  * même partout : le dernier modifié l'emporte. Le Pokédex réunit ce qui est attrapé sur chaque appareil.
  * Les jeux, clés et sauvegardes restent sur chaque appareil.
  */
-const appareil = (localStorage.appareil ||= crypto.randomUUID());
+let appareil = (localStorage.appareil ||= crypto.randomUUID());
+// L'identifiant gardé sur le disque l'emporte (interface remise à zéro, réinstallation) ; l'ancien est
+// retiré chez Loc, sinon ses temps de jeu compteraient deux fois.
+let appareilRemplace = null;
+const appareilPret = window.__TAURI__.core.invoke('appareil_id', { propose: appareil }).then((id) => {
+  if (id && id !== appareil) [appareilRemplace, appareil, localStorage.appareil] = [appareil, id, id];
+}).catch(() => {});
+/** Cartes de dresseur (parties Pokémon) de mes autres appareils. */
+let cartesAutres = JSON.parse(localStorage.cartesAutres || '[]');
 let progAutres = JSON.parse(localStorage.progAutres || 'null') || { stats: {}, compteurs: {}, defisFaits: [] };
 /** Jeux installés sur mes autres appareils : [{ systeme, jeux: [{ k, t, c, id }] }]. */
 let jeuxAutres = JSON.parse(localStorage.jeuxAutres || '[]');
@@ -81,6 +89,21 @@ function reunirPokedex(autre) {
   garderCredit();
 }
 
+/** Carte de dresseur venue d'un autre appareil : seulement des nombres et des textes, aux bons endroits. */
+function carteSure(j) {
+  if (!j || typeof j !== 'object' || typeof j.cle !== 'string' || typeof j.jeu !== 'string') return null;
+  const nombres = (l) => (Array.isArray(l) ? l.filter(Number.isInteger).slice(0, 2000) : []);
+  const texte = (x) => (typeof x === 'string' ? x.slice(0, 80) : undefined);
+  const nb = (x) => (Number.isFinite(+x) ? +x : 0);
+  return {
+    cle: j.cle.slice(0, 120), jeu: j.jeu.slice(0, 80), version: texte(j.version) ?? nb(j.version), dex: texte(j.dex), dresseur: texte(j.dresseur),
+    id: nb(j.id), argent: nb(j.argent), heures: nb(j.heures), minutes: nb(j.minutes), badges: Number.isInteger(j.badges) ? j.badges : -1,
+    generation: nb(j.generation), max: Math.min(1025, Math.max(0, nb(j.max))), pris: nombres(j.pris), vus: nombres(j.vus),
+    regional: Array.isArray(j.regional) ? j.regional.filter((x) => Array.isArray(x) && x.every(Number.isInteger)).slice(0, 2000) : undefined,
+    ailleurs: true,
+  };
+}
+
 /** Additionne des compteurs : nombres sommés, listes réunies, compteurs par jeu fusionnés. */
 function additionner(a, b) {
   const out = { ...a };
@@ -131,6 +154,8 @@ async function synchroniser() {
   if (!me || !jeuxCharges || synchroEnCours) return;
   synchroEnCours = true;
   try {
+    await appareilPret;
+    const neuf = localStorage.profilEnvoye === undefined;
     const r = await api('GET', '/progression');
     const autres = Object.entries(r?.appareils || {}).filter(([id]) => id !== appareil).map(([, a]) => a.donnees || {});
     jeuxAutres = Object.entries(r?.appareils || {}).filter(([id]) => id !== appareil).map(([, a]) => ({ systeme: a.systeme, jeux: Array.isArray(a.donnees?.bibliotheque) ? a.donnees.bibliotheque : [] }));
@@ -139,6 +164,13 @@ async function synchroniser() {
     const ici = monProfil();
     const recent = autres.map((d) => d.profil).filter((p) => p && +p.maj > ici.maj).sort((a, b) => b.maj - a.maj)[0];
     if (recent) adopterProfil(recent);
+    // Appareil neuf (ou interface remise à zéro) sans Mii : il reprend celui de mes autres appareils.
+    if (neuf && !JSON.parse(localStorage.mii || 'null')) {
+      const mii = autres.map((d) => d.profil?.mii).find((m) => m && typeof m === 'object');
+      if (mii) (localStorage.mii = JSON.stringify(mii)), (localStorage.profilEnvoye = JSON.stringify(profilActuel()));
+    }
+    cartesAutres = autres.flatMap((d) => (Array.isArray(d.cartes) ? d.cartes : [])).map(carteSure).filter(Boolean);
+    localStorage.cartesAutres = JSON.stringify(cartesAutres);
     for (const d of autres) reunirPokedex(d.pokedex);
     const fusion = { stats: {}, compteurs: {}, defisFaits: [] };
     for (const d of autres) {
@@ -155,7 +187,8 @@ async function synchroniser() {
     const faits = new Set([...JSON.parse(localStorage.defisFaits || '[]'), ...fusion.defisFaits]);
     localStorage.defisFaits = JSON.stringify([...faits]);
     verifierDefis();
-    await api('PUT', '/progression', { appareil, systeme: /Mac OS X/.test(navigator.userAgent) ? 'mac' : 'windows', donnees: { ...maProgression(), profil: monProfil(), pokedex: pokedexCredit || {}, bibliotheque: mesJeux() } });
+    await api('PUT', '/progression', { appareil, remplace: appareilRemplace || undefined, systeme: /Mac OS X/.test(navigator.userAgent) ? 'mac' : 'windows', donnees: { ...maProgression(), profil: monProfil(), pokedex: pokedexCredit || {}, bibliotheque: mesJeux(), cartes: (pokedexDonnees?.jeux || []).slice(0, 20) } });
+    appareilRemplace = null;
     if (recent) envoyerStats();
     if (onglet === 'profil' || (recent && onglet === 'collections')) drawSection();
   } catch (e) {

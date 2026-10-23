@@ -59,7 +59,9 @@ function decor() {
   if (plein) return;
   $('#decor').style.clipPath = `path(nonzero, 'M0 0V${H}H${W}V0Z ${trous}')`;
   const contour = e.length > 1 ? forme(e, r) : trous;
-  $('#cadres').innerHTML = `<svg width="${W}" height="${H}"><path class="ombre" d="${contour}"/><path class="trait" d="${contour}"/></svg>`;
+  // Ombre floutée par un filtre SVG : le filtre CSS ne marche pas sur un tracé SVG dans WebKit (Mac),
+  // qui dessinait alors un épais contour noir.
+  $('#cadres').innerHTML = `<svg width="${W}" height="${H}"><defs><filter id="flou" x="-10%" y="-10%" width="120%" height="120%"><feGaussianBlur stdDeviation="16"/></filter></defs><path class="ombre" filter="url(#flou)" d="${contour}"/><path class="trait" d="${contour}"/></svg>`;
 }
 /** Contour d'écrans empilés, en un seul tracé. */
 function forme(e, r) {
@@ -80,6 +82,49 @@ function forme(e, r) {
   }
   return dd + 'Z';
 }
+
+/** Joueurs de la session : à côté du jeu s'il y a la place, sinon dans la marge du bas, à sa taille. */
+function placerBas() {
+  const t = trou(), libre = innerHeight - (t.y + t.h), cote = innerWidth - (t.x + t.w);
+  const b = $('#bas');
+  if (cote >= 90 || !d) {
+    b.classList.remove('serre');
+    b.style.cssText = '';
+    return;
+  }
+  const taille = Math.min(56, libre - 12);
+  b.classList.toggle('serre', taille < 22);
+  b.style.setProperty('--avatar', `${Math.max(taille, 0)}px`);
+  b.style.bottom = `${Math.max(4, Math.round((libre - Math.max(taille, 0)) / 2))}px`;
+  b.style.right = `${Math.max(14, Math.round(cote + 8))}px`;
+}
+
+/** Décor : le jeu en tout petit, fondu doucement dans le flou (4 fois par seconde). */
+const DECOR_JEU_COUPE = true;
+const ambiance = $('#ambiance');
+const pinceau = ambiance.getContext('2d');
+let enCours = false;
+setInterval(async () => {
+  // Coupé pour l'instant : le décor reste celui de Windows (trame de points). Remettre « false » pour l'essayer.
+  if (DECOR_JEU_COUPE || enCours || !d || document.body.classList.contains('plein')) return;
+  enCours = true;
+  try {
+    const buf = await window.__TAURI__.core.invoke('apercu_jeu');
+    const v = new DataView(buf);
+    if (buf.byteLength <= 4) return ambiance.classList.remove('vue');
+    const w = v.getUint16(0, true), h = v.getUint16(2, true);
+    if (buf.byteLength < 4 + w * h * 4) return;
+    const img = new OffscreenCanvas(w, h);
+    img.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(buf, 4, w * h * 4), w, h), 0, 0);
+    pinceau.globalAlpha = ambiance.classList.contains('vue') ? 0.35 : 1;
+    pinceau.drawImage(img, 0, 0, ambiance.width, ambiance.height);
+    ambiance.classList.add('vue');
+  } catch {
+    ambiance.classList.remove('vue');
+  } finally {
+    enCours = false;
+  }
+}, 250);
 
 function bulle(m, texte, part) {
   const b = document.createElement('div');
@@ -115,6 +160,7 @@ function dessiner() {
   if (d.widgets && d.moi && trou().x >= 110) moi.src = image(d.moi);
   else moi.removeAttribute('src');
   joueurs();
+  placerBas();
   // Compteur de la chasse aux chromatiques.
   const c = $('#chasse');
   const n = Number(d.chasse);
@@ -134,7 +180,7 @@ listen('habillage', (e) => {
   d = e.payload;
   dessiner();
 });
-addEventListener('resize', decor);
+addEventListener('resize', () => (decor(), placerBas()));
 // Notification envoyée par la fenêtre principale.
 listen('notif', (e) => bulle({ avatar: e.payload?.image }, String(e.payload?.texte || '').slice(0, 120)));
 emitTo('main', 'habillage-pret').catch((e) => window.__TAURI__.core.invoke('journal', { texte: `habillage : emitTo ${e}` }));

@@ -879,6 +879,13 @@ fn start_game(app: AppHandle, path: String, console: String, room: Option<embed:
         let log = ps3::start(&rpcs3(), &path, main_hwnd(&app)?, &o)?;
         Ok(format!("PS3 lancée (RPCS3) — {log}"))
     } else if console == "Switch" {
+        // Salon sur le PC du même compte, mais pas sur cet appareil (son Mac) : on va chez lui, sur la box.
+        let mut room = room;
+        if let Some(r) = room.as_mut().filter(|r| r.host == "127.0.0.1" && salon::places_heberges(r.port).is_none()) {
+            if let Some(ip) = r.ip_locale.as_deref().filter(|ip| ip.parse::<std::net::Ipv4Addr>().is_ok_and(|a| a.is_private())) {
+                r.host = ip.to_string();
+            }
+        }
         // Mise à jour choisie : les autres de ce jeu sont écartées.
         let tid = switch_title_id(&path);
         let maj = tid.as_deref().and_then(|x| u64::from_str_radix(x, 16).ok()).map(|x| (x & !0xFFF) + 0x800);
@@ -1490,6 +1497,27 @@ fn game_shot() -> tauri::ipc::Response {
     tauri::ipc::Response::new(embed::capture().unwrap_or_default())
 }
 
+/// Identifiant de cet appareil pour la synchro, gardé dans data\appareil.txt : il survit à une
+/// réinstallation ou à une interface remise à zéro. Le premier proposé est gardé.
+#[tauri::command]
+fn appareil_id(propose: String) -> String {
+    let valide = |s: &str| s.len() == 36 && s.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-');
+    let f = format!("{ROOT}\\data\\appareil.txt", ROOT = root());
+    if let Some(id) = std::fs::read_to_string(&f).ok().map(|s| s.trim().to_string()).filter(|s| valide(s)) {
+        return id;
+    }
+    if valide(&propose) {
+        let _ = std::fs::write(&f, &propose);
+    }
+    propose
+}
+
+/// Décor de l'habillage : petite image du jeu en cours (Mac seulement ; vide ici).
+#[tauri::command]
+fn apercu_jeu() -> tauri::ipc::Response {
+    tauri::ipc::Response::new(Vec::new())
+}
+
 #[tauri::command]
 fn snapshot() -> tauri::ipc::Response {
     tauri::ipc::Response::new(SNAPSHOT.lock().unwrap().clone())
@@ -1726,7 +1754,7 @@ fn main() {
                 embed::stop();
             }
         })
-        .invoke_handler(tauri::generate_handler![verifier_maj, journaux, installer_maj, ouvrir_site, micro::micros, importer_jeux, choisir_jeux, oublier_jaquettes, jaquette, journal, habillage_ds, switch_etat, switch_poser, volume_jeux, list_games, medias_liste, ouvrir_medias, dossiers_medias, choisir_dossier_media, creer_dossier_media, dossier_jeux, definir_dossier_jeux, choisir_dossier, creer_dossier_jeux, ranger_jeux, contenus_jeux, ra_connexion, ouvrir_ra, mode_ecran, materiel, switch_updates, cemu_packs, cemu_packs_maj, dolphin_mods, eden_mods, open_folder, open_games_folder, ouvrir_saves, reset_jeu, salon_en_jeu, pokedex, sprite, perf::performances, trois_ds_etat, trois_ds_poser, ps3_etat, ps3_poser, ouvrir_firmware_ps3, ps2_etat, ps2_poser, clips::clip, clips::miniature, garder_photo, nsz::preparer_switch, salon::salon_preparer, salon::salon_sonde, salon::salon_lancer, salon::salon_fermer, pad_info, open_discord_user, game_icon, save_image, capture, list_captures, load_stats, save_stats, saves_local, saves_lire, saves_poser, saves_appliquer, saves_base, game_infos, play, login, menu_shown, resume, quit_game, quit_app, home, snapshot, game_shot, autoplay, lien_initial, ds_friend_code, netplay, netplay_launch, netplay_stop, netplay_message, netplay_cancel, presence, presence_clear, pointer, clavier_reponse, poser_console, pad::manette_ajouter, shaders_lire, shaders_taille, shaders_ecrire, figurines::figurines, figurines::figurines_poser, distance::distance_debut, distance::distance_pad, distance::distance_fin, distance::distance_arret, pad::distance_manette])
+        .invoke_handler(tauri::generate_handler![verifier_maj, journaux, installer_maj, ouvrir_site, micro::micros, importer_jeux, choisir_jeux, oublier_jaquettes, jaquette, journal, habillage_ds, switch_etat, switch_poser, volume_jeux, list_games, medias_liste, ouvrir_medias, dossiers_medias, choisir_dossier_media, creer_dossier_media, dossier_jeux, definir_dossier_jeux, choisir_dossier, creer_dossier_jeux, ranger_jeux, contenus_jeux, ra_connexion, ouvrir_ra, mode_ecran, materiel, switch_updates, cemu_packs, cemu_packs_maj, dolphin_mods, eden_mods, open_folder, open_games_folder, ouvrir_saves, reset_jeu, salon_en_jeu, pokedex, sprite, perf::performances, trois_ds_etat, trois_ds_poser, ps3_etat, ps3_poser, ouvrir_firmware_ps3, ps2_etat, ps2_poser, clips::clip, clips::miniature, garder_photo, nsz::preparer_switch, salon::salon_preparer, salon::salon_sonde, salon::salon_lancer, salon::salon_fermer, salon::salon_ip_locale, pad_info, open_discord_user, game_icon, save_image, capture, list_captures, load_stats, save_stats, saves_local, saves_lire, saves_poser, saves_appliquer, saves_base, game_infos, play, login, menu_shown, resume, quit_game, quit_app, home, snapshot, game_shot, apercu_jeu, appareil_id, autoplay, lien_initial, ds_friend_code, netplay, netplay_launch, netplay_stop, netplay_message, netplay_cancel, presence, presence_clear, pointer, clavier_reponse, poser_console, pad::manette_ajouter, shaders_lire, shaders_taille, shaders_ecrire, figurines::figurines, figurines::figurines_poser, distance::distance_debut, distance::distance_pad, distance::distance_fin, distance::distance_arret, pad::distance_manette])
         .run(tauri::generate_context!())
         .expect("En Local n'a pas pu démarrer");
 }
