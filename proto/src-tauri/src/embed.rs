@@ -623,10 +623,12 @@ fn dolphin_config(dir: &str, game: &str, o: &crate::reglages::Opts) -> std::io::
                 ini += &format!("{k} = {v}\n");
             }
         }
-        // À l'horizontale, sans Nunchuk : le stick gauche fait la croix et l'inclinaison.
+        // À l'horizontale, sans Nunchuk : le stick gauche fait la croix et l'inclinaison. Dolphin tourne la
+        // croix pour la Wiimote couchée (Sideways), pas l'inclinaison, comptée dans le repère de la Wiimote :
+        // couchée, pencher à gauche abaisse son bout (avant), pencher vers le haut la fait rouler à droite.
         "horizontale" => {
             ini += "Extension = None\nOptions/Sideways Wiimote = True\n";
-            for (k, incl, pad, stick) in [("Up", "Forward", "Pad N", "Left Y+"), ("Down", "Backward", "Pad S", "Left Y-"), ("Left", "Left", "Pad W", "Left X-"), ("Right", "Right", "Pad E", "Left X+")] {
+            for (k, incl, pad, stick) in [("Up", "Right", "Pad N", "Left Y+"), ("Down", "Left", "Pad S", "Left Y-"), ("Left", "Forward", "Pad W", "Left X-"), ("Right", "Backward", "Pad E", "Left X+")] {
                 ini += &format!("D-Pad/{k} = {}|{}\nTilt/{incl} = {}\n", b(pad), b(stick), b(stick));
             }
             for (k, v) in wii.iter().filter(|(k, _)| !k.starts_with("D-Pad")) {

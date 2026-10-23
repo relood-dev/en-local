@@ -365,10 +365,17 @@ pub fn dolphin_classique() -> Vec<(String, String)> {
     out
 }
 /// Wiimote + Nunchuk : touches choisies, sinon disposition d'En Local.
-/// À l'horizontale (cote), 2 et 1 prennent la place de A et B sur Switch.
+/// À l'horizontale (cote), 2 (valider) et 1 (retour) prennent la place des boutons « valider » et
+/// « retour » de la manette du joueur : A et B à droite et en bas sur une manette Nintendo, mais A en
+/// bas et B à droite sur Xbox et PlayStation (sinon tout est inversé pour eux).
 pub fn dolphin_wii(o: &Opts, cote: bool) -> Vec<(String, String)> {
     let mut out = Vec::new();
-    let (a, un, deux) = if cote { ("north", "south", "east") } else { ("south", "west", "north") };
+    let nintendo = *crate::pad::KIND.lock().unwrap() == "nintendo";
+    let (a, un, deux) = match (cote, nintendo) {
+        (true, true) => ("north", "south", "east"),
+        (true, false) => ("north", "east", "south"),
+        _ => ("south", "west", "north"),
+    };
     for (cles, bouton, defaut) in [
         (&["Buttons/A"][..], "a", a), (&["Buttons/B"], "b", "rt"), (&["Buttons/1"], "un", un), (&["Buttons/2"], "deux", deux),
         (&["Buttons/-"], "moins", "back"), (&["Buttons/+"], "plus", "start"), (&["Nunchuk/Buttons/C"], "c", "lb"), (&["Nunchuk/Buttons/Z"], "nz", "lt"),
@@ -837,8 +844,14 @@ mod tests {
     #[test]
     fn wii_a_l_horizontale() {
         let v = |cote, k: &str| dolphin_wii(&opts(&[]), cote).into_iter().find(|(c, _)| c == k).unwrap().1;
+        // Manette Nintendo : 2 et 1 à la place de A et B (droite, bas).
+        *crate::pad::KIND.lock().unwrap() = "nintendo";
         assert_eq!(v(true, "Buttons/2"), "`Button E`");
         assert_eq!(v(true, "Buttons/1"), "`Button S`");
+        // Xbox, PlayStation : valider en bas, retour à droite.
+        *crate::pad::KIND.lock().unwrap() = "xbox";
+        assert_eq!(v(true, "Buttons/2"), "`Button S`");
+        assert_eq!(v(true, "Buttons/1"), "`Button E`");
         assert_eq!(v(false, "Buttons/A"), "`Button S`");
         let m = |l: &[&str]| l.iter().map(|s| s.to_string()).collect::<Vec<_>>();
         assert_eq!(disposition_wii("RMCP01", &m(&["wiimote", "nunchuk", "classiccontroller"])), "classique");
