@@ -134,11 +134,19 @@ fn vers_loc(zone: &str, morceaux: &[String], profil: Option<&(String, String)>) 
     Some(m)
 }
 
+/// Morceau de chemin sûr sur Windows comme sur macOS : Windows retire les « . » et espaces de fin
+/// (« .. » caché en « .. ») et réserve des noms d'appareils (CON, NUL, COM1…).
+fn morceau_sur(x: &str) -> bool {
+    let base = x.split('.').next().unwrap_or("").to_ascii_uppercase();
+    let reserve = ["CON", "PRN", "AUX", "NUL"].contains(&base.as_str()) || (base.len() == 4 && (base.starts_with("COM") || base.starts_with("LPT")) && base.as_bytes()[3].is_ascii_digit());
+    !x.is_empty() && !x.ends_with(['.', ' ']) && !reserve && !x.contains(['\\', ':', '/', '*', '?', '"', '<', '>', '|']) && !x.chars().any(char::is_control)
+}
+
 /// Chemin sur ce disque d'un fichier reçu de Loc (zone et chemin vérifiés).
 fn vers_disque(zone: &str, rel: &str) -> Result<PathBuf, String> {
     let z = zones().into_iter().find(|z| z.nom == zone).ok_or("zone inconnue")?;
     let mut m: Vec<String> = rel.split('/').map(String::from).collect();
-    if rel.len() > 300 || m.iter().any(|x| x.is_empty() || x == "." || x == ".." || x.contains(['\\', ':']) || x.chars().any(char::is_control)) {
+    if rel.len() > 300 || !m.iter().all(|x| morceau_sur(x)) {
         return Err("chemin refusé".into());
     }
     if zone == "switch" && m.len() > 1 && m[1].starts_with('@') {
@@ -293,11 +301,15 @@ pub fn appliquer(cle: &str, f: BTreeMap<String, (String, u64)>, h: &str) -> Resu
         return Err("sauvegarde incomplète".into());
     }
     let (zone, unite) = cle.split_once('/').ok_or("jeu invalide")?;
+    let z = zones().into_iter().find(|z| z.nom == zone).ok_or("zone inconnue")?;
+    let racine = std::fs::create_dir_all(&z.dossier).and_then(|_| z.dossier.canonicalize()).map_err(|e| e.to_string())?;
     let ici = jeux_locaux().remove(cle).unwrap_or_default();
     // Tout est vérifié avant de toucher au disque.
     let mut a_ecrire = Vec::new();
     for (rel, (e, _)) in &f {
-        if !(rel == unite || rel.starts_with(&format!("{unite}/"))) {
+        // Chaque fichier appartient bien à ce jeu, découpé comme sur cet appareil (jeux_locaux).
+        let m: Vec<&str> = rel.split('/').collect();
+        if m[..z.profondeur.min(m.len())].join("/") != unite {
             return Err("chemin refusé".into());
         }
         let dest = vers_disque(zone, rel)?;
@@ -319,6 +331,16 @@ pub fn appliquer(cle: &str, f: BTreeMap<String, (String, u64)>, h: &str) -> Resu
     }
     for (src, dest) in &a_ecrire {
         let _ = std::fs::create_dir_all(dest.parent().unwrap());
+        // Dernière vérification, une fois les dossiers créés : rien hors de la zone (liens, noms ambigus).
+        if !dest.parent().and_then(|p| p.canonicalize().ok()).is_some_and(|p| p.starts_with(&racine)) {
+            return Err("chemin refusé".into());
+        }
+        // Un fichier déjà là mais pas compté dans ce jeu : copié de côté lui aussi.
+        if dest.is_file() && !ici.disque.values().any(|p| p == dest) {
+            let c = copie.join(dest.strip_prefix(&z.dossier).unwrap_or(Path::new("autre")));
+            let _ = std::fs::create_dir_all(c.parent().unwrap());
+            std::fs::copy(dest, &c).map_err(|e| format!("copie de secours impossible : {e}"))?;
+        }
         let contenu = std::fs::read(src).map_err(|e| e.to_string())?;
         if src.file_name().is_none_or(|n| format!("{:x}", Sha256::digest(&contenu)) != n.to_string_lossy()) {
             return Err("fichier reçu abîmé".into());
@@ -356,6 +378,10 @@ mod tests {
         assert_eq!(vers_loc("ds", &m("._Pokemon.sav"), None), None);
         let piege: BTreeMap<String, (String, u64)> = [("Jeu.sav".to_string(), ("../../../.ssh/id_ed25519".to_string(), 1))].into_iter().collect();
         assert!(appliquer("ds/Jeu.sav", piege.clone(), &empreinte_jeu(&piege)).is_err());
+        assert!(!morceau_sur(".. ") && !morceau_sur("x.") && !morceau_sur("NUL.txt") && !morceau_sur("com1") && morceau_sur("Pokémon Noire.sav") && morceau_sur("CONTENT"));
+        assert!(vers_disque("ds", "melonDS DS/.. /x").is_err());
+        let ailleurs: BTreeMap<String, (String, u64)> = [("Autre.sav".to_string(), ("0".repeat(64), 1))].into_iter().collect();
+        assert!(appliquer("ds/Jeu.sav", ailleurs.clone(), &empreinte_jeu(&ailleurs)).is_err());
         assert!(vers_disque("ds", "../../.ssh/id").is_err() && vers_disque("ds", "a//b").is_err() && vers_disque("inconnue", "a").is_err());
         // Même empreinte que Loc (sauvegardes.js).
         let f: BTreeMap<String, (String, u64)> = [("b/é", "1"), ("b/z", "2"), ("a", "3")].into_iter().map(|(c, e)| (c.to_string(), (e.to_string(), 0))).collect();
