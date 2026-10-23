@@ -124,5 +124,5 @@ async function deposer(chemins) {
 // Glisser-déposer n'importe où dans l'app.
 window.__TAURI__.webview.getCurrentWebview().onDragDropEvent(({ payload }) => {
   document.body.classList.toggle('depot', payload.type === 'over' || payload.type === 'enter');
-  if (payload.type === 'drop') deposer(payload.paths);
-}).catch(() => {});
+  if (payload.type === 'drop') (invoke('journal', { texte: `dépôt : ${payload.paths?.length || 0} élément(s)` }), deposer(payload.paths));
+}).catch((e) => invoke('journal', { texte: `glisser-déposer indisponible : ${e}` }));

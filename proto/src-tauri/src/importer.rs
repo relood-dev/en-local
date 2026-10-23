@@ -142,6 +142,13 @@ fn importer_dans(racine: &Path, chemins: &[String], classer: Classer, etape: &dy
         b.erreurs.push("Impossible de préparer l'import.".into());
         return b;
     }
+    // Import coupé avant la fin (app fermée) : ses fichiers, déjà sortis de leur dossier d'origine, sont rangés avec celui-ci.
+    for e in std::fs::read_dir(&racine).into_iter().flatten().flatten() {
+        let nom = e.file_name().to_string_lossy().into_owned();
+        if nom.starts_with(".import-") && e.path() != travail {
+            let _ = std::fs::rename(e.path(), travail.join(&nom[1..]));
+        }
+    }
     for (n, c) in chemins.iter().enumerate() {
         let p = PathBuf::from(c);
         let nom = p.file_name().map(|x| x.to_string_lossy().into_owned()).unwrap_or_default();
@@ -294,6 +301,19 @@ mod tests {
         let jeu = d.join("Jeux").join("PS1").join("Crash Bandicoot");
         assert!(jeu.join("Crash Bandicoot (Europe).cue").is_file() && jeu.join("Crash Bandicoot (Europe).bin").is_file());
         assert_eq!(b.ignores, 0);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+    #[test]
+    fn import_coupe_repris() {
+        let d = std::env::temp_dir().join(format!("enlocal-coupe-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        let reste = d.join("Jeux").join(".import-1").join("0").join("Spyro");
+        std::fs::create_dir_all(&reste).unwrap();
+        std::fs::write(reste.join("Spyro (Europe).cue"), "FILE \"Spyro (Europe).bin\" BINARY\n  TRACK 01 MODE2/2352\n").unwrap();
+        std::fs::write(reste.join("Spyro (Europe).bin"), b"x").unwrap();
+        let b = importer_dans(&d.join("Jeux"), &[], &|_| None, &|_| {});
+        assert_eq!(b.ajoutes, [("PS1".to_string(), "Spyro".to_string())]);
+        assert!(!d.join("Jeux").join(".import-1").exists());
         let _ = std::fs::remove_dir_all(&d);
     }
 

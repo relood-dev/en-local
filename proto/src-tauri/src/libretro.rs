@@ -354,8 +354,7 @@ pub fn start(core: String, game: String, base: String, frames: Channel<InvokeRes
         let mut garder = || {
             if let (Some(m), Some(f)) = (sram(), &fichier_save) {
                 if m != sur_disque.as_slice() && !m.iter().all(|&b| b == 0xFF || b == 0) {
-                    let tmp = format!("{f}.tmp");
-                    if std::fs::write(&tmp, &*m).and_then(|_| std::fs::rename(&tmp, f)).is_ok() {
+                    if crate::ecrire_sur(f, &*m).is_ok() {
                         sur_disque = m.to_vec();
                     }
                 }

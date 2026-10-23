@@ -114,8 +114,8 @@ fn game_files(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
         return;
     }
     out.extend(files);
-    // Les MAJ et DLC Switch ne sont pas des jeux.
-    for d in dirs.into_iter().filter(|d| d.file_name().is_none_or(|n| n != dossier::MAJ)) {
+    // Les MAJ et DLC Switch ne sont pas des jeux. Dossiers cachés (import en cours…) : pas des jeux non plus.
+    for d in dirs.into_iter().filter(|d| d.file_name().is_none_or(|n| n != dossier::MAJ && !n.to_string_lossy().starts_with('.'))) {
         game_files(&d, out);
     }
 }
@@ -1299,8 +1299,43 @@ fn load_stats() -> String {
 fn save_stats(json: String) -> Result<(), String> {
     serde_json::from_str::<serde_json::Value>(&json).map_err(|e| e.to_string())?;
     let file = format!("{ROOT}\\data\\stats.json", ROOT = root());
-    // Écrit à côté puis renommé : une coupure ne perd rien.
-    std::fs::write(format!("{file}.tmp"), &json).and_then(|_| std::fs::rename(format!("{file}.tmp"), &file)).map_err(|e| e.to_string())
+    ecrire_sur(&file, json.as_bytes()).map_err(|e| e.to_string())
+}
+
+/// Écrit à côté, attend que ce soit sur le disque, puis renomme : une coupure de courant ne laisse
+/// ni fichier à moitié écrit, ni fichier rempli de zéros (le renommage passait avant les données).
+pub fn ecrire_sur(file: &str, data: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let tmp = format!("{file}.tmp");
+    let mut f = std::fs::File::create(&tmp)?;
+    f.write_all(data)?;
+    f.sync_all()?;
+    drop(f);
+    std::fs::rename(&tmp, file)
+}
+
+/// Sauvegardes de cet appareil, pour la synchronisation (saves.rs).
+#[tauri::command]
+async fn saves_local() -> serde_json::Value {
+    tauri::async_runtime::spawn_blocking(saves::local).await.unwrap_or(serde_json::Value::Null)
+}
+#[tauri::command]
+async fn saves_lire(cle: String, rel: String) -> Result<tauri::ipc::Response, String> {
+    tauri::async_runtime::spawn_blocking(move || saves::lire(&cle, &rel)).await.map_err(|e| e.to_string())?.map(tauri::ipc::Response::new)
+}
+#[tauri::command]
+fn saves_poser(request: tauri::ipc::Request) -> Result<(), String> {
+    let e = request.headers().get("empreinte").and_then(|v| v.to_str().ok()).unwrap_or_default().to_string();
+    let tauri::ipc::InvokeBody::Raw(octets) = request.body() else { return Err("données manquantes".into()) };
+    saves::poser(&e, octets)
+}
+#[tauri::command]
+async fn saves_appliquer(cle: String, f: std::collections::BTreeMap<String, (String, u64)>, h: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || saves::appliquer(&cle, f, &h)).await.map_err(|e| e.to_string())?
+}
+#[tauri::command]
+fn saves_base(cle: String, h: String) {
+    saves::base(&cle, &h)
 }
 
 #[tauri::command]
@@ -1691,7 +1726,7 @@ fn main() {
                 embed::stop();
             }
         })
-        .invoke_handler(tauri::generate_handler![verifier_maj, journaux, installer_maj, ouvrir_site, micro::micros, importer_jeux, choisir_jeux, oublier_jaquettes, jaquette, journal, habillage_ds, switch_etat, switch_poser, volume_jeux, list_games, medias_liste, ouvrir_medias, dossiers_medias, choisir_dossier_media, creer_dossier_media, dossier_jeux, definir_dossier_jeux, choisir_dossier, creer_dossier_jeux, ranger_jeux, contenus_jeux, ra_connexion, ouvrir_ra, mode_ecran, materiel, switch_updates, cemu_packs, cemu_packs_maj, dolphin_mods, eden_mods, open_folder, open_games_folder, ouvrir_saves, reset_jeu, salon_en_jeu, pokedex, sprite, perf::performances, trois_ds_etat, trois_ds_poser, ps3_etat, ps3_poser, ouvrir_firmware_ps3, ps2_etat, ps2_poser, clips::clip, clips::miniature, garder_photo, nsz::preparer_switch, salon::salon_preparer, salon::salon_sonde, salon::salon_lancer, salon::salon_fermer, pad_info, open_discord_user, game_icon, save_image, capture, list_captures, load_stats, save_stats, game_infos, play, login, menu_shown, resume, quit_game, quit_app, home, snapshot, game_shot, autoplay, lien_initial, ds_friend_code, netplay, netplay_launch, netplay_stop, netplay_message, netplay_cancel, presence, presence_clear, pointer, clavier_reponse, poser_console, pad::manette_ajouter, shaders_lire, shaders_taille, shaders_ecrire, figurines::figurines, figurines::figurines_poser, distance::distance_debut, distance::distance_pad, distance::distance_fin, distance::distance_arret, pad::distance_manette])
+        .invoke_handler(tauri::generate_handler![verifier_maj, journaux, installer_maj, ouvrir_site, micro::micros, importer_jeux, choisir_jeux, oublier_jaquettes, jaquette, journal, habillage_ds, switch_etat, switch_poser, volume_jeux, list_games, medias_liste, ouvrir_medias, dossiers_medias, choisir_dossier_media, creer_dossier_media, dossier_jeux, definir_dossier_jeux, choisir_dossier, creer_dossier_jeux, ranger_jeux, contenus_jeux, ra_connexion, ouvrir_ra, mode_ecran, materiel, switch_updates, cemu_packs, cemu_packs_maj, dolphin_mods, eden_mods, open_folder, open_games_folder, ouvrir_saves, reset_jeu, salon_en_jeu, pokedex, sprite, perf::performances, trois_ds_etat, trois_ds_poser, ps3_etat, ps3_poser, ouvrir_firmware_ps3, ps2_etat, ps2_poser, clips::clip, clips::miniature, garder_photo, nsz::preparer_switch, salon::salon_preparer, salon::salon_sonde, salon::salon_lancer, salon::salon_fermer, pad_info, open_discord_user, game_icon, save_image, capture, list_captures, load_stats, save_stats, saves_local, saves_lire, saves_poser, saves_appliquer, saves_base, game_infos, play, login, menu_shown, resume, quit_game, quit_app, home, snapshot, game_shot, autoplay, lien_initial, ds_friend_code, netplay, netplay_launch, netplay_stop, netplay_message, netplay_cancel, presence, presence_clear, pointer, clavier_reponse, poser_console, pad::manette_ajouter, shaders_lire, shaders_taille, shaders_ecrire, figurines::figurines, figurines::figurines_poser, distance::distance_debut, distance::distance_pad, distance::distance_fin, distance::distance_arret, pad::distance_manette])
         .run(tauri::generate_context!())
         .expect("En Local n'a pas pu démarrer");
 }

@@ -64,8 +64,303 @@ pub fn restaurer() {
     }
 }
 
+/* ---------- Synchronisation entre les appareils du joueur (gardée par Loc) ---------- */
+//
+// Les sauvegardes sont découpées en jeux : clé « zone/chemin » (ex. switch/0000000000000000/@moi/01006A800016E000),
+// et pour chaque jeu ses fichiers (chemin dans la zone -> empreinte SHA-256, taille). L'app (synchro-saves.js)
+// compare avec Loc et la dernière version synchronisée ici (base), puis envoie ou reçoit des jeux entiers :
+// un jeu n'est jamais un mélange de deux appareils. Une sauvegarde remplacée est d'abord copiée dans
+// data/sauvegardes-remplacees.
+
+use sha2::{Digest, Sha256};
+use std::collections::BTreeMap;
+
+/// Dossier de sauvegardes d'un émulateur, et profondeur d'un jeu dans ce dossier.
+struct Zone {
+    nom: &'static str,
+    dossier: PathBuf,
+    profondeur: usize,
+}
+
+fn zones() -> Vec<Zone> {
+    let z = |nom, dossier: String, profondeur| Zone { nom, dossier: PathBuf::from(dossier), profondeur };
+    let rpcs3 = if cfg!(windows) { format!("{}\\dev_hdd0", crate::rpcs3()) } else { format!("{}\\portable\\dev_hdd0", crate::rpcs3()) };
+    vec![
+        z("ds", format!("{}\\data\\ds\\saves", crate::root()), 2),
+        z("3ds", format!("{}\\user\\sdmc\\Nintendo 3DS", crate::azahar()), 5),
+        z("gc", format!("{}\\User\\GC", crate::dolphin()), 3),
+        z("wii", format!("{}\\User\\Wii\\title", crate::dolphin()), 2),
+        z("wiiu", format!("{}\\portable\\mlc01\\usr\\save", crate::cemu()), 2),
+        z("switch", format!("{}\\user\\nand\\user\\save", crate::eden()), 3),
+        z("retro", format!("{}\\saves", crate::retroarch()), 2),
+        z("ps3", format!("{rpcs3}\\home\\00000001\\savedata"), 1),
+    ]
+}
+
+/// Le profil d'Eden (profiles.dat), sous les deux noms de dossier qu'Eden utilise pour lui.
+fn profil_eden() -> Option<(String, String)> {
+    let d = std::fs::read(format!("{}\\user\\nand\\system\\save\\8000000000000010\\su\\avators\\profiles.dat", crate::eden())).ok()?;
+    let u = d.get(0x10..0x20)?;
+    let (lo, hi) = (u64::from_le_bytes(u[..8].try_into().ok()?), u64::from_le_bytes(u[8..].try_into().ok()?));
+    if lo == 0 && hi == 0 {
+        return None;
+    }
+    let plein = format!("{hi:016X}{lo:016X}");
+    let bis = format!("{}{}", &plein[14..], "0".repeat(14));
+    Some((plein, bis))
+}
+
+/// Chemin dans la zone, tel qu'envoyé à Loc (« / », profil Eden remplacé par @moi), ou None s'il ne se synchronise pas.
+fn vers_loc(zone: &str, morceaux: &[String], profil: Option<&(String, String)>) -> Option<Vec<String>> {
+    let nom = morceaux.last()?;
+    if nom.starts_with("._") || nom == ".DS_Store" || nom.ends_with(".tmp") || morceaux.iter().any(|m| m == "content") {
+        return None;
+    }
+    let mut m = morceaux.to_vec();
+    match zone {
+        "wii" if m[0] == "00000001" => return None,
+        "wiiu" if m[0] == "system" => return None,
+        "switch" => {
+            if m[0] != "0000000000000000" || m.len() < 3 {
+                return None;
+            }
+            if m[1].bytes().any(|b| b != b'0') {
+                let (plein, bis) = profil?;
+                m[1] = if m[1].eq_ignore_ascii_case(plein) { "@moi".into() } else if m[1].eq_ignore_ascii_case(bis) { "@moi-bis".into() } else { return None };
+            }
+        }
+        _ => {}
+    }
+    Some(m)
+}
+
+/// Chemin sur ce disque d'un fichier reçu de Loc (zone et chemin vérifiés).
+fn vers_disque(zone: &str, rel: &str) -> Result<PathBuf, String> {
+    let z = zones().into_iter().find(|z| z.nom == zone).ok_or("zone inconnue")?;
+    let mut m: Vec<String> = rel.split('/').map(String::from).collect();
+    if rel.len() > 300 || m.iter().any(|x| x.is_empty() || x == "." || x == ".." || x.contains(['\\', ':']) || x.chars().any(char::is_control)) {
+        return Err("chemin refusé".into());
+    }
+    if zone == "switch" && m.len() > 1 && m[1].starts_with('@') {
+        let (plein, bis) = profil_eden().ok_or("Lance un jeu Switch une fois sur cet appareil (profil Eden manquant)")?;
+        m[1] = match m[1].as_str() {
+            "@moi" => plein,
+            "@moi-bis" => bis,
+            _ => return Err("chemin refusé".into()),
+        };
+    }
+    if vers_loc(zone, &m, profil_eden().as_ref()).is_none() {
+        return Err("chemin refusé".into());
+    }
+    Ok(m.iter().fold(z.dossier, |p, x| p.join(x)))
+}
+
+/// Un fichier de sauvegarde : (chemin dans la zone pour Loc, chemin sur le disque).
+fn parcourir(d: &Path, morceaux: &mut Vec<String>, out: &mut Vec<(Vec<String>, PathBuf)>) {
+    for e in std::fs::read_dir(d).into_iter().flatten().flatten() {
+        let Ok(t) = e.file_type() else { continue };
+        morceaux.push(e.file_name().to_string_lossy().into_owned());
+        if t.is_dir() && morceaux.len() < 12 {
+            parcourir(&e.path(), morceaux, out);
+        } else if t.is_file() {
+            out.push((morceaux.clone(), e.path()));
+        }
+        morceaux.pop();
+    }
+}
+
+fn fichier_data(nom: &str) -> String {
+    format!("{}\\data\\{nom}", crate::root())
+}
+fn lire_json<T: serde::de::DeserializeOwned + Default>(nom: &str) -> T {
+    std::fs::read_to_string(fichier_data(nom)).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default()
+}
+fn garder_json<T: serde::Serialize>(nom: &str, v: &T) {
+    if let Ok(t) = serde_json::to_vec(v) {
+        let _ = crate::ecrire_sur(&fichier_data(nom), &t);
+    }
+}
+
+fn empreinte_fichier(p: &Path) -> Option<String> {
+    let mut f = std::fs::File::open(p).ok()?;
+    let mut h = Sha256::new();
+    std::io::copy(&mut f, &mut h).ok()?;
+    Some(format!("{:x}", h.finalize()))
+}
+/// Empreinte d'un jeu : ses fichiers triés, « chemin\0empreinte\n » (même calcul que Loc).
+pub fn empreinte_jeu(f: &BTreeMap<String, (String, u64)>) -> String {
+    let mut h = Sha256::new();
+    for (c, (e, _)) in f {
+        h.update(format!("{c}\0{e}\n"));
+    }
+    format!("{:x}", h.finalize())
+}
+
+/// Un jeu sur ce disque : ses fichiers (chemin pour Loc -> empreinte, taille), où ils sont, et sa dernière modification.
+#[derive(Default)]
+struct Jeu {
+    f: BTreeMap<String, (String, u64)>,
+    disque: BTreeMap<String, PathBuf>,
+    mtime: u64,
+}
+const MAX_FICHIER: u64 = 128 * 1024 * 1024;
+
+/// Tous les jeux sauvegardés sur ce disque. Les empreintes déjà calculées (même taille, même date) sont reprises.
+fn jeux_locaux() -> BTreeMap<String, Jeu> {
+    let mut cache: std::collections::HashMap<String, (u64, u64, String)> = lire_json("saves-empreintes.json");
+    let mut nouveau = std::collections::HashMap::new();
+    let profil = profil_eden();
+    let mut jeux: BTreeMap<String, Jeu> = BTreeMap::new();
+    for z in zones() {
+        let mut fichiers = Vec::new();
+        parcourir(&z.dossier, &mut Vec::new(), &mut fichiers);
+        for (morceaux, disque) in fichiers {
+            let Some(m) = vers_loc(z.nom, &morceaux, profil.as_ref()) else { continue };
+            let Ok(meta) = std::fs::metadata(&disque) else { continue };
+            if meta.len() > MAX_FICHIER {
+                continue;
+            }
+            let mtime = meta.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map_or(0, |d| d.as_millis() as u64);
+            let cle_cache = disque.to_string_lossy().into_owned();
+            let h = match cache.remove(&cle_cache) {
+                Some((n, t, h)) if n == meta.len() && t == mtime => h,
+                _ => match empreinte_fichier(&disque) {
+                    Some(h) => h,
+                    None => continue,
+                },
+            };
+            nouveau.insert(cle_cache, (meta.len(), mtime, h.clone()));
+            // Le jeu : les premiers dossiers ; un fichier moins profond est un jeu à lui seul.
+            let unite = m[..z.profondeur.min(m.len())].join("/");
+            let rel = m.join("/");
+            let jeu = jeux.entry(format!("{}/{unite}", z.nom)).or_default();
+            jeu.f.insert(rel.clone(), (h, meta.len()));
+            jeu.disque.insert(rel, disque);
+            jeu.mtime = jeu.mtime.max(mtime);
+        }
+    }
+    garder_json("saves-empreintes.json", &nouveau);
+    jeux
+}
+
+/// Les sauvegardes de cet appareil et la dernière version synchronisée de chaque jeu.
+pub fn local() -> serde_json::Value {
+    let jeux: serde_json::Map<String, serde_json::Value> = jeux_locaux()
+        .into_iter()
+        .map(|(cle, j)| (cle, serde_json::json!({ "h": empreinte_jeu(&j.f), "f": j.f, "mtime": j.mtime })))
+        .collect();
+    let base: BTreeMap<String, String> = lire_json("saves-synchro.json");
+    serde_json::json!({ "jeux": jeux, "base": base })
+}
+
+/// Contenu d'un fichier de sauvegarde, à envoyer.
+pub fn lire(cle: &str, rel: &str) -> Result<Vec<u8>, String> {
+    let jeux = jeux_locaux();
+    let p = jeux.get(cle).and_then(|j| j.disque.get(rel)).ok_or("fichier introuvable")?;
+    std::fs::read(p).map_err(|e| e.to_string())
+}
+
+/// Empreinte SHA-256 en hexadécimal : sert aussi de nom de fichier, donc jamais de « / » ni de « .. ».
+fn empreinte_valide(e: &str) -> bool {
+    e.len() == 64 && e.bytes().all(|b| b.is_ascii_hexdigit())
+}
+fn recus() -> PathBuf {
+    PathBuf::from(fichier_data("saves-recues"))
+}
+/// Garde un fichier reçu de Loc, vérifié par son empreinte.
+pub fn poser(empreinte: &str, contenu: &[u8]) -> Result<(), String> {
+    if !empreinte_valide(empreinte) || format!("{:x}", Sha256::digest(contenu)) != empreinte {
+        return Err("fichier abîmé pendant le téléchargement".into());
+    }
+    std::fs::create_dir_all(recus()).map_err(|e| e.to_string())?;
+    crate::ecrire_sur(&recus().join(empreinte).to_string_lossy(), contenu).map_err(|e| e.to_string())
+}
+
+/// Note la version de Loc comme synchronisée pour ce jeu.
+pub fn base(cle: &str, h: &str) {
+    let mut b: BTreeMap<String, String> = lire_json("saves-synchro.json");
+    b.insert(cle.to_string(), h.to_string());
+    garder_json("saves-synchro.json", &b);
+}
+
+/// Remplace un jeu par la version de Loc (fichiers déjà reçus, ou déjà ici avec la même empreinte).
+/// Ce qui est remplacé est d'abord copié dans data/sauvegardes-remplacees/<date>.
+pub fn appliquer(cle: &str, f: BTreeMap<String, (String, u64)>, h: &str) -> Result<(), String> {
+    if crate::embed::is_running() || crate::libretro::is_running() {
+        return Err("une partie est en cours".into());
+    }
+    if f.is_empty() || !empreinte_valide(h) || f.values().any(|(e, _)| !empreinte_valide(e)) || empreinte_jeu(&f) != h {
+        return Err("sauvegarde incomplète".into());
+    }
+    let (zone, unite) = cle.split_once('/').ok_or("jeu invalide")?;
+    let ici = jeux_locaux().remove(cle).unwrap_or_default();
+    // Tout est vérifié avant de toucher au disque.
+    let mut a_ecrire = Vec::new();
+    for (rel, (e, _)) in &f {
+        if !(rel == unite || rel.starts_with(&format!("{unite}/"))) {
+            return Err("chemin refusé".into());
+        }
+        let dest = vers_disque(zone, rel)?;
+        if ici.f.get(rel).is_some_and(|(x, _)| x == e) {
+            continue;
+        }
+        let src = recus().join(e);
+        if !src.is_file() {
+            return Err("fichier manquant".into());
+        }
+        a_ecrire.push((src, dest));
+    }
+    let date = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
+    let copie = PathBuf::from(fichier_data("sauvegardes-remplacees")).join(date.to_string()).join(zone);
+    for (rel, p) in &ici.disque {
+        let c = rel.split('/').fold(copie.clone(), |c, x| c.join(x));
+        let _ = std::fs::create_dir_all(c.parent().unwrap());
+        std::fs::copy(p, &c).map_err(|e| format!("copie de secours impossible : {e}"))?;
+    }
+    for (src, dest) in &a_ecrire {
+        let _ = std::fs::create_dir_all(dest.parent().unwrap());
+        let contenu = std::fs::read(src).map_err(|e| e.to_string())?;
+        if src.file_name().is_none_or(|n| format!("{:x}", Sha256::digest(&contenu)) != n.to_string_lossy()) {
+            return Err("fichier reçu abîmé".into());
+        }
+        crate::ecrire_sur(&dest.to_string_lossy(), &contenu).map_err(|e| e.to_string())?;
+    }
+    // Les fichiers que la version de Loc n'a pas.
+    for (rel, p) in &ici.disque {
+        if !f.contains_key(rel) {
+            let _ = std::fs::remove_file(p);
+        }
+    }
+    for (src, _) in a_ecrire {
+        let _ = std::fs::remove_file(src);
+    }
+    base(cle, h);
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    #[test]
+    fn synchro_chemins_et_empreinte() {
+        let m = |x: &str| x.split('/').map(String::from).collect::<Vec<_>>();
+        let p = ("B1B83DBA185BB8D5D0EC55CCAB2D9118".to_string(), "D5D0EC55CCAB2D911800000000000000".to_string());
+        // Profil Eden d'un appareil -> @moi, pour que le PC et le Mac parlent du même dossier.
+        assert_eq!(vers_loc("switch", &m("0000000000000000/B1B83DBA185BB8D5D0EC55CCAB2D9118/01006A800016E000/save_data"), Some(&p)), Some(m("0000000000000000/@moi/01006A800016E000/save_data")));
+        assert_eq!(vers_loc("switch", &m("0000000000000000/D5D0EC55CCAB2D911800000000000000/01006A800016E000/.yuzu_save_size"), Some(&p)).unwrap()[1], "@moi-bis");
+        assert_eq!(vers_loc("switch", &m("cache/0000000000000000/x"), Some(&p)), None);
+        assert_eq!(vers_loc("switch", &m("0000000000000000/AAAA000000000000000000000000AAAA/0100/x"), Some(&p)), None);
+        assert_eq!(vers_loc("3ds", &m("x/y/title/00040000/00055e00/content/00000000.app"), None), None);
+        assert_eq!(vers_loc("wii", &m("00000001/00000002/data/setting.txt"), None), None);
+        assert_eq!(vers_loc("ds", &m("._Pokemon.sav"), None), None);
+        let piege: BTreeMap<String, (String, u64)> = [("Jeu.sav".to_string(), ("../../../.ssh/id_ed25519".to_string(), 1))].into_iter().collect();
+        assert!(appliquer("ds/Jeu.sav", piege.clone(), &empreinte_jeu(&piege)).is_err());
+        assert!(vers_disque("ds", "../../.ssh/id").is_err() && vers_disque("ds", "a//b").is_err() && vers_disque("inconnue", "a").is_err());
+        // Même empreinte que Loc (sauvegardes.js).
+        let f: BTreeMap<String, (String, u64)> = [("b/é", "1"), ("b/z", "2"), ("a", "3")].into_iter().map(|(c, e)| (c.to_string(), (e.to_string(), 0))).collect();
+        assert_eq!(empreinte_jeu(&f), format!("{:x}", Sha256::digest("a\u{0}3\nb/z\u{0}2\nb/é\u{0}1\n")));
+    }
     #[test]
     fn copie_sans_les_jeux_installes() {
         let t = std::env::temp_dir().join(format!("enlocal-saves-{}", std::process::id()));

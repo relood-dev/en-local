@@ -1203,7 +1203,7 @@ function drawJeux() {
   ].filter(([, v]) => v) : [];
   const nom = f?.title || g.name;
   $('#info').innerHTML = `<h1 class="${nom.length > 22 ? 'long' : ''}">${esc(nom)}</h1>
-    <div class="meta"><span>${LONG[g.console]}</span>${majAffichee(g) ? `<span>MAJ <b>${esc(majAffichee(g))}</b></span>` : contenus[g.path]?.maj ? `<span>MAJ <b>${esc(contenus[g.path].maj === '?' ? 'oui' : contenus[g.path].maj)}</b></span>` : ''}${contenus[g.path]?.dlc ? `<span><b>${+contenus[g.path].dlc}</b> DLC</span>` : ''}${resumeSucces(g)}${st?.secs ? `<span>Temps de jeu <b>${duree(st.secs).replace(' de jeu', '')}</b></span>` : ''}${st?.last ? `<span>${quand(st.last).replace('Joué', 'Dernière partie')}</span>` : '<span>Jamais lancé</span>'}</div>
+    <div class="meta"><span>${LONG[g.console]}</span>${majAffichee(g) ? `<span>MAJ <b>${esc(majAffichee(g))}</b></span>` : contenus[g.path]?.maj ? `<span>MAJ <b>${esc(contenus[g.path].maj === '?' ? 'oui' : contenus[g.path].maj)}</b></span>` : ''}${contenus[g.path]?.dlc ? `<span><b>${+contenus[g.path].dlc}</b> DLC</span>` : ''}${resumeSucces(g)}${tempsDe(g) ? `<span>Temps de jeu <b>${duree(tempsDe(g)).replace(' de jeu', '')}</b></span>` : ''}${st?.last ? `<span>${quand(st.last).replace('Joué', 'Dernière partie')}</span>` : '<span>Jamais lancé</span>'}</div>
     ${f?.synopsis ? `<p>${esc(f.synopsis.split('\n')[0])}</p>` : wikiDe(g) ? `<p>${esc(wikiDe(g).texte)}</p><div class="source">Texte : Wikipédia, CC BY-SA</div>` : ''}
     ${faits.length ? `<div class="faits">${faits.map(([k, v]) => `<div>${k}<b>${esc(v)}</b></div>`).join('')}</div>` : ''}
     ${aussiChez(g)}
@@ -1523,6 +1523,8 @@ async function play(i, room = null) {
   }
   await envoyerJournaux();
   await pokedexAvantPartie(g);
+  // La sauvegarde la plus récente de tes appareils avant de jouer.
+  await synchroSaves();
   if (partageShaders(g)) await recevoirShaders(g).catch(() => {});
   if (!musique.paused) musique.pause();
   son('lancer');
@@ -1663,6 +1665,8 @@ async function act(name) {
     drawHome();
     rafraichirSessions();
     envoyerStats();
+    synchroniser();
+    synchroSaves();
   }
 }
 document.querySelectorAll('#menu .btn').forEach((b) => (b.onclick = () => act(b.dataset.act)));
@@ -1993,7 +1997,7 @@ invoke('list_games').then(async (g) => {
   setInterval(() => !current && updatePresence(), 60000);
   chargerMajs();
   chargerContenus().then(envoyerBibliotheque);
-  startup.then(() => setTimeout(envoyerStats, 3000));
+  startup.then(() => setTimeout(() => synchroniser().then(envoyerStats).then(synchroSaves), 3000));
   chargerPokedex(false);
   majProfilRecommande();
   // Sans compte : l'assistant. On attend d'abord la réponse de Loc pour ne pas se croire déconnecté.

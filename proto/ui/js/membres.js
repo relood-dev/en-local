@@ -197,7 +197,8 @@ function envoyerBibliotheque() {
   if (!me || !jeuxCharges) return;
   // Partage désactivé : liste vide.
   const liste = games.map((g) => ({ t: fiche(g)?.title || g.name, c: g.console, id: idGametdb(g) || undefined, maj: contenus[g.path]?.maj || undefined, dlc: contenus[g.path]?.dlc || undefined }));
-  api('PUT', '/library', partage('partageJeux') ? liste : []).catch(() => {});
+  // Une liste par appareil : Loc réunit celles de mes PC et Mac.
+  api('PUT', `/library/${appareil}/${MAC_SYSTEME}`, partage('partageJeux') ? liste : []).catch(() => {});
 }
 /** Chiffres du profil, pour /enlocal sur Discord. */
 function envoyerStats() {
@@ -205,13 +206,13 @@ function envoyerStats() {
   if (!partage('partageJeux')) return api('PUT', '/stats', {}).catch(() => {});
   const ds = defis();
   const consoles = {};
-  for (const g of games) if (stats[g.path]?.secs) consoles[g.console] = (consoles[g.console] || 0) + stats[g.path].secs;
-  const top = games.filter((g) => stats[g.path]?.secs).sort((a, b) => stats[b.path].secs - stats[a.path].secs).slice(0, 5)
-    .map((g) => ({ t: fiche(g)?.title || g.name, c: g.console, s: stats[g.path].secs }));
+  // Tous mes appareils (synchro.js).
+  for (const x of joues()) if (x.secs) consoles[x.console] = (consoles[x.console] || 0) + x.secs;
+  const top = joues().filter((x) => x.secs).sort((a, b) => b.secs - a.secs).slice(0, 5).map((x) => ({ t: x.g ? fiche(x.g)?.title || x.g.name : x.titre, c: x.console, s: x.secs }));
   api('PUT', '/stats', {
     secs: tempsTotal(), jeux: games.length, joues: joues().length, consoles, top,
-    defis: ds.filter((d) => d.fait).length, defisTotal: ds.length, serie: serie(), jours: (compteurs.jours || []).length,
-    sessions: (compteurs.sessionsCreees || 0) + (compteurs.sessionsRejointes || 0), captures: capturesListe.length,
+    defis: ds.filter((d) => d.fait).length, defisTotal: ds.length, serie: serie(), jours: (compteursTous().jours || []).length,
+    sessions: (compteursTous().sessionsCreees || 0) + (compteursTous().sessionsRejointes || 0), captures: capturesListe.length,
     pseudo: pseudoConsoles(), mii: monMii() ? studioMii(monMii()) : '', defisV: Object.fromEntries(ds.map((d) => [d.id, d.v])),
   }).catch(() => {});
 }

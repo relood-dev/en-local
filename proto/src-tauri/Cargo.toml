@@ -15,6 +15,7 @@ igd-next = "0.18"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 png = "0.17"
+sha2 = "0.10"
 libloading = "0.8"
 cpal = "0.15"
 sdl3 = { version = "0.20", features = ["build-from-source-static"] }

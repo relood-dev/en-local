@@ -22,15 +22,15 @@ function jourDeJeu() {
   verifierDefis();
 }
 
-// Jeux lancés au moins une fois.
-const joues = () => games.filter((g) => stats[g.path]?.secs || stats[g.path]?.last);
-const tempsTotal = () => Object.values(stats).reduce((t, s) => t + (s.secs || 0), 0);
+// Jeux lancés au moins une fois, sur tous mes appareils (synchro.js).
+const joues = () => jouesTous();
+const tempsTotal = () => joues().reduce((t, s) => t + s.secs, 0);
 /** Exemple : « 12 h 05 », « 40 min » */
 const heures = (s) => (s >= 3600 ? `${Math.floor(s / 3600)} h${s % 3600 >= 60 ? ` ${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}` : ''}` : `${Math.round(s / 60)} min`);
-/** Plus longue suite de jours de jeu consécutifs. */
+/** Plus longue suite de jours de jeu consécutifs, sur tous mes appareils. */
 function serie() {
   let best = 0, n = 0, avant = null;
-  for (const j of [...new Set(compteurs.jours || [])].sort()) {
+  for (const j of [...new Set(compteursTous().jours || [])].sort()) {
     const t = Date.parse(j);
     n = avant !== null && t - avant <= 864e5 * 1.5 ? n + 1 : 1;
     best = Math.max(best, n);
@@ -41,11 +41,15 @@ function serie() {
 
 /** Défis : [id, titre, texte, objectif, valeur, gif de Loc]. */
 function defis() {
+  // Tous mes appareils : jeux joués et compteurs additionnés (synchro.js).
+  const compteurs = compteursTous();
+  const tous = joues();
   const h = (s) => Math.floor(s / 3600);
-  const consoles = new Set(joues().map((g) => g.console)).size;
-  const plusLong = Math.max(0, ...Object.values(stats).map((s) => s.secs || 0));
-  const uneHeure = Object.values(stats).filter((s) => s.secs >= 3600).length;
-  const parConsole = Math.max(0, ...ORDRE.map((c) => games.filter((g) => g.console === c).reduce((t, g) => t + (stats[g.path]?.secs || 0), 0)));
+  const consoles = new Set(tous.map((g) => g.console)).size;
+  const plusLong = Math.max(0, ...tous.map((s) => s.secs));
+  const uneHeure = tous.filter((s) => s.secs >= 3600).length;
+  const secsConsole = (c) => tous.filter((x) => x.console === c).reduce((t, x) => t + x.secs, 0);
+  const parConsole = Math.max(0, ...ORDRE.map(secsConsole));
   const sessions = (compteurs.sessionsCreees || 0) + (compteurs.sessionsRejointes || 0);
   const resets = Object.keys(localStorage).filter((k) => k.startsWith('resets:')).reduce((t, k) => t + (+localStorage[k] || 0), compteurs.resetsPasses || 0);
   // Pokédex : seulement ce qui compte dans le Pokédex d'En Local (voir pokedex.js).
@@ -55,7 +59,6 @@ function defis() {
   const unBit = (b) => (b > 0 ? b.toString(2).replace(/0/g, '').length : 0);
   const badges = Math.max(0, ...(pokedexDonnees?.jeux || []).map((j) => unBit(j.badges)));
   const regions = (pokedexDonnees?.jeux || []).filter((j) => unBit(j.badges) >= 8).length;
-  const secsConsole = (c) => games.filter((g) => g.console === c).reduce((t, g) => t + (stats[g.path]?.secs || 0), 0);
   const parJ = Object.values(compteurs.jeux || {});
   const n = (cle) => compteurs[cle] || 0;
   const nb = (cle) => (compteurs[cle] || []).length;
@@ -128,7 +131,7 @@ function defis() {
     // Encore plus de jeu
     ['centaine', 'Centaine', 'Jouer à 100 jeux différents', 100, joues().length, 'gg'],
     ['degustateur', 'Dégustateur', 'Jouer 1 h à 25 jeux différents', 25, uneHeure, 'popcorn'],
-    ['multi', 'Cœur partagé', 'Jouer 10 h à 5 jeux différents', 5, Object.values(stats).filter((s) => s.secs >= 36000).length, 'love'],
+    ['multi', 'Cœur partagé', 'Jouer 10 h à 5 jeux différents', 5, tous.filter((s) => s.secs >= 36000).length, 'love'],
     ['devoue', 'Dévoué', 'Jouer 100 h au même jeu', 100, h(plusLong), 'love'],
     ['rituel', 'Rituel', 'Jouer 10 jours différents au même jeu', 10, Math.max(0, ...parJ.map((p) => p.j.length)), 'cafe'],
     ['compagnon', 'Compagnon de route', 'Jouer 30 jours différents au même jeu', 30, Math.max(0, ...parJ.map((p) => p.j.length)), 'love'],
@@ -207,16 +210,20 @@ const monJeu = (c, t) => games.find((g) => g.console === c && plat(titreDe(g)) =
 function modeleProfil() {
   const ds = defis();
   if (!profilVu) {
-    const top = joues().sort((a, b) => stats[b.path].secs - stats[a.path].secs).slice(0, 5);
+    const top = joues().sort((a, b) => b.secs - a.secs).slice(0, 5);
     return {
       moi: true,
       avatar: me?.avatar, nom: me ? (me.username ? `@${me.username}` : me.name) : 'Profil', mii: monMii() ? studioMii(monMii()) : '',
       lignes: me ? [`Pseudo consoles : ${pseudoConsoles()}`] : ['Connecte-toi avec Discord pour ton nom et ton avatar.'],
       total: tempsTotal(), joues: joues().length, consoles: new Set(joues().map((g) => g.console)).size, captures: capturesListe.length,
       defis: ds, faits: ds.filter((d) => d.fait).length,
-      top: top.map((g) => ({ titre: titreDe(g), c: g.console, secs: stats[g.path].secs, g })),
-      parConsole: ORDRE.map((c) => [c, games.filter((g) => g.console === c).reduce((t, g) => t + (stats[g.path]?.secs || 0), 0)]).filter(([, x]) => x > 0),
-      jeux: games.map((g) => ({ titre: titreDe(g), c: g.console, plus: [texteContenus(contenus[g.path]), stats[g.path]?.secs ? heures(stats[g.path].secs) : ''].filter(Boolean).join(' · ') || 'Jamais lancé', g })),
+      top: top.map((x) => ({ titre: x.g ? titreDe(x.g) : x.titre, c: x.console, secs: x.secs, g: x.g })),
+      parConsole: ORDRE.map((c) => [c, joues().filter((x) => x.console === c).reduce((t, x) => t + x.secs, 0)]).filter(([, x]) => x > 0),
+      jeux: [
+        ...games.map((g) => ({ titre: titreDe(g), c: g.console, plus: [texteContenus(contenus[g.path]), tempsDe(g) ? heures(tempsDe(g)) : ''].filter(Boolean).join(' · ') || 'Jamais lancé', g })),
+        // Installés sur mes autres appareils seulement (synchro.js).
+        ...jeuxAilleurs().map((j) => ({ titre: j.t, c: j.c, id: j.id, ailleurs: appareilDe(j.systeme), plus: [`Sur ${appareilDe(j.systeme)}`, progAutres.stats?.[j.k]?.secs ? heures(progAutres.stats[j.k].secs) : ''].filter(Boolean).join(' · '), g: null })),
+      ],
     };
   }
   const { m, s } = profilVu;
@@ -254,7 +261,7 @@ function drawProfil() {
   const max = Math.max(1, ...p.parConsole.map(([, x]) => x));
   profActions = [];
   const action = (fn) => (profActions.push(fn), profActions.length - 1);
-  const ouvrir = (it) => () => (it.g ? voirJeu(games.indexOf(it.g)) : toast(`${it.titre} : tu n'as pas ce jeu.`));
+  const ouvrir = (it) => () => (it.g ? voirJeu(games.indexOf(it.g)) : toast(`${it.titre} : ${it.ailleurs ? `installé sur ${it.ailleurs}` : 'tu n\'as pas ce jeu'}.`));
   // Jeu que je n'ai pas : sa jaquette, sinon l'icône de la console.
   const vignette = (it) => (it.g ? iconeHtml(it.g, true) : it.id ? coverImg(jeuDeMembre(it.c, it.titre, it.id), 'icone-img', true) || `<span class="r-ic">${iconeConsole(it.c)}</span>` : `<span class="r-ic">${iconeConsole(it.c)}</span>`);
   const totalDefis = p.defis ? p.defis.length : p.defisTotal;
