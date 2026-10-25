@@ -33,7 +33,7 @@ fn crc(b: &[u8]) -> u16 {
 
 /// Wii U : MiiData et MiiName du compte de Cemu (le même format). Le compte est créé par Cemu à son premier lancement.
 pub fn cemu(cemu_dir: &str, m: &[u8; 96]) {
-    let f = format!("{cemu_dir}\\portable\\mlc01\\usr\\save\\system\\act\\80000001\\account.dat");
+    let f = chemin!("{cemu_dir}\\portable\\mlc01\\usr\\save\\system\\act\\80000001\\account.dat");
     let Ok(texte) = std::fs::read_to_string(&f) else { return };
     let donnees: String = m.iter().map(|b| format!("{b:02x}")).collect();
     let nom: String = (0..11).map(|k| if k < 10 { u16::from_le_bytes([m[0x1a + 2 * k], m[0x1b + 2 * k]]) } else { 0 }).map(|u| format!("{u:04x}")).collect();
@@ -59,8 +59,8 @@ const CFL_TAILLE: usize = 0x4BD20;
 /// 3DS : le Mii dans la base de l'éditeur Mii (CFL_DB.dat). Mario Kart 7 et d'autres jeux y cherchent
 /// le Mii du joueur. Le dossier est créé par Azahar au premier lancement d'un jeu 3DS.
 pub fn trois_ds(azahar_dir: &str, m: &[u8; 96]) {
-    let dir = format!("{azahar_dir}\\user\\nand\\data\\00000000000000000000000000000000\\extdata\\00048000\\F000000B\\user");
-    let f = format!("{dir}\\CFL_DB.dat");
+    let dir = chemin!("{azahar_dir}\\user\\nand\\data\\00000000000000000000000000000000\\extdata\\00048000\\F000000B\\user");
+    let f = chemin!("{dir}\\CFL_DB.dat");
     let mut db = match std::fs::read(&f) {
         Ok(b) if b.len() == CFL_TAILLE && &b[..4] == b"CFOG" && crc(&b[..0xC820]) == 0 => b,
         Ok(_) => return, // base abîmée ou d'un autre format : on n'y touche pas
@@ -113,8 +113,8 @@ const RFL_MII: usize = 0x4A;
 
 /// Wii : le Mii dans la base de la console (créée vide si besoin, comme le fait la Wii).
 pub fn wii(dolphin_dir: &str, m: &[u8; 96]) {
-    let dir = format!("{dolphin_dir}\\User\\Wii\\shared2\\menu\\FaceLib");
-    let f = format!("{dir}\\RFL_DB.dat");
+    let dir = chemin!("{dolphin_dir}\\User\\Wii\\shared2\\menu\\FaceLib");
+    let f = chemin!("{dir}\\RFL_DB.dat");
     let mut db = match std::fs::read(&f) {
         Ok(b) if b.len() == RFL_TAILLE && &b[..4] == b"RNOD" && crc(&b) == 0 => b,
         Ok(_) => return, // base d'un autre format ou abîmée : on n'y touche pas

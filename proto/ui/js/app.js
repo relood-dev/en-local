@@ -22,6 +22,42 @@ let games = [], menuFocus = 0, current = null;
 let enAccueil = false;
 // Le prochain menu ouvert est le choix photo ou clip (bouton de partage), sans le menu HOME.
 let captureSeule = false;
+// Au repos (partie en cours sans menu, ou En Local sans le focus hors partie) : animations en boucle
+// arrêtées et GIF figés sur leur image du moment, la page ne se redessine plus.
+const geles = new Map();
+function figer(img) {
+  if (geles.has(img)) return;
+  if (!img.complete) return img.addEventListener('load', () => document.body.classList.contains('repos') && figer(img), { once: true });
+  const vrai = img.src;
+  // Avatars Discord animés : le .png de la même adresse est leur première image.
+  if (vrai.includes('cdn.discordapp.com')) img.src = vrai.replace('.gif', '.png');
+  else {
+    const c = Object.assign(document.createElement('canvas'), { width: img.naturalWidth, height: img.naturalHeight });
+    if (!c.width) return;
+    c.getContext('2d').drawImage(img, 0, 0);
+    img.src = c.toDataURL();
+  }
+  geles.set(img, vrai);
+}
+const GIF = 'img[src*=".gif"]';
+const figerTout = (el) => el.querySelectorAll?.(GIF).forEach(figer);
+const gifsAjoutes = new MutationObserver((l) => l.forEach((m) => m.addedNodes.forEach((n) => (n.matches?.(GIF) ? figer(n) : figerTout(n)))));
+function repos() {
+  const oui = current ? view() === 'jeu' : !document.hasFocus();
+  if (oui === document.body.classList.contains('repos')) return;
+  document.body.classList.toggle('repos', oui);
+  if (oui) {
+    figerTout(document.body);
+    gifsAjoutes.observe(document.body, { childList: true, subtree: true });
+  } else {
+    gifsAjoutes.disconnect();
+    geles.forEach((src, img) => (img.src = src));
+    geles.clear();
+  }
+}
+addEventListener('focus', repos);
+addEventListener('blur', repos);
+setInterval(repos, 500);
 const shown = (s) => $(s).style.display === 'grid';
 const view = () => (shown('#menu') ? 'menu' : shown('#sheet') ? 'sheet' : saisieOuverte() ? 'saisie' : figurinesOuvertes() ? 'figurines' : vueOuverte() ? 'vue' : distanceVisible() ? 'distance' : salle ? 'salle' : current && !enAccueil ? 'jeu' : bienvenueOuverte() ? 'bienvenue' : 'biblio');
 // Les noms viennent aussi des autres membres : jamais de HTML brut.
@@ -462,6 +498,7 @@ async function netplayLobby(i, hostCode) {
       compter('netplay');
       fermerSalle();
       current = g;
+      if (dansApp(g)) { ctx.clearRect(0, 0, canvas.width, canvas.height); $('#jeu').style.display = 'grid'; }
       dernierCompte = Date.now();
       for (const ms of [0, 2000, 6000, 15000]) setTimeout(() => current === g && volumeJeu(), ms);
       setTimeout(() => current === g && envoyerHabillage(), 500);
@@ -476,6 +513,7 @@ async function netplayLobby(i, hostCode) {
       // Partie arrêtée pour une relance : retour en salle.
       playing = false;
       if (shown('#menu')) $('#menu').style.display = 'none';
+      if (dansApp(g)) $('#jeu').style.display = 'none';
       if (hosting && session) api('PUT', `/sessions/${session.code}/running`, { running: false }).catch(() => {});
       showLobby(aide(l.players || 1));
     }
@@ -492,7 +530,10 @@ async function netplayLobby(i, hostCode) {
     if (!l.playing && salle && !lancement) salleSession({ i, texte: aide(l.players || 1) });
   });
   try {
-    await invoke('netplay', { path: g.path, hostCode, name: me?.name || 'Joueur', opts: optsDe(g) });
+    // macOS : la fenêtre de Dolphin est filmée, ses images arrivent ici.
+    const frames = new Channel();
+    frames.onmessage = onFrame;
+    await invoke('netplay', { path: g.path, hostCode, name: me?.name || 'Joueur', opts: optsDe(g), frames });
   } catch (err) {
     stop();
     cancelLobby();
@@ -584,13 +625,14 @@ function envoyerHabillage() {
   const g = current;
   if (!g) return;
   const parId = new Map(membres.map((m) => [m.id, m]));
-  const ds = g.console === 'DS';
-  // DS : l'image est dans notre fenêtre, à la taille de son canvas.
+  const ds = dansApp(g);
+  // DS (et consoles dans l'app) : l'image est dans notre fenêtre, à la taille de son canvas.
   const format = ds ? (localStorage.habillage === 'noir' || !canvas.height ? 0 : canvas.width / canvas.height) : Number(optsDe(g).format_jeu) || 0;
   window.__TAURI__.event.emitTo('habillage', 'habillage', {
     format,
     moi: me?.avatar || '',
-    ecrans: ds ? null : ecransJeu(g, optsDe(g)),
+    // Contours des écrans (3DS : haut et bas), aussi quand l'image est dessinée par l'interface (Mac).
+    ecrans: g.console === 'DS' ? null : ecransJeu(g, optsDe(g)),
     session: session ? { code: session.code, places: session.slots, membres: (session.members || []).map((m) => ({ id: m.id, name: m.name, avatar: parId.get(m.id)?.avatar || (m.id === me?.id ? me.avatar : '') })) } : null,
     widgets: localStorage.widgetsJeu !== 'non',
     chasse: chasseActive(g) ? +localStorage[`resets:${g.path}`] || 0 : null,
@@ -795,7 +837,7 @@ function modeleEshop(fichier) {
   });
 }
 /** Identifiant GameTDB d'un jeu. */
-const idGametdb = (g) => g.gametdb || (g.console === 'Switch' ? fiche(g)?.id : g.console === 'GC' || g.console === 'Wii' ? g.disc_id : g.product_code);
+const idGametdb = (g) => g.gametdb || (parNom(g) ? fiche(g)?.id : g.console === 'GC' || g.console === 'Wii' ? g.disc_id : g.product_code);
 /** Jeu d'un membre que je n'ai pas : de quoi afficher sa jaquette. */
 const jeuDeMembre = (c, t, id) => ({ path: `membre:${c}:${id}`, console: c, name: t, gametdb: id });
 function covers(g) {
@@ -831,12 +873,12 @@ function coverImg(g, cls, loin = false) {
     j.eshopVu = 1;
     modeleEshop(j.fichier).then((cr) => {
       retenir(cle, { ...j, crop: cr });
-      if (cr) for (const img of document.querySelectorAll(`img.jaquette[src="${CSS.escape(asset(j.fichier))}"]`)) (img.style.objectViewBox = cr), img.classList.add('eshop'), (img.dataset.cadre = 'attente'), cadrerEshop(img);
+      if (cr) for (const img of document.querySelectorAll(`img.jaquette[src="${CSS.escape(asset(j.fichier))}"]`)) (img.style.objectViewBox = cr), (img.dataset.crop = cr), img.classList.add('eshop'), (img.dataset.cadre = 'attente'), cadrerEshop(img);
     });
   }
   // Jaquette déjà sur le PC : affichée tout de suite. Anciennes Nintendo : le cadrage suit la règle du moment.
   if (j?.fichier && JAQUETTES[g.console]?.libretro) j.crop = covers(g)[0]?.crop || '';
-  if (j?.fichier) return `<img class="${cls} jaquette${j.crop === CADRE_ESHOP ? ' eshop" data-cadre="attente' : ''}" src="${esc(asset(j.fichier))}" style="object-view-box:${esc(j.crop || 'none')}" data-k="${k}" alt=""${loin ? ' loading="lazy" decoding="async"' : ''}>`;
+  if (j?.fichier) return `<img class="${cls} jaquette${j.crop === CADRE_ESHOP ? ' eshop" data-cadre="attente' : ''}" src="${esc(asset(j.fichier))}" style="object-view-box:${esc(j.crop || 'none')}" data-crop="${esc(j.crop || '')}" data-k="${k}" alt=""${loin ? ' loading="lazy" decoding="async"' : ''}>`;
   chercherJaquette(g, k);
   return `<img class="${cls} jaquette" data-k="${k}" alt="">`;
 }
@@ -864,6 +906,7 @@ function chercherJaquette(g, k) {
     for (const img of document.querySelectorAll(`img.jaquette[data-k="${k}"]`)) {
       if (!v) { img.remove(); continue; }
       img.style.objectViewBox = v.crop || 'none';
+      img.dataset.crop = v.crop || '';
       img.classList.toggle('eshop', v.crop === CADRE_ESHOP);
       if (v.crop === CADRE_ESHOP) img.dataset.cadre = 'attente';
       img.src = asset(v.fichier);
@@ -909,9 +952,39 @@ function cadrerEshop(img) {
   }
   cadresEshop.get(cle).then((url) => {
     img.dataset.cadre = 'fait';
-    if (url) (img.style.objectViewBox = 'none'), (img.src = url);
+    if (url) (img.style.objectViewBox = 'none'), (img.dataset.crop = ''), (img.src = url);
   });
 }
+/** Mac : Safari ne connaît pas object-view-box, la jaquette est recadrée dans un canvas une fois chargée. */
+const recadrees = new Map();
+if (!CSS.supports('object-view-box', 'inset(0 0 0 0)')) document.addEventListener('load', (e) => {
+  const img = e.target, crop = img.dataset?.crop;
+  if (!crop || img.dataset.cadre === 'attente') return;
+  img.dataset.crop = '';
+  const cle = `${img.src}|${crop}`;
+  if (!recadrees.has(cle)) {
+    recadrees.set(cle, new Promise((ok) => {
+      const v = (crop.match(/inset\(([^)]*)\)/)?.[1] || '').trim().split(/\s+/).map((x) => (parseFloat(x) || 0) / 100);
+      const [t, r = t, b = t, l = r] = v;
+      const im = new Image();
+      im.crossOrigin = 'anonymous';
+      im.onload = () => {
+        try {
+          const c = document.createElement('canvas');
+          c.width = Math.max(1, Math.round(im.width * (1 - l - r)));
+          c.height = Math.max(1, Math.round(im.height * (1 - t - b)));
+          c.getContext('2d').drawImage(im, im.width * l, im.height * t, c.width, c.height, 0, 0, c.width, c.height);
+          ok(c.toDataURL('image/jpeg', 0.9));
+        } catch {
+          ok('');
+        }
+      };
+      im.onerror = () => ok('');
+      im.src = img.src;
+    }));
+  }
+  recadrees.get(cle).then((url) => url && (img.src = url));
+}, true);
 addEventListener('error', (e) => {
   const img = e.target;
   if (!img.dataset?.k || !img.classList.contains('jaquette') || !img.getAttribute('src')) return;
@@ -1056,8 +1129,9 @@ function fond(src, jaquette = false) {
 
 /* ---------- Fiches des jeux (GameTDB) ---------- */
 const fiches = JSON.parse(localStorage.fiches || '{}');
-// Switch : pas de code produit, GameTDB est cherché par le nom.
-const idFiche = (g) => (g.console === 'Switch' ? g.name : g.console === 'GC' || g.console === 'Wii' ? g.disc_id : g.product_code);
+// Switch et Wii U en archive (.wua, .wud, .wux) : pas de code produit, GameTDB est cherché par le nom.
+const parNom = (g) => g.console === 'Switch' || (g.console === 'WiiU' && !g.product_code);
+const idFiche = (g) => (parNom(g) ? g.name : g.console === 'GC' || g.console === 'Wii' ? g.disc_id : g.product_code);
 const fiche = (g) => fiches[`${g.console}:${idFiche(g)}`];
 async function chargerFiches() {
   // Anciennes fiches sans eshop, title_en ou manettes : redemandées une fois.
@@ -1103,7 +1177,15 @@ const GENRES = {
 
 // Consoles avec sessions en ligne (pas la Wii U).
 // PS2 : trop lourde pour le netplay de RetroArch.
-const EN_LIGNE = ['3DS', 'DS', 'GC', 'Wii', 'Switch', 'N64', 'SNES', 'NES', 'GBA', 'GBC', 'GB', 'PS1'];
+// Consoles dont l'image se dessine dans #ecran : la DS ; sur Mac aussi les consoles 2D chargées dans l'app.
+const MAC = /Macintosh|Mac OS X/.test(navigator.userAgent);
+// Les autres : la fenêtre de leur émulateur s'affiche directement dans le cadre, comme sous Windows (nos
+// émulateurs modifiés, et Cemu et RPCS3 avec forks/enlocal-cadre.m).
+const DIRECT_MAC = ['Switch', '3DS', 'GC', 'Wii', 'WiiU', 'PS3', 'N64', 'PS2'];
+const dansApp = (g) => g?.console === 'DS' || (MAC && Boolean(g?.console) && !DIRECT_MAC.includes(g.console));
+// Sur Mac, les consoles 2D tournent dans l'app, sans le netplay de RetroArch : pas de sessions pour l'instant.
+const LIBRETRO_MAC = MAC ? ['NES', 'SNES', 'GB', 'GBC', 'GBA', 'PS1'] : [];
+const EN_LIGNE = ['3DS', 'DS', 'GC', 'Wii', 'Switch', 'N64', 'SNES', 'NES', 'GBA', 'GBC', 'GB', 'PS1'].filter((c) => !LIBRETRO_MAC.includes(c));
 /**
  * Jeu multijoueur d'après GameTDB. Pokémon compte comme multijoueur.
  * Sans information, on laisse créer une session.
@@ -1367,11 +1449,13 @@ const canvas = $('#ecran'), ctx = canvas.getContext('2d');
 function paint(buf) {
   const v = new DataView(buf);
   const w = v.getUint16(0, true), h = v.getUint16(2, true);
-  if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; if (current?.console === 'DS') envoyerHabillage(); }
+  if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; if (dansApp(current)) envoyerHabillage(); }
   ctx.putImageData(new ImageData(new Uint8ClampedArray(buf, 4, w * h * 4), w, h), 0, 0);
 }
 function onFrame(buf) {
   paint(buf);
+  // Mac : image filmée, la suivante n'est envoyée qu'une fois celle-ci dessinée.
+  if (MAC && current?.console !== 'DS') invoke('image_dessinee').catch(() => {});
 }
 
 /** Mises à jour et DLC de chaque jeu : chemin -> { maj, dlc }. */
@@ -1463,27 +1547,30 @@ async function resetJeu() {
  */
 const partageShaders = (g) => g?.console === 'Switch' && g.title_id && me && (emu.consoles.Switch?.shaders_partage ?? 'oui') === 'oui';
 const titreShaders = (g) => g.title_id.toLowerCase();
-async function envoyerShaders(g) {
-  const t = titreShaders(g);
-  const taille = await invoke('shaders_taille', { titre: t }).catch(() => 0);
-  if (!taille || String(taille) === localStorage[`shaders:${t}`]) return;
-  const brut = await invoke('shaders_lire', { titre: t });
+// Ceux d'Eden partout ; sur Mac, aussi ceux de Ryujinx (qui fait tourner la Switch en solo).
+const EMUS_SHADERS = MAC ? ['eden', 'ryujinx'] : ['eden'];
+const routeShaders = (emu) => (emu === 'ryujinx' ? 'shaders-ryujinx' : 'shaders');
+async function envoyerShaders(g, emu = 'eden') {
+  const t = titreShaders(g), cle = emu === 'eden' ? `shaders:${t}` : `shaders-${emu}:${t}`;
+  const taille = await invoke('shaders_taille', { titre: t, emu }).catch(() => 0);
+  if (!taille || String(taille) === localStorage[cle]) return;
+  const brut = await invoke('shaders_lire', { titre: t, emu });
   const gz = await new Response(new Blob([brut]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer();
-  const res = await fetch(`${API}/shaders/${t}`, { method: 'PUT', headers: { Authorization: `Bearer ${localStorage.token}`, 'Content-Type': 'application/gzip' }, body: gz });
-  if (res.ok) localStorage[`shaders:${t}`] = String(taille);
+  const res = await fetch(`${API}/${routeShaders(emu)}/${t}`, { method: 'PUT', headers: { Authorization: `Bearer ${localStorage.token}`, 'Content-Type': 'application/gzip' }, body: gz });
+  if (res.ok) localStorage[cle] = String(taille);
 }
-async function recevoirShaders(g) {
-  const t = titreShaders(g);
-  await envoyerShaders(g); // ce qui n'a pas encore été envoyé d'abord : rien ne se perd
-  const local = await invoke('shaders_taille', { titre: t }).catch(() => 0);
-  const info = await api('GET', `/shaders/${t}`);
+async function recevoirShaders(g, emu = 'eden') {
+  const t = titreShaders(g), cle = emu === 'eden' ? `shaders:${t}` : `shaders-${emu}:${t}`;
+  await envoyerShaders(g, emu); // ce qui n'a pas encore été envoyé d'abord : rien ne se perd
+  const local = await invoke('shaders_taille', { titre: t, emu }).catch(() => 0);
+  const info = await api('GET', `/${routeShaders(emu)}/${t}`);
   if (!info.taille || info.taille <= local * 1.02) return;
   status(`Shaders des membres pour ${g.name}…`);
-  const res = await fetch(`${API}/shaders/${t}/cache`, { headers: { Authorization: `Bearer ${localStorage.token}` } });
+  const res = await fetch(`${API}/${routeShaders(emu)}/${t}/cache`, { headers: { Authorization: `Bearer ${localStorage.token}` } });
   if (!res.ok) return;
   const brut = await new Response(res.body.pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
-  await invoke('shaders_ecrire', new Uint8Array(brut), { headers: { titre: t } });
-  localStorage[`shaders:${t}`] = String(brut.byteLength);
+  await invoke('shaders_ecrire', new Uint8Array(brut), { headers: { titre: t, emu } });
+  localStorage[cle] = String(brut.byteLength);
 }
 
 /** Anciennes Nintendo en session : l'hôte héberge par le relais du Local, les autres attendent que sa partie soit lancée. */
@@ -1530,7 +1617,7 @@ async function play(i, room = null) {
   await pokedexAvantPartie(g);
   // La sauvegarde la plus récente de tes appareils avant de jouer.
   await synchroSaves();
-  if (partageShaders(g)) await recevoirShaders(g).catch(() => {});
+  if (partageShaders(g)) for (const emu of EMUS_SHADERS) await recevoirShaders(g, emu).catch(() => {});
   if (!musique.paused) musique.pause();
   son('lancer');
   const update = majDe(g);
@@ -1538,7 +1625,7 @@ async function play(i, room = null) {
   const frames = new Channel();
   frames.onmessage = onFrame;
   // Écran de chargement le temps que l'émulateur démarre.
-  const ds = g.console === 'DS';
+  const ds = dansApp(g);
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   $('#chargement').textContent = ds ? '' : `Chargement de ${g.name}…`;
   $('#jeu').style.display = 'grid';
@@ -1572,9 +1659,9 @@ async function play(i, room = null) {
 let menuSeq = 0;
 async function setMenu(open) {
   const seq = ++menuSeq;
-  if (current?.console === 'DS' && open) ($('#jeu').classList.remove('habille'), invoke('habillage_ds', { format: 0, visible: false }).catch(() => {}));
+  if (dansApp(current) && open) ($('#jeu').classList.remove('habille'), invoke('habillage_ds', { format: 0, visible: false }).catch(() => {}));
   // 3DS, GameCube, Wii : on affiche la dernière image du jeu sous le menu.
-  if (['3DS', 'GC', 'Wii', 'WiiU', 'Switch', 'PS3', ...RETRO].includes(current?.console)) {
+  if (['3DS', 'GC', 'Wii', 'WiiU', 'Switch', 'PS3', ...RETRO].includes(current?.console) && !dansApp(current)) {
     if (open) {
       const buf = await invoke('snapshot');
       // Menu refermé pendant l'attente : on n'affiche plus rien.
@@ -1666,7 +1753,7 @@ async function act(name) {
     status('');
     await apresPartie();
     // Envoi après la fermeture d'Eden : le cache est complet.
-    if (partageShaders(joue)) envoyerShaders(joue).catch(() => {});
+    if (partageShaders(joue)) for (const emu of EMUS_SHADERS) envoyerShaders(joue, emu).catch(() => {});
     drawHome();
     rafraichirSessions();
     envoyerStats();
@@ -1769,13 +1856,17 @@ async function backToGame() {
   await invoke('resume');
   $('#menu').style.display = 'none';
   $('#menu').classList.remove('sortie');
-  if (current?.console === 'DS') envoyerHabillage();
+  if (dansApp(current)) envoyerHabillage();
   refreshShot();
 }
 async function refreshShot() {
-  const seq = menuSeq;
-  await new Promise((r) => setTimeout(r, 400));
-  const buf = await invoke('game_shot');
+  const seq = menuSeq, g = current;
+  // Mac : rien tant que le jeu n'a pas affiché sa première image (le chargement reste visible jusque-là).
+  let buf = new ArrayBuffer(0);
+  for (let n = 0; n < 240 && buf.byteLength <= 4 && current === g; n++) {
+    await new Promise((r) => setTimeout(r, n ? 500 : 400));
+    buf = await invoke('game_shot');
+  }
   if (seq !== menuSeq || shown('#menu') || buf.byteLength <= 4) return;
   paint(buf);
   canvas.classList.add('photo');

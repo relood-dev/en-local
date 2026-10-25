@@ -42,7 +42,7 @@ pub static GUID: std::sync::Mutex<String> = std::sync::Mutex::new(String::new())
 static A_AJOUTER: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
 
 fn fichier_manettes() -> String {
-    format!("{}\\data\\manettes.txt", crate::root())
+    chemin!("{}\\data\\manettes.txt", crate::root())
 }
 fn manettes_perso() -> Vec<String> {
     std::fs::read_to_string(fichier_manettes()).unwrap_or_default().lines().filter(|l| mapping_valide(l)).map(str::to_string).collect()
@@ -238,7 +238,11 @@ pub fn start(app: AppHandle) {
         let mut tenue: Option<(&'static str, Instant)> = None;
         loop {
             let attente = tenue.map_or(100, |(_, t)| t.saturating_duration_since(Instant::now()).as_millis().max(1) as u32);
-            let ev = events.wait_event_timeout_ms(attente);
+            // wait_event_timeout de SDL relit les manettes toutes les millisecondes : 8 ms suffisent aux menus.
+            let ev = events.poll_event();
+            if ev.is_none() {
+                std::thread::sleep(Duration::from_millis(attente.min(8) as u64));
+            }
             if let Some((dir, t)) = tenue {
                 if Instant::now() >= t {
                     let _ = app.emit("pad", dir);

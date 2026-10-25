@@ -33,6 +33,7 @@ pub fn choisir(sorte: &str, chemin: Option<&str>) -> Result<Option<PathBuf>, Str
     Ok(Some(p))
 }
 /// Refuse les dossiers trop larges (racine, profil, Windows) : l'interface pourrait tout lire.
+#[cfg(windows)]
 pub fn dossier_permis(p: &Path) -> bool {
     let vrai = std::fs::canonicalize(p).map(|x| PathBuf::from(x.to_string_lossy().trim_start_matches(r"\\?\"))).unwrap_or_else(|_| p.to_path_buf());
     if vrai.parent().is_none() || vrai.components().count() < 2 {
@@ -44,6 +45,15 @@ pub fn dossier_permis(p: &Path) -> bool {
         return false;
     }
     std::env::var("USERPROFILE").map(|u| u.to_lowercase() != bas.trim_end_matches('\\')).unwrap_or(true)
+}
+
+/// macOS : ni la racine, ni le dossier personnel, ni les dossiers du système et des apps.
+#[cfg(not(windows))]
+pub fn dossier_permis(p: &Path) -> bool {
+    let vrai = std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+    let maison = std::env::var("HOME").map(PathBuf::from).unwrap_or_default();
+    let systeme = ["/System", "/Library", "/Applications", "/usr", "/bin", "/sbin", "/etc", "/private", "/var", "/opt"];
+    vrai.components().count() >= 3 && vrai != maison && !vrai.starts_with(maison.join("Library")) && !systeme.iter().any(|s| vrai.starts_with(s))
 }
 
 pub fn deux_chemins(d: &Path) -> [PathBuf; 2] {
@@ -243,6 +253,7 @@ fn lire_apic(tag: &[u8], version: u8) -> Option<Vec<u8>> {
 mod tests {
     use super::*;
 
+    #[cfg(windows)]
     #[test]
     fn dossiers_permis() {
         assert!(!dossier_permis(Path::new("C:\\")));
@@ -286,5 +297,13 @@ mod tests {
         t.extend(u32::MAX.to_be_bytes());
         t.extend([0, 0, 0]);
         assert_eq!(lire_apic(&t, 3), None);
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn dossiers_permis_mac() {
+        use std::path::Path;
+        assert!(!dossier_permis(Path::new("/")) && !dossier_permis(Path::new("/System/Library")) && !dossier_permis(Path::new(&std::env::var("HOME").unwrap())));
+        assert!(dossier_permis(&Path::new(&std::env::var("HOME").unwrap()).join("Music")));
     }
 }

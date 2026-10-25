@@ -58,7 +58,8 @@ fn paire(k: &str, v: impl ToString) -> (String, String) {
  * ---------- Manette ----------
  * touche_a = south : le bouton A de la console est le bouton du bas de la manette.
  */
-const PHYS: [&str; 16] = ["south", "west", "back", "start", "up", "down", "left", "right", "east", "north", "lb", "rb", "lt", "rt", "l3", "r3"];
+/// Boutons de la manette, dans l'ordre des boutons du RetroPad (B, Y, Select, Start, croix, A, X, L, R, L2, R2, L3, R3).
+pub const PHYS: [&str; 16] = ["south", "west", "back", "start", "up", "down", "left", "right", "east", "north", "lb", "rb", "lt", "rt", "l3", "r3"];
 pub fn touche<'a>(o: &'a Opts, bouton: &str) -> Option<&'a str> {
     get(o, &format!("touche_{bouton}")).filter(|p| PHYS.contains(p))
 }
@@ -210,7 +211,7 @@ pub fn azahar_langue(emu_dir: &str, o: &Opts) -> std::io::Result<()> {
     let Some(n) = get(o, "langue").and_then(|l| LANGUES.iter().position(|x| *x == l)) else {
         return Ok(());
     };
-    let f = format!("{emu_dir}\\user\\nand\\data\\00000000000000000000000000000000\\sysdata\\00010017\\00000000\\config");
+    let f = chemin!("{emu_dir}\\user\\nand\\data\\00000000000000000000000000000000\\sysdata\\00010017\\00000000\\config");
     let Ok(mut b) = std::fs::read(&f) else {
         return Ok(()); // créé par Azahar au premier lancement
     };
@@ -255,7 +256,7 @@ pub fn dolphin_args(o: &Opts, wii: bool) -> Vec<String> {
             c.push(format!("Dolphin.Core.SelectedLanguage={n}"));
         }
     }
-    if let Some(api) = get(o, "api").filter(|a| ["D3D", "D3D12", "Vulkan", "OGL"].contains(a)) {
+    if let Some(api) = get(o, "api").filter(|a| ["Vulkan", "OGL", "Metal"].contains(a) || (cfg!(windows) && ["D3D", "D3D12"].contains(a))) {
         c.push(format!("Dolphin.Core.GFXBackend={api}"));
     }
     if let Some(n) = nombre(o, "resolution", 1, 8) {
@@ -392,13 +393,13 @@ pub fn dolphin_wii(o: &Opts, cote: bool) -> Vec<(String, String)> {
 /// RetroAchievements dans Dolphin. Sans compte : désactivé.
 pub fn dolphin_ra(dolphin: &str, o: &Opts) -> std::io::Result<()> {
     let (Some(u), Some(t)) = (get(o, "ra_user"), get(o, "ra_token")) else {
-        return std::fs::write(format!("{dolphin}\\User\\Config\\RetroAchievements.ini"), "[Achievements]\nEnabled = False\n");
+        return std::fs::write(chemin!("{dolphin}\\User\\Config\\RetroAchievements.ini"), "[Achievements]\nEnabled = False\n");
     };
     let propre = |s: &str| s.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-' || *c == '.').collect::<String>();
     let b = |v: bool| if v { "True" } else { "False" };
-    std::fs::create_dir_all(format!("{dolphin}\\User\\Config"))?;
+    std::fs::create_dir_all(chemin!("{dolphin}\\User\\Config"))?;
     std::fs::write(
-        format!("{dolphin}\\User\\Config\\RetroAchievements.ini"),
+        chemin!("{dolphin}\\User\\Config\\RetroAchievements.ini"),
         format!(
             "[Achievements]\nEnabled = True\nUsername = {}\nApiToken = {}\nHardcoreEnabled = {}\nUnofficialEnabled = False\nEncoreEnabled = False\nSpectatorEnabled = False\nDiscordPresenceEnabled = False\nProgressEnabled = True\nBadgesEnabled = True\n",
             propre(u),
@@ -698,6 +699,23 @@ pub fn vibrations(o: &Opts) -> bool {
     get(o, "vibrations") != Some("non")
 }
 
+/// Langue et région de la Switch (mêmes numéros dans Eden et Ryujinx). La région suit la langue,
+/// sinon certains jeux la refusent.
+pub fn langue_switch(o: &Opts) -> Option<(u8, u8)> {
+    Some(match get(o, "langue")? {
+        "ja" => (0, 0),
+        "en" => (1, 1),
+        "fr" => (2, 2),
+        "de" => (3, 2),
+        "it" => (4, 2),
+        "es" => (5, 2),
+        "nl" => (8, 2),
+        "pt" => (9, 2),
+        "ru" => (10, 2),
+        _ => return None,
+    })
+}
+
 pub fn eden(ini: &str, o: &Opts, title_id: Option<&str>) -> String {
     let mut r = Vec::new();
     if let Some(n) = nombre(o, "api", 0, 4).filter(|n| *n != 2) {
@@ -725,24 +743,9 @@ pub fn eden(ini: &str, o: &Opts, title_id: Option<&str>) -> String {
         r.push(paire("gpu_accuracy", 2));
     }
     let mut s = Vec::new();
-    if let Some(l) = get(o, "langue") {
-        // La région suit la langue, sinon certains jeux la refusent.
-        let (langue, region) = match l {
-            "ja" => (0, 0),
-            "en" => (1, 1),
-            "fr" => (2, 2),
-            "de" => (3, 2),
-            "it" => (4, 2),
-            "es" => (5, 2),
-            "nl" => (8, 2),
-            "pt" => (9, 2),
-            "ru" => (10, 2),
-            _ => (-1, -1),
-        };
-        if langue >= 0 {
-            s.push(paire("language_index", langue));
-            s.push(paire("region_index", region));
-        }
+    if let Some((langue, region)) = langue_switch(o) {
+        s.push(paire("language_index", langue));
+        s.push(paire("region_index", region));
     }
     // Jeu à distance : les manettes des invités arrivent par le serveur DSU d'En Local (distance.rs),
     // console sur la télé pour brancher les joueurs 2 à 8.

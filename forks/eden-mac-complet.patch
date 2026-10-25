@@ -1,0 +1,869 @@
+diff --git a/src/core/hle/service/mii/mii_database_manager.cpp b/src/core/hle/service/mii/mii_database_manager.cpp
+index 606df79..9cf5c03 100644
+--- a/src/core/hle/service/mii/mii_database_manager.cpp
++++ b/src/core/hle/service/mii/mii_database_manager.cpp
+@@ -4,6 +4,8 @@
+ // SPDX-FileCopyrightText: Copyright 2023 yuzu Emulator Project
+ // SPDX-License-Identifier: GPL-2.0-or-later
+ 
++#include <cstdlib>
++#include <cstring>
+ #include "common/assert.h"
+ #include "common/fs/file.h"
+ #include "common/fs/fs.h"
+@@ -16,6 +18,7 @@
+ #include "core/hle/service/mii/mii_util.h"
+ #include "core/hle/service/mii/types/char_info.h"
+ #include "core/hle/service/mii/types/store_data.h"
++#include "core/hle/service/mii/types/ver3_store_data.h"
+ 
+ namespace Service::Mii {
+ const char* DbFileName = "MiiDatabase.dat";
+@@ -56,6 +59,7 @@ Result DatabaseManager::Initialize(DatabaseSessionMetadata& metadata, bool& is_d
+                                      Common::FS::FileType::BinaryFile};
+ 
+     if (!db_file.IsOpen()) {
++        AddEnLocalMii();
+         return SaveDatabase();
+     }
+ 
+@@ -79,14 +83,49 @@ Result DatabaseManager::Initialize(DatabaseSessionMetadata& metadata, bool& is_d
+     if (result.IsError()) {
+         LOG_ERROR(Service_Mii, "Mii database is corrupted 0x{:0x}", result.raw);
+         database.CleanDatabase();
++        AddEnLocalMii();
+         return ResultSuccess;
+     }
+ 
+     LOG_INFO(Service_Mii, "Successfully loaded mii database. size={}",
+              database.GetDatabaseLength());
++    AddEnLocalMii();
+     return ResultSuccess;
+ }
+ 
++// En Local: the player's Mii (3DS / Wii U format, 96 bytes in hexadecimal), made in En Local.
++// Its create id comes from its own ids: the same Mii each time, replaced when it changes.
++void DatabaseManager::AddEnLocalMii() {
++    const char* hex = std::getenv("ENLOCAL_MII");
++    if (hex == nullptr || std::strlen(hex) != sizeof(Ver3StoreData) * 2) {
++        return;
++    }
++    Ver3StoreData ver3{};
++    auto* raw = reinterpret_cast<u8*>(&ver3);
++    for (std::size_t i = 0; i < sizeof(ver3); ++i) {
++        const char pair[3] = {hex[2 * i], hex[2 * i + 1], 0};
++        raw[i] = static_cast<u8>(std::strtoul(pair, nullptr, 16));
++    }
++    StoreData store_data{};
++    ver3.BuildToStoreData(store_data);
++    Common::UUID id{};
++    std::memcpy(id.uuid.data(), raw + 4, id.uuid.size());
++    id.uuid[6] = static_cast<u8>((id.uuid[6] & 0x0F) | 0x40);
++    id.uuid[8] = static_cast<u8>((id.uuid[8] & 0x3F) | 0x80);
++    store_data.SetCreateId(id);
++    if (store_data.IsValid() != ValidationResult::NoErrors) {
++        LOG_ERROR(Service_Mii, "En Local Mii is not valid");
++        return;
++    }
++    u32 index{};
++    if (database.GetIndexByCreatorId(index, id)) {
++        database.Replace(index, store_data);
++    } else if (!database.IsFull()) {
++        database.Add(store_data);
++    }
++    LOG_INFO(Service_Mii, "En Local Mii added");
++}
++
+ bool DatabaseManager::IsFullDatabase() const {
+     return database.GetDatabaseLength() == MaxDatabaseLength;
+ }
+diff --git a/src/core/hle/service/mii/mii_database_manager.h b/src/core/hle/service/mii/mii_database_manager.h
+index 52c32be..33f39b0 100644
+--- a/src/core/hle/service/mii/mii_database_manager.h
++++ b/src/core/hle/service/mii/mii_database_manager.h
+@@ -41,6 +41,7 @@ public:
+     void Format(DatabaseSessionMetadata& metadata);
+ 
+     Result SaveDatabase();
++    void AddEnLocalMii();
+ 
+ private:
+     // This is the global value of
+diff --git a/src/core/hle/service/mii/types/store_data.h b/src/core/hle/service/mii/types/store_data.h
+index ed5dfb9..b662fd0 100644
+--- a/src/core/hle/service/mii/types/store_data.h
++++ b/src/core/hle/service/mii/types/store_data.h
+@@ -74,6 +74,11 @@ public:
+     void SetNickname(Nickname nickname);
+     void SetInvalidName();
+     void SetChecksum();
++    // En Local: a fixed create id, so that games recognise the player's Mii.
++    void SetCreateId(const Common::UUID& id) {
++        create_id = id;
++        SetChecksum();
++    }
+     void SetDataChecksum();
+     void SetDeviceChecksum();
+ 
+diff --git a/src/video_core/surface.cpp b/src/video_core/surface.cpp
+index 1998849..810da49 100644
+--- a/src/video_core/surface.cpp
++++ b/src/video_core/surface.cpp
+@@ -7,6 +7,8 @@
+ #include "common/common_types.h"
+ #include "common/math_util.h"
+ #include "common/settings.h"
++#include <utility>
++
+ #include "video_core/surface.h"
+ 
+ namespace VideoCore::Surface {
+@@ -199,10 +201,15 @@ PixelFormat PixelFormatFromRenderTargetFormat(Tegra::RenderTargetFormat format)
+         return PixelFormat::R8_SINT;
+     case Tegra::RenderTargetFormat::R8_UINT:
+         return PixelFormat::R8_UINT;
+-    default:
+-        UNIMPLEMENTED_MSG("Unimplemented format={}", format);
++    default: {
++        // En Local : signalé une fois. Certains jeux (Smash) le demandent des centaines de fois par
++        // seconde : le journal grossissait de plusieurs Mo par partie et prenait du temps au jeu.
++        static bool deja = false;
++        if (!std::exchange(deja, true))
++            UNIMPLEMENTED_MSG("Unimplemented format={}", format);
+         return PixelFormat::A8B8G8R8_UNORM;
+     }
++    }
+ }
+ 
+ PixelFormat PixelFormatFromGPUPixelFormat(Service::android::PixelFormat format) {
+diff --git a/src/yuzu/applets/qt_software_keyboard.cpp b/src/yuzu/applets/qt_software_keyboard.cpp
+index aa77e08..c2f1585 100644
+--- a/src/yuzu/applets/qt_software_keyboard.cpp
++++ b/src/yuzu/applets/qt_software_keyboard.cpp
+@@ -4,6 +4,9 @@
+ // SPDX-License-Identifier: GPL-2.0-or-later
+ 
+ #include <QCursor>
++#include <QFile>
++#include <QPointer>
++#include <QThread>
+ #include <QKeyEvent>
+ #include <QScreen>
+ 
+@@ -1589,16 +1592,99 @@ void QtSoftwareKeyboard::InitializeKeyboard(
+              initialize_parameters.enable_return_button,
+              initialize_parameters.disable_cancel_button);
+ 
++    enlocal_params = initialize_parameters;
+     emit MainWindowInitializeKeyboard(is_inline, std::move(initialize_parameters));
+ }
+ 
++// En Local: no Qt dialog inside its window, En Local shows its own keyboard (same files as the 3DS).
++// Request: max length, buttons (1 with Cancel), accepted input (0 any, 1 not empty, 4 exact length),
++// hint, error of the last answer. En Local answers in <file>.ok: "ok" or "annuler", then the text.
++static std::atomic<int> enlocal_ask{0};
++
++void QtSoftwareKeyboard::AskEnLocal(bool is_inline, u32 max, u32 min, std::u16string hint,
++                                    int error) const {
++    const auto& p = enlocal_params;
++    if (hint.empty()) {
++        hint = !p.header_text.empty() ? p.header_text : !p.guide_text.empty() ? p.guide_text : p.sub_text;
++    }
++    const QString path = qEnvironmentVariable("ENLOCAL_CLAVIER");
++    const QString ask = QStringLiteral("%1\n%2\n%3\n%4\n%5\n")
++                            .arg(max ? max : 500)
++                            .arg(p.disable_cancel_button ? 0 : 1)
++                            .arg(min == 0 ? 0 : min == max ? 4 : 1)
++                            .arg(QString::fromStdU16String(hint).simplified())
++                            .arg(error);
++    const int mine = ++enlocal_ask;
++    QPointer<QtSoftwareKeyboard> self(const_cast<QtSoftwareKeyboard*>(this));
++    std::thread([self, path, ask, is_inline, mine] {
++        QFile answer(path + QStringLiteral(".ok"));
++        answer.remove();
++        QFile f(path);
++        if (f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
++            f.write(ask.toUtf8());
++            f.close();
++        }
++        while (!answer.exists()) {
++            if (enlocal_ask != mine) {
++                return;
++            }
++            QThread::msleep(100);
++        }
++        QThread::msleep(50);
++        if (!answer.open(QIODevice::ReadOnly)) {
++            return;
++        }
++        const QString text = QString::fromUtf8(answer.readAll());
++        answer.close();
++        answer.remove();
++        QFile::remove(path);
++        const qsizetype sep = text.indexOf(QLatin1Char('\n'));
++        const bool ok = text.left(sep) == QStringLiteral("ok");
++        const std::u16string value = sep < 0 || !ok ? std::u16string{} : text.mid(sep + 1).toStdU16String();
++        LOG_INFO(Frontend, "En Local keyboard finished, button={}", ok ? "ok" : "cancel");
++        QMetaObject::invokeMethod(self.data(), [self, ok, value, is_inline] {
++            if (!self) {
++                return;
++            }
++            self->enlocal_text = value;
++            const auto cursor = static_cast<s32>(value.size());
++            if (!is_inline) {
++                self->submit_normal_callback(ok ? Service::AM::Frontend::SwkbdResult::Ok
++                                                : Service::AM::Frontend::SwkbdResult::Cancel,
++                                             value, false);
++            } else if (ok) {
++                self->submit_inline_callback(Service::AM::Frontend::SwkbdReplyType::ChangedString, value, cursor);
++                self->submit_inline_callback(Service::AM::Frontend::SwkbdReplyType::DecidedEnter, value, cursor);
++            } else {
++                self->submit_inline_callback(Service::AM::Frontend::SwkbdReplyType::DecidedCancel, value, cursor);
++            }
++        }, Qt::QueuedConnection);
++    }).detach();
++}
++
+ void QtSoftwareKeyboard::ShowNormalKeyboard() const {
++    if (qEnvironmentVariableIsSet("ENLOCAL_CLAVIER")) {
++        AskEnLocal(false, enlocal_params.max_text_length, enlocal_params.min_text_length, {}, 0);
++        return;
++    }
+     emit MainWindowShowNormalKeyboard();
+ }
+ 
+ void QtSoftwareKeyboard::ShowTextCheckDialog(
+     Service::AM::Frontend::SwkbdTextCheckResult text_check_result,
+     std::u16string text_check_message) const {
++    if (qEnvironmentVariableIsSet("ENLOCAL_CLAVIER")) {
++        // Refused by the game: asked again with its message. To confirm: accepted as is.
++        if (text_check_result == Service::AM::Frontend::SwkbdTextCheckResult::Failure) {
++            AskEnLocal(false, enlocal_params.max_text_length, enlocal_params.min_text_length,
++                       text_check_message, 7);
++        } else if (text_check_result == Service::AM::Frontend::SwkbdTextCheckResult::Confirm) {
++            QMetaObject::invokeMethod(const_cast<QtSoftwareKeyboard*>(this), [this] {
++                submit_normal_callback(Service::AM::Frontend::SwkbdResult::Ok, enlocal_text, true);
++            }, Qt::QueuedConnection);
++        }
++        return;
++    }
+     emit MainWindowShowTextCheckDialog(text_check_result, std::move(text_check_message));
+ }
+ 
+@@ -1625,6 +1711,10 @@ void QtSoftwareKeyboard::ShowInlineKeyboard(
+              appear_parameters.key_top_as_floating, appear_parameters.enable_backspace_button,
+              appear_parameters.enable_return_button, appear_parameters.disable_cancel_button);
+ 
++    if (qEnvironmentVariableIsSet("ENLOCAL_CLAVIER")) {
++        AskEnLocal(true, appear_parameters.max_text_length, appear_parameters.min_text_length, {}, 0);
++        return;
++    }
+     emit MainWindowShowInlineKeyboard(std::move(appear_parameters));
+ }
+ 
+diff --git a/src/yuzu/applets/qt_software_keyboard.h b/src/yuzu/applets/qt_software_keyboard.h
+index 66359ff..8db4204 100644
+--- a/src/yuzu/applets/qt_software_keyboard.h
++++ b/src/yuzu/applets/qt_software_keyboard.h
+@@ -278,6 +278,10 @@ private:
+     void SubmitInlineText(Service::AM::Frontend::SwkbdReplyType reply_type,
+                           std::u16string submitted_text, s32 cursor_position) const;
+ 
++    void AskEnLocal(bool is_inline, u32 max, u32 min, std::u16string hint, int error) const;
++
+     mutable SubmitNormalCallback submit_normal_callback;
+     mutable SubmitInlineCallback submit_inline_callback;
++    mutable Core::Frontend::KeyboardInitializeParameters enlocal_params;
++    mutable std::u16string enlocal_text;
+ };
+diff --git a/src/yuzu/main.cpp b/src/yuzu/main.cpp
+index 29a1f07..8115b9a 100644
+--- a/src/yuzu/main.cpp
++++ b/src/yuzu/main.cpp
+@@ -191,7 +191,8 @@ int main(int argc, char* argv[]) {
+ 
+     MainWindow main_window{has_broken_vulkan};
+     // After settings have been loaded by GMainWindow, apply the filter
+-    main_window.show();
++    if (!main_window.IsEmbedded()) // En Local : rendu intégré, pas de fenêtre principale
++        main_window.show();
+ 
+     app.connect(&app, &QGuiApplication::applicationStateChanged, &main_window,
+                 &MainWindow::OnAppFocusStateChanged);
+diff --git a/src/yuzu/main_window.cpp b/src/yuzu/main_window.cpp
+index 7549325..b6dc8aa 100644
+--- a/src/yuzu/main_window.cpp
++++ b/src/yuzu/main_window.cpp
+@@ -3,6 +3,12 @@
+ 
+ // Qt on macOS doesn't define VMA shit
+ #include <boost/algorithm/string/split.hpp>
++#ifdef __APPLE__
++// Runtime Objective-C, déclaré à la main : <objc/runtime.h> définit un type Category qui gêne celui d'Eden.
++extern "C" void* objc_getClass(const char*);
++extern "C" void* sel_registerName(const char*);
++extern "C" void objc_msgSend(void);
++#endif
+ #include "common/settings.h"
+ #include "common/settings_enums.h"
+ #include "frontend_common/settings_generator.h"
+@@ -16,6 +22,16 @@
+ #include "common/fs/ryujinx_compat.h"
+ #include "main_window.h"
+ #include "network/network.h"
++#include <QFile>
++#include <QRegularExpression>
++#include <thread>
++#include "network/room.h"
++#include "network/verify_user.h"
++#include <QWindow>
++#include <QTimer>
++#include "input_common/main.h"
++#include <QTimer>
++#include "input_common/main.h"
+ #include "qt_common/discord/discord.h"
+ #include "ui_main.h"
+ 
+@@ -67,6 +83,7 @@
+ #include <QDesktopServices>
+ #include <QDir>
+ #include <QFileDialog>
++#include <QDateTime>
+ #include <QFileInfo>
+ #include <QGuiApplication>
+ #include <QInputDialog>
+@@ -314,6 +331,66 @@ enum class CalloutFlag : uint32_t {
+ 
+ const int MainWindow::max_recent_files_item;
+ 
++// En Local : un Joy-Con seul se tient sur le côté, le jeu tourne ses touches et son stick. La
++// manette (mappée comme une manette Pro) est tournée d'avance pour se tenir à l'endroit :
++// A B X Y à leur place, stick gauche, L et R pour SL et SR.
++static void EnLocalTourner(Core::HID::EmulatedController* pad, Core::HID::NpadStyleIndex type) {
++    using B = Settings::NativeButton::Values;
++    using A = Settings::NativeAnalog::Values;
++    if (pad->GetStickParam(A::LStick).Has("enlocal_tourne") || pad->GetStickParam(A::RStick).Has("enlocal_tourne"))
++        return;
++    const bool gauche = type == Core::HID::NpadStyleIndex::JoyconLeft;
++    std::array<Common::ParamPackage, Settings::NativeButton::NumButtons> b;
++    for (std::size_t k = 0; k < b.size(); ++k)
++        b[k] = pad->GetButtonParam(k);
++    const auto mettre = [&](B dest, B src) { pad->SetButtonParam(dest, b[src]); };
++    if (gauche) {
++        mettre(B::DDown, B::A), mettre(B::DLeft, B::B), mettre(B::DRight, B::X), mettre(B::DUp, B::Y);
++        mettre(B::SLLeft, B::L), mettre(B::SRLeft, B::R), mettre(B::Minus, B::Plus);
++    } else {
++        mettre(B::X, B::A), mettre(B::A, B::B), mettre(B::Y, B::X), mettre(B::B, B::Y);
++        mettre(B::SLRight, B::L), mettre(B::SRRight, B::R), mettre(B::RStick, B::LStick);
++    }
++    // Quart de tour, vérifié en jeu (Super Mario Party) : Joy-Con gauche (x, y) = (-haut, -droite),
++    // droit (x, y) = (haut, droite).
++    const auto u = pad->GetStickParam(A::LStick);
++    const auto inverse = [](const std::string& s) { return std::string(s == "-" ? "+" : "-"); };
++    const std::string ix = u.Get("invert_x", "+"), iy = u.Get("invert_y", "+");
++    auto t = u;
++    t.Set("axis_x", u.Get("axis_y", 1));
++    t.Set("axis_y", u.Get("axis_x", 0));
++    t.Set("offset_x", u.Get("offset_y", 0.0f));
++    t.Set("offset_y", u.Get("offset_x", 0.0f));
++    t.Set("invert_x", gauche ? inverse(iy) : iy);
++    t.Set("invert_y", gauche ? inverse(ix) : ix);
++    t.Set("enlocal_tourne", 1);
++    pad->SetStickParam(gauche ? A::LStick : A::RStick, t);
++    pad->SaveCurrentConfig();
++}
++
++// En Local : branche le joueur `i` (0 = joueur 1) dans le premier type que le jeu accepte, dans
++// l'ordre de la fenêtre de choix : Pro, paire de Joy-Con, Joy-Con seul (gauche aux joueurs
++// impairs, droit aux pairs). Un jeu peut refuser la manette Pro (Super Mario Party : Joy-Con seul).
++static bool EnLocalBrancher(Core::HID::EmulatedController* pad, std::size_t i,
++                            const std::function<bool(Core::HID::NpadStyleIndex)>& permis) {
++    using T = Core::HID::NpadStyleIndex;
++    const T seul = i % 2 == 0 ? T::JoyconLeft : T::JoyconRight;
++    for (const T type : {T::Fullkey, T::JoyconDual, seul, seul == T::JoyconLeft ? T::JoyconRight : T::JoyconLeft}) {
++        if (!permis(type))
++            continue;
++        pad->SetNpadStyleIndex(type);
++        pad->Connect();
++        if (pad->IsConnected()) {
++            if (type == T::JoyconLeft || type == T::JoyconRight)
++                EnLocalTourner(pad, type);
++            if (type != T::Fullkey)
++                LOG_INFO(Frontend, "En Local : joueur {} branché en type {}", i + 1, static_cast<int>(type));
++            return true;
++        }
++    }
++    return false;
++}
++
+ static void RemoveCachedContents() {
+     const auto cache_dir = Common::FS::GetEdenPath(Common::FS::EdenPath::CacheDir);
+     const auto offline_fonts = cache_dir / "fonts";
+@@ -412,6 +489,86 @@ inline static bool isDarkMode() {
+ }
+ #endif // _WIN32
+ 
++// En Local : entre dans un salon (au lancement avec --join, ou en cours de partie par le fichier
++// ENLOCAL_SALON). `places` > 0 : ce jeu héberge le salon lui-même (« Sur mon PC », comme Host Room).
++// L'ancien salon est quitté d'abord. Le salon de l'hôte n'existe qu'une fois son jeu lancé : on
++// réessaie d'y entrer pendant 2 min.
++static void EnLocalSalon(std::string host, u16 port, std::string nickname, std::string password, int places) {
++    if (auto member = Network::GetRoomMember().lock(); member && member->IsConnected())
++        member->Leave();
++    if (auto room = Network::GetRoom().lock(); room && room->GetState() == Network::Room::State::Open)
++        room->Destroy();
++    if (places > 0) {
++        if (auto room = Network::GetRoom().lock()) {
++            const bool cree = room->Create("En Local", "", "", port, password, static_cast<u32>(places), nickname, {},
++                                           std::make_unique<Network::VerifyUser::NullBackend>(), {});
++            LOG_INFO(Network, "En Local : salon hébergé par le jeu sur le port {} : {}", port, cree);
++        }
++    }
++    (void)QtConcurrent::run([=] {
++        for (int essai = 0; essai < 40; ++essai) {
++            auto member = Network::GetRoomMember().lock();
++            if (!member || member->IsConnected())
++                return;
++            member->Join(nickname, host.c_str(), port, 0, Network::NoPreferredIP, password);
++            for (int k = 0; k < 50 && member->GetState() == Network::RoomMember::State::Joining; ++k)
++                std::this_thread::sleep_for(std::chrono::milliseconds(100));
++            if (member->IsConnected())
++                return;
++            std::this_thread::sleep_for(std::chrono::seconds(3));
++        }
++    });
++}
++
++#ifdef __APPLE__
++// En Local (macOS) : la fenêtre du jeu s'affiche directement dans le cadre d'En Local, comme la fenêtre
++// fille sous Windows. Fichier ENLOCAL_CADRE : « x y largeur hauteur visible principale habillage »
++// (points ; numéros des fenêtres d'En Local). Visible : juste au-dessus de la fenêtre principale, sous
++// l'habillage (contours arrondis, décor, widgets), qui flotte au-dessus. Sinon (menu ouvert, En Local
++// caché ou réduit) : derrière tout.
++// Les clics traversent vers En Local, qui garde le clavier.
++// En Local : volume des jeux réglé dans l'app, en direct (fichier ENLOCAL_VOLUME_FICHIER, de 0 à 1).
++// Rend le nouveau volume s'il a changé depuis la dernière lecture, sinon -1.
++static double EnLocalVolume() {
++    static QDateTime lu;
++    const char* f = std::getenv("ENLOCAL_VOLUME_FICHIER");
++    if (!f)
++        return -1;
++    const QFileInfo info(QString::fromUtf8(f));
++    if (!info.exists() || info.lastModified() == lu)
++        return -1;
++    lu = info.lastModified();
++    QFile fichier(info.filePath());
++    bool ok = false;
++    const double v = fichier.open(QIODevice::ReadOnly) ? QString::fromUtf8(fichier.readAll()).trimmed().toDouble(&ok) : -1;
++    return ok && v >= 0 && v <= 1 ? v : -1;
++}
++
++static void EnLocalPlacer(void* vue, const QStringList& v) {
++    using Envoi = void* (*)(void*, void*);
++    using EnvoiL = void* (*)(void*, void*, long);
++    using Contient = signed char (*)(void*, void*, void*);
++    using Ordre = void (*)(void*, void*, long, long);
++    const auto sel = [](const char* n) { return reinterpret_cast<void*>(sel_registerName(n)); };
++    const auto classe = [](const char* n) { return reinterpret_cast<void*>(objc_getClass(n)); };
++    void* const fenetre = reinterpret_cast<Envoi>(objc_msgSend)(vue, sel("window"));
++    if (!fenetre)
++        return;
++    const long principale = v.value(5).toLong();
++    bool devant = v.value(4) == QStringLiteral("1") && principale > 0;
++    if (devant) {
++        // Fenêtres à l'écran, toutes apps confondues : celle d'En Local doit y être.
++        void* const liste = reinterpret_cast<EnvoiL>(objc_msgSend)(classe("NSWindow"), sel("windowNumbersWithOptions:"), 1);
++        void* const n = reinterpret_cast<EnvoiL>(objc_msgSend)(classe("NSNumber"), sel("numberWithLong:"), principale);
++        devant = liste && reinterpret_cast<Contient>(objc_msgSend)(liste, sel("containsObject:"), n);
++    }
++    reinterpret_cast<EnvoiL>(objc_msgSend)(fenetre, sel("setIgnoresMouseEvents:"), 1);
++    reinterpret_cast<EnvoiL>(objc_msgSend)(fenetre, sel("setLevel:"), devant ? 0 : -2147483623L + 1);
++    if (devant)
++        reinterpret_cast<Ordre>(objc_msgSend)(fenetre, sel("orderWindow:relativeTo:"), 1, principale);
++}
++#endif
++
+ MainWindow::MainWindow(bool has_broken_vulkan)
+     : ui{std::make_unique<Ui::MainWindow>()},
+       input_subsystem{std::make_shared<InputCommon::InputSubsystem>()}, user_data_migrator{this} {
+@@ -535,7 +692,241 @@ MainWindow::MainWindow(bool has_broken_vulkan)
+ #endif
+     UpdateWindowTitle();
+ 
+-    show();
++    // En Local : la fenêtre de rendu devient une fille native de celle du
++    // frontend (--parent) ; la fenêtre principale reste cachée.
++    {
++        const QStringList early_args = QApplication::arguments();
++        const auto at = early_args.indexOf(QStringLiteral("--parent"));
++        if (at > 0 && at < early_args.size() - 1)
++            embed_parent = static_cast<WId>(early_args[at + 1].toULongLong());
++#ifdef __APPLE__
++        // macOS : la valeur n'est pas une fenêtre, seulement « hébergé par En Local ».
++        if (at > 0 && !embed_parent)
++            embed_parent = 1;
++#endif
++    }
++    if (embed_parent) {
++        ui->action_Single_Window_Mode->setChecked(false);
++        ui->action_Fullscreen->setChecked(false);
++        ui->horizontalLayout->removeWidget(render_window);
++        render_window->setParent(nullptr);
++        render_window->setWindowFlags(Qt::Window | Qt::FramelessWindowHint);
++#ifdef __APPLE__
++        // macOS : aucune fenêtre d'un autre processus ne peut être parente. La fenêtre de rendu, sans cadre,
++        // se pose dans le cadre d'En Local (EnLocalPlacer). App d'arrière-plan : pas d'icône dans le Dock,
++        // pas de barre de menus, ne prend jamais la main à En Local.
++        reinterpret_cast<void (*)(void*, void*, long)>(objc_msgSend)(
++            reinterpret_cast<void* (*)(void*, void*)>(objc_msgSend)(
++                objc_getClass("NSApplication"), sel_registerName("sharedApplication")),
++            sel_registerName("setActivationPolicy:"), 1);
++        render_window->resize(640, 360);
++        render_window->winId();
++        render_window->show();
++        // Au départ juste au-dessus du bureau, derrière En Local, le temps que le jeu démarre.
++        if (void* const window = reinterpret_cast<void* (*)(void*, void*)>(objc_msgSend)(
++                reinterpret_cast<void*>(render_window->winId()), sel_registerName("window"))) {
++            reinterpret_cast<void (*)(void*, void*, long)>(objc_msgSend)(window, sel_registerName("setLevel:"),
++                                                                         -2147483623L + 1);
++        }
++        if (const char* cadre = std::getenv("ENLOCAL_CADRE")) {
++            auto* const cadre_timer = new QTimer(this);
++            // À chaque tour, pas seulement quand le fichier change : un clic dans En Local repasse sa
++            // fenêtre devant, le jeu revient aussitôt au-dessus.
++            connect(cadre_timer, &QTimer::timeout, this, [this, path = QString::fromUtf8(cadre), place = QRect{}]() mutable {
++                QFile f(path);
++                const QString line = f.open(QIODevice::ReadOnly) ? QString::fromUtf8(f.readAll()).trimmed() : QString{};
++                const QStringList v = line.split(QLatin1Char(' '), Qt::SkipEmptyParts);
++                if (v.size() < 4 || v[2].toInt() <= 0 || v[3].toInt() <= 0)
++                    return;
++                const QRect r(v[0].toInt(), v[1].toInt(), v[2].toInt(), v[3].toInt());
++                if (r != place) {
++                    place = r;
++                    render_window->setGeometry(r);
++                }
++                EnLocalPlacer(reinterpret_cast<void*>(render_window->winId()), v);
++                if (const double vol = EnLocalVolume(); vol >= 0)
++                    Settings::values.volume.SetValue(static_cast<u8>(vol * 100 + 0.5));
++            });
++            cadre_timer->start(50);
++        }
++#else
++        render_window->winId();
++        render_window->windowHandle()->setParent(QWindow::fromWinId(embed_parent));
++        render_window->move(0, 0);
++#endif
++        // Manette : la première manette SDL devient le joueur 1, aussi après un
++        // branchement ; Guide reste au frontend (son menu), pas de HOME Switch.
++        auto* const pad_timer = new QTimer(this);
++        connect(pad_timer, &QTimer::timeout, this, [this, mapped = std::string{}, distants = std::array<std::string, 7>{}]() mutable {
++            const auto devices = input_subsystem->GetInputDevices();
++            // La manette que le joueur utilise dans En Local (ENLOCAL_MANETTE : nintendo,
++            // playstation, xbox…) d'abord ; sinon la première. SDL, ou le pilote Joy-Con
++            // d'Eden (qui prend les manettes Pro et les Joy-Con).
++            const QString genre = QString::fromUtf8(std::getenv("ENLOCAL_MANETTE") ? std::getenv("ENLOCAL_MANETTE") : "");
++            const auto du_genre = [&](const Common::ParamPackage& d) {
++                const QString nom = QString::fromStdString(d.Get("display", "")) + QStringLiteral(" ") + QString::fromStdString(d.Get("engine", ""));
++                if (genre == QStringLiteral("nintendo"))
++                    return nom.contains(QRegularExpression(QStringLiteral("pro controller|joy-?con|nintendo|switch|joycon"), QRegularExpression::CaseInsensitiveOption));
++                if (genre == QStringLiteral("playstation"))
++                    return nom.contains(QRegularExpression(QStringLiteral("dualsense|dualshock|ps[345]|sony|wireless controller"), QRegularExpression::CaseInsensitiveOption));
++                if (genre == QStringLiteral("xbox"))
++                    return nom.contains(QRegularExpression(QStringLiteral("xbox|xinput"), QRegularExpression::CaseInsensitiveOption));
++                return false;
++            };
++            if (mapped.empty()) {
++                LOG_INFO(Frontend, "En Local : manette utilisée dans l'app : {}", genre.toStdString());
++                for (const auto& d : devices)
++                    LOG_INFO(Frontend, "En Local : périphérique {} ({})", d.Get("display", ""), d.Get("engine", ""));
++            }
++            // Jeu à distance (ENLOCAL_DISTANCE) : les manettes des invités, servies par En Local
++            // en DSU (cemuhookudp, 4 par port), deviennent les joueurs 2 à 8 en manette Pro.
++            if (std::getenv("ENLOCAL_DISTANCE")) {
++                for (std::size_t j = 0; j < distants.size(); ++j) {
++                    const auto it = std::find_if(devices.begin(), devices.end(), [j](const Common::ParamPackage& d) {
++                        return d.Get("engine", "") == "cemuhookudp" && d.Get("pad", -1) == static_cast<int>(j);
++                    });
++                    const std::string cle = it == devices.end() ? std::string{} : it->Serialize();
++                    if (cle == distants[j])
++                        continue;
++                    distants[j] = cle;
++                    auto* const joueur = QtCommon::system->HIDCore().GetEmulatedController(static_cast<Core::HID::NpadIdType>(j + 1));
++                    if (it == devices.end()) {
++                        joueur->Disconnect();
++                        LOG_INFO(Frontend, "En Local : joueur {} à distance parti", j + 2);
++                        continue;
++                    }
++                    for (const auto& [index, param] : input_subsystem->GetButtonMappingForDevice(*it))
++                        joueur->SetButtonParam(index, param);
++                    for (const auto& [index, param] : input_subsystem->GetAnalogMappingForDevice(*it))
++                        joueur->SetStickParam(index, param);
++                    joueur->SetButtonParam(Settings::NativeButton::Home, {});
++                    joueur->SetButtonParam(Settings::NativeButton::Screenshot, {});
++                    joueur->SaveCurrentConfig();
++                    EnLocalBrancher(joueur, j + 1, [](auto) { return true; });
++                    LOG_INFO(Frontend, "En Local : joueur {} à distance", j + 2);
++                }
++            }
++            std::vector<Common::ParamPackage> manettes;
++            for (const auto& d : devices)
++                if (d.Get("engine", "") == "sdl" || d.Get("engine", "") == "joycon")
++                    manettes.push_back(d);
++            std::stable_partition(manettes.begin(), manettes.end(), du_genre);
++            if (mapped.empty())
++                LOG_INFO(Frontend, "En Local : {} périphériques d'entrée", devices.size());
++            for (const auto& device : manettes) {
++                if (device.Serialize() == mapped)
++                    return;
++                mapped = device.Serialize();
++                LOG_INFO(Frontend, "En Local : manette {} au joueur 1", device.Get("display", ""));
++                // Mode portable : la console en main (Joy-Con attachés), que tous les jeux
++                // acceptent (Pokémon Let's Go refuse la manette Pro) ; sinon le joueur 1.
++                // Seulement pour les jeux qui refusent la manette Pro (En Local passe ENLOCAL_EN_MAIN) :
++                // ailleurs (Smash en session…), changer de type de manette la faisait décrocher.
++                const bool portable = !Settings::IsDockedMode() && std::getenv("ENLOCAL_EN_MAIN");
++                auto* const pad = QtCommon::system->HIDCore().GetEmulatedController(
++                    portable ? Core::HID::NpadIdType::Handheld : Core::HID::NpadIdType::Player1);
++                std::unordered_map<int, Common::ParamPackage> d_office;
++                for (const auto& [index, param] : input_subsystem->GetButtonMappingForDevice(device)) {
++                    d_office[static_cast<int>(index)] = param;
++                    pad->SetButtonParam(index, param);
++                }
++                if (const char* touches = std::getenv("ENLOCAL_TOUCHES")) {
++                    for (const auto& paire : QString::fromUtf8(touches).split(QLatin1Char(','), Qt::SkipEmptyParts)) {
++                        const auto ij = paire.split(QLatin1Char('='));
++                        if (ij.size() == 2 && d_office.contains(ij[1].toInt()))
++                            pad->SetButtonParam(ij[0].toInt(), d_office[ij[1].toInt()]);
++                    }
++                    LOG_INFO(Frontend, "En Local : touches {}", touches);
++                }
++                for (const auto& [index, param] : input_subsystem->GetAnalogMappingForDevice(device))
++                    pad->SetStickParam(index, param);
++                for (const auto& [index, param] : input_subsystem->GetMotionMappingForDevice(device))
++                    pad->SetMotionParam(index, param);
++                pad->SetButtonParam(Settings::NativeButton::Home, {});
++                pad->SaveCurrentConfig();
++                if (portable) {
++                    QtCommon::system->HIDCore().GetEmulatedController(Core::HID::NpadIdType::Player1)->Disconnect();
++                    pad->SetNpadStyleIndex(Core::HID::NpadStyleIndex::Handheld);
++                    pad->Connect();
++                    LOG_INFO(Frontend, "En Local : manette en console portable");
++                }
++                return;
++            }
++        });
++        pad_timer->start(1000);
++        // En Local : menu ouvert pendant une session (fichier ENLOCAL_MENU) : le jeu est en pause,
++        // la manette ne le touche plus, le salon reste connecté.
++        if (const char* menu = std::getenv("ENLOCAL_MENU")) {
++            auto* const menu_timer = new QTimer(this);
++            connect(menu_timer, &QTimer::timeout, this, [this, chemin = QString::fromUtf8(menu), en_pause = false]() mutable {
++                const bool ouvert = QFile::exists(chemin);
++                if (!emulation_running || !emu_thread || ouvert == en_pause)
++                    return;
++                en_pause = ouvert;
++                if (ouvert && emu_thread->IsRunning())
++                    OnPauseGame();
++                else if (!ouvert && !emu_thread->IsRunning())
++                    OnStartGame();
++            });
++            menu_timer->start(50);
++        }
++        // Amiibo choisi dans le menu d'En Local (fichier ENLOCAL_AMIIBO : chemin du .bin, vide = retiré).
++        // Il reste « sur le lecteur » : posé dès que le jeu en cherche un, et de nouveau à chaque recherche.
++        if (const char* fichier = std::getenv("ENLOCAL_AMIIBO")) {
++            auto* const amiibo_timer = new QTimer(this);
++            connect(amiibo_timer, &QTimer::timeout, this, [this, chemin = QString::fromUtf8(fichier), pose = QString{}]() mutable {
++                if (emu_thread == nullptr || !emu_thread->IsRunning())
++                    return;
++                QFile f(chemin);
++                const QString voulu = f.open(QIODevice::ReadOnly) ? QString::fromUtf8(f.readAll()).trimmed() : QString{};
++                auto* const amiibo = input_subsystem->GetVirtualAmiibo();
++                const auto etat = amiibo->GetCurrentState();
++                if (voulu != pose && etat == InputCommon::VirtualAmiibo::State::TagNearby)
++                    amiibo->CloseAmiibo();
++                if (voulu.isEmpty()) {
++                    pose.clear();
++                    return;
++                }
++                if (amiibo->GetCurrentState() != InputCommon::VirtualAmiibo::State::WaitingForAmiibo)
++                    return;
++                const auto info = amiibo->LoadAmiibo(voulu.toStdString());
++                LOG_INFO(Frontend, "En Local : amiibo posé ({})", static_cast<int>(info));
++                pose = voulu;
++            });
++            amiibo_timer->start(500);
++        }
++        // Session lancée en pleine partie : En Local écrit le salon dans le fichier ENLOCAL_SALON.
++        if (const char* fichier = std::getenv("ENLOCAL_SALON")) {
++            auto* const salon_timer = new QTimer(this);
++            connect(salon_timer, &QTimer::timeout, this, [chemin = QString::fromUtf8(fichier), vu = QString{}]() mutable {
++                QFile f(chemin);
++                if (!f.open(QIODevice::ReadOnly))
++                    return;
++                const QString texte = QString::fromUtf8(f.readAll());
++                if (texte == vu)
++                    return;
++                vu = texte;
++                const QStringList l = texte.split(QLatin1Char('\n'));
++                if (l.size() < 4)
++                    return;
++                const int sep = l[0].lastIndexOf(QLatin1Char(':'));
++                if (sep <= 0) {
++                    // Hôte vide : la session est quittée, la partie continue sans salon.
++                    LOG_INFO(Frontend, "En Local : salon quitté");
++                    if (auto member = Network::GetRoomMember().lock(); member && member->IsConnected())
++                        member->Leave();
++                    if (auto room = Network::GetRoom().lock(); room && room->GetState() == Network::Room::State::Open)
++                        room->Destroy();
++                    return;
++                }
++                LOG_INFO(Frontend, "En Local : salon en cours de partie, {}", l[0].toStdString());
++                EnLocalSalon(l[0].left(sep).toStdString(), static_cast<u16>(l[0].mid(sep + 1).toUInt()), l[1].toStdString(), l[2].toStdString(), l[3].trimmed().toInt());
++            });
++            salon_timer->start(1000);
++        }
++    } else {
++        show();
++    }
+ 
+ #ifdef ENABLE_UPDATE_CHECKER
+     if (UISettings::values.check_for_updates) {
+@@ -667,6 +1058,21 @@ MainWindow::MainWindow(bool has_broken_vulkan)
+             } else {
+                 LOG_ERROR(Frontend, "Selected user {} doesn't exist", selected_user);
+             }
++        } else if ((args[i] == QStringLiteral("--parent") || args[i] == QStringLiteral("--join") ||
++                    args[i] == QStringLiteral("--nickname") ||
++                    args[i] == QStringLiteral("--room-password") || args[i] == QStringLiteral("--host-room")) &&
++                   i < args.size() - 1) {
++            // En Local : options du frontend (--parent est lu plus haut).
++            const QString option = args[i];
++            const QString value = args[++i];
++            if (option == QStringLiteral("--join"))
++                join_room = value;
++            else if (option == QStringLiteral("--nickname"))
++                join_nickname = value;
++            else if (option == QStringLiteral("--room-password"))
++                join_password = value;
++            else if (option == QStringLiteral("--host-room"))
++                host_room_places = value.toInt();
+         } else if (args[i] == QStringLiteral("-g") && i < args.size() - 1) {
+             // Launch game at path
+             game_path = args[++i];
+@@ -684,6 +1090,17 @@ MainWindow::MainWindow(bool has_broken_vulkan)
+         }
+     }
+ 
++    // En Local : entre dans le salon de la session (comme « Connexion directe »).
++    if (!join_room.isEmpty()) {
++        const int sep = join_room.lastIndexOf(QLatin1Char(':'));
++        const std::string host = join_room.left(sep).toStdString();
++        const u16 port = sep < 0 ? Network::DefaultRoomPort
++                                 : static_cast<u16>(join_room.mid(sep + 1).toUInt());
++        const std::string nickname = join_nickname.toStdString();
++        const std::string password = join_password.toStdString();
++        EnLocalSalon(host, port, nickname, password, host_room_places);
++    }
++
+     // Override fullscreen setting if gamepath or argument is provided
+     if (has_gamepath || is_fullscreen) {
+         ui->action_Fullscreen->setChecked(is_fullscreen);
+@@ -743,6 +1160,45 @@ void MainWindow::AmiiboSettingsRequestExit() {
+ 
+ void MainWindow::ControllerSelectorReconfigureControllers(
+     const Core::Frontend::ControllerParameters& parameters) {
++    // En Local : pas de fenêtre de choix des manettes. Fenêtre principale cachée, elle restait
++    // invisible derrière l'app et le jeu l'attendait (la manette ne répondait plus, en session
++    // surtout). La manette déjà donnée au joueur 1 est gardée, comme un « OK ».
++    if (embed_parent) {
++        auto& hid = QtCommon::system->HIDCore();
++        hid.DisableAllControllerConfiguration();
++        // Un jeu peut refuser la manette Pro et la débrancher (Mario Party Jamboree : Joy-Con) :
++        // chaque joueur présent (le joueur 1, les invités à distance) est rebranché dans un type
++        // accepté, dans l'ordre de la fenêtre : Pro, paire de Joy-Con, Joy-Con seul.
++        LOG_INFO(Frontend, "En Local : choix des manettes, {} à {} joueurs, pro {} paire {} gauche {} droit {} seul {}",
++                 parameters.min_players, parameters.max_players, parameters.allow_pro_controller, parameters.allow_dual_joycons,
++                 parameters.allow_left_joycon, parameters.allow_right_joycon, parameters.enable_single_mode);
++        const auto devices = input_subsystem->GetInputDevices();
++        const std::size_t joueurs = parameters.enable_single_mode ? 1 : std::clamp<int>(parameters.max_players, 1, 8);
++        for (std::size_t i = 0; i < joueurs; ++i) {
++            auto* const pad = hid.GetEmulatedControllerByIndex(i);
++            const bool present = i == 0 ? !hid.GetEmulatedController(Core::HID::NpadIdType::Handheld)->IsConnected()
++                : std::getenv("ENLOCAL_DISTANCE") && std::any_of(devices.begin(), devices.end(), [i](const Common::ParamPackage& d) {
++                      return d.Get("engine", "") == "cemuhookudp" && d.Get("pad", -1) == static_cast<int>(i - 1);
++                  });
++            if (!present || pad->IsConnected())
++                continue;
++            EnLocalBrancher(pad, i, [&parameters](Core::HID::NpadStyleIndex type) {
++                using T = Core::HID::NpadStyleIndex;
++                return type == T::Fullkey ? parameters.allow_pro_controller
++                     : type == T::JoyconDual ? parameters.allow_dual_joycons
++                     : type == T::JoyconLeft ? parameters.allow_left_joycon
++                                             : parameters.allow_right_joycon;
++            });
++        }
++        QtCommon::system->ApplySettings();
++        config->SaveAllValues();
++        // Moins de joueurs que demandé (Mario Party Jamboree en veut 4) : valider faisait redemander
++        // le jeu en boucle jusqu'à figer. Annuler, comme B sur la Switch : le jeu revient au menu.
++        const bool assez = parameters.enable_single_mode || static_cast<int>(hid.GetPlayerCount()) >= parameters.min_players;
++        LOG_INFO(Frontend, "En Local : choix des manettes {} sans fenêtre ({} joueurs)", assez ? "validé" : "annulé", static_cast<int>(hid.GetPlayerCount()));
++        emit ControllerSelectorReconfigureFinished(assez);
++        return;
++    }
+     controller_applet =
+         new QtControllerSelectorDialog(this, parameters, input_subsystem.get(), *QtCommon::system);
+     SCOPE_EXIT {
+@@ -1852,7 +2308,15 @@ void MainWindow::SetupSigInterrupts() {
+     sig_interrupt_notifier = new QSocketNotifier(sig_interrupt_fds[1], QSocketNotifier::Read, this);
+     connect(sig_interrupt_notifier, &QSocketNotifier::activated, this,
+             &MainWindow::OnSigInterruptNotifierActivated);
+-    connect(this, &MainWindow::SigInterrupt, this, &MainWindow::close);
++    // En Local : arrêt demandé par l'app (fenêtre principale cachée). Le jeu s'arrête proprement (sauvegardes,
++    // caches), puis Eden quitte sans refermer toute son interface : la fermeture prenait plus de 10 s.
++    connect(this, &MainWindow::SigInterrupt, this, [this] {
++        if (embed_parent) {
++            ShutdownGame();
++            std::_Exit(0);
++        }
++        close();
++    });
+ }
+ 
+ void MainWindow::HandleSigInterrupt(int sig) {
+diff --git a/src/yuzu/main_window.h b/src/yuzu/main_window.h
+index b676c05..32daf64 100644
+--- a/src/yuzu/main_window.h
++++ b/src/yuzu/main_window.h
+@@ -171,6 +171,15 @@ public:
+     void filterBarSetChecked(bool state);
+     void UpdateUITheme();
+     explicit MainWindow(bool has_broken_vulkan);
++
++    /// En Local : lancé par un frontend (--parent), pas de fenêtre principale visible.
++    bool IsEmbedded() const {
++        return embed_parent != 0;
++    }
++    // Fenêtre native qui accueille le rendu (--parent), 0 sinon ; salon de --join.
++    WId embed_parent = 0;
++    QString join_room, join_nickname, join_password;
++    int host_room_places = 0; // En Local : places du salon hébergé par ce jeu (--host-room)
+     ~MainWindow() override;
+ 
+     bool DropAction(QDropEvent* event);
+diff --git a/src/yuzu/multiplayer/state.cpp b/src/yuzu/multiplayer/state.cpp
+index f682c29..989c14e 100644
+--- a/src/yuzu/multiplayer/state.cpp
++++ b/src/yuzu/multiplayer/state.cpp
+@@ -152,7 +152,9 @@ void MultiplayerState::OnNetworkStateChanged(const Network::RoomMember::State& s
+     if (state == Network::RoomMember::State::Joined ||
+         state == Network::RoomMember::State::Moderator) {
+ 
+-        OnOpenNetworkRoom();
++        // En Local : pas de fenêtre de salon quand la fenêtre principale est cachée.
++        if (window()->isVisible())
++            OnOpenNetworkRoom();
+         SetNotificationStatus(NotificationStatus::Connected);
+     } else {
+         SetNotificationStatus(NotificationStatus::Disconnected);

@@ -188,15 +188,19 @@ pub fn distance_arret() {
     }
 }
 
+#[cfg(windows)]
 #[windows::core::implement(windows::Win32::Media::Audio::IActivateAudioInterfaceCompletionHandler, windows::Win32::System::Com::IAgileObject)]
 struct Active(windows::Win32::Foundation::HANDLE);
+#[cfg(windows)]
 impl windows::Win32::Media::Audio::IActivateAudioInterfaceCompletionHandler_Impl for Active_Impl {
     fn ActivateCompleted(&self, _: Option<&windows::Win32::Media::Audio::IActivateAudioInterfaceAsyncOperation>) -> windows::core::Result<()> {
         unsafe { windows::Win32::System::Threading::SetEvent(self.0) }
     }
 }
+#[cfg(windows)]
 impl windows::Win32::System::Com::IAgileObject_Impl for Active_Impl {}
 
+#[cfg(windows)]
 /// Boucle WASAPI limitée au processus de l'émulateur (Windows 10 2004 et plus).
 fn capturer_son(vers: &Channel<InvokeResponseBody>) -> windows::core::Result<()> {
     use windows::core::Interface;
@@ -257,6 +261,20 @@ fn capturer_son(vers: &Channel<InvokeResponseBody>) -> windows::core::Result<()>
         }
         let _ = client.Stop();
     }
+    Ok(())
+}
+
+/// macOS : le son de l'émulateur seul, par ScreenCaptureKit (autorisation « Enregistrement de l'écran »,
+/// déjà donnée pour l'affichage des jeux).
+#[cfg(not(windows))]
+fn capturer_son(vers: &Channel<InvokeResponseBody>) -> Result<(), String> {
+    let pid = crate::embed::pid_jeu().ok_or("aucun émulateur lancé")?;
+    let flux = crate::mac_capture::son(pid, vers.clone())?;
+    crate::journal_rust(&format!("jeu à distance : son du processus {pid}"));
+    while SON.load(Ordering::SeqCst) {
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    let _ = flux.stop_capture();
     Ok(())
 }
 

@@ -1,4 +1,5 @@
-// Cœur libretro (melonDS) chargé dans l'app, dans son propre thread.
+// Cœur libretro chargé dans l'app, dans son propre thread : melonDS (DS), et sur Mac les cœurs
+// des consoles 2D (NES, Super Nintendo, Game Boy, GBA, PS1).
 // Images vers l'interface, son par cpal, manette par pad.rs.
 // Les rappels libretro n'ont pas de contexte : l'état est global, un seul jeu à la fois.
 use std::collections::{HashMap, VecDeque};
@@ -56,7 +57,8 @@ static PIXEL_FORMAT: AtomicU32 = AtomicU32::new(0);
 static POINTER: [AtomicI16; 3] = [AtomicI16::new(0), AtomicI16::new(0), AtomicI16::new(0)];
 static FRAMES: OnceLock<Mutex<Option<Channel<InvokeResponseBody>>>> = OnceLock::new();
 static AUDIO: OnceLock<Mutex<VecDeque<i16>>> = OnceLock::new();
-static DIRS: OnceLock<(CString, CString)> = OnceLock::new();
+/// Dossiers système et sauvegardes du jeu en cours.
+static DIRS: Mutex<Option<(CString, CString)>> = Mutex::new(None);
 // Options du cœur, gardées vivantes pour GET_VARIABLE.
 static OPTIONS: OnceLock<Mutex<HashMap<String, CString>>> = OnceLock::new();
 /// Pseudo du joueur (GET_USERNAME), utilisé comme nom du firmware DS.
@@ -89,11 +91,11 @@ unsafe extern "C" fn environment(cmd: c_uint, data: *mut c_void) -> bool {
         }
         6 | 8 | 11 | 18 | 35 | 36 | 44 => true,
         9 => {
-            *(data as *mut *const c_char) = DIRS.get().unwrap().0.as_ptr();
+            *(data as *mut *const c_char) = DIRS.lock().unwrap().as_ref().map_or(std::ptr::null(), |d| d.0.as_ptr());
             true
         }
         31 => {
-            *(data as *mut *const c_char) = DIRS.get().unwrap().1.as_ptr();
+            *(data as *mut *const c_char) = DIRS.lock().unwrap().as_ref().map_or(std::ptr::null(), |d| d.1.as_ptr());
             true
         }
         10 => {
@@ -175,6 +177,12 @@ unsafe extern "C" fn video_refresh(data: *const c_void, width: c_uint, height: c
                 1 => {
                     let p = row.add(x * 4);
                     out.extend_from_slice(&[*p.add(2), *p.add(1), *p, 255]);
+                }
+                // 0RGB1555 (format par défaut des cœurs qui n'en demandent pas).
+                0 => {
+                    let v = *(row.add(x * 2) as *const u16);
+                    let (r, g, b) = ((v >> 10) & 31, (v >> 5) & 31, v & 31);
+                    out.extend_from_slice(&[(r << 3) as u8, (g << 3) as u8, (b << 3) as u8, 255]);
                 }
                 _ => {
                     let v = *(row.add(x * 2) as *const u16);
@@ -272,17 +280,21 @@ fn audio_stream(rate_in: f64) -> Option<cpal::Stream> {
 }
 
 /// Lance game avec le cœur core. reglages : options du cœur, volume de 0 à 1.
-pub fn start(core: String, game: String, base: String, frames: Channel<InvokeResponseBody>, reglages: Vec<(&'static str, String)>, volume: f32, touches: [u8; 16]) -> Result<(), String> {
+/// touches : pour chaque bouton du RetroPad, le bouton de la manette. manette : type de manette du port 1
+/// (PS1 : DualShock), sinon celle du cœur.
+pub fn start(core: String, game: String, base: String, frames: Channel<InvokeResponseBody>, reglages: Vec<(&'static str, String)>, volume: f32, touches: [u8; 16], manette: Option<c_uint>) -> Result<(), String> {
     if RUNNING.swap(true, Ordering::Relaxed) {
         return Err("Un jeu tourne déjà".into());
     }
-    let system = format!("{base}\\system");
-    let saves = format!("{base}\\saves");
-    let fichier_save = std::path::Path::new(&game).file_stem().map(|s| format!("{saves}\\{}.sav", s.to_string_lossy()));
+    let system = chemin!("{base}\\system");
+    let saves = chemin!("{base}\\saves");
+    let fichier_save = std::path::Path::new(&game).file_stem().map(|s| chemin!("{saves}\\{}.sav", s.to_string_lossy()));
     let _ = std::fs::create_dir_all(&system);
     let _ = std::fs::create_dir_all(&saves);
-    let _ = DIRS.set((CString::new(system).unwrap(), CString::new(saves).unwrap()));
+    *DIRS.lock().unwrap() = Some((CString::new(system).unwrap(), CString::new(saves).unwrap()));
     *FRAMES.get_or_init(|| Mutex::new(None)).lock().unwrap() = Some(frames);
+    PIXEL_FORMAT.store(0, Ordering::Relaxed);
+    options().lock().unwrap().clear();
     options().lock().unwrap().insert("melonds_show_cursor".into(), CString::new("disabled").unwrap());
     // Wi-Fi des jeux DS : réseau indirect (sans pilote ni droits admin). Le serveur est dans les réglages.
     options().lock().unwrap().insert("melonds_network_mode".into(), CString::new("indirect").unwrap());
@@ -325,6 +337,9 @@ pub fn start(core: String, game: String, base: String, frames: Channel<InvokeRes
         let info = GameInfo { path: path.as_ptr(), data: data.as_ptr() as *const c_void, size: data.len(), meta: std::ptr::null() };
         if !sym!("retro_load_game", unsafe extern "C" fn(*const GameInfo) -> bool)(&info) {
             return fail(&tx, "le cœur refuse ce jeu".into());
+        }
+        if let Some(m) = manette {
+            sym!("retro_set_controller_port_device", unsafe extern "C" fn(c_uint, c_uint))(0, m);
         }
         let mut av = AvInfo::default();
         sym!("retro_get_system_av_info", unsafe extern "C" fn(*mut AvInfo))(&mut av);

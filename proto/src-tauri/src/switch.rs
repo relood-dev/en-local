@@ -123,22 +123,12 @@ fn header_key(prod_keys: &Path) -> Option<[u8; 32]> {
 }
 /// AES-128-XTS (tweak de Nintendo : numéro de secteur en gros-boutiste) sur le début d'un secteur.
 fn xts_dechiffrer(cle: &[u8; 32], secteur: u64, donnees: &[u8]) -> Option<Vec<u8>> {
-    use windows::Win32::Security::Cryptography::*;
+    use aes::cipher::{BlockDecrypt, BlockEncrypt, KeyInit};
     let aes = |k: &[u8], bloc: &[u8], chiffrer: bool| -> Option<[u8; 16]> {
-        let mut h = BCRYPT_KEY_HANDLE::default();
-        let mut sortie = [0u8; 16];
-        let mut n = 0u32;
-        unsafe {
-            BCryptGenerateSymmetricKey(BCRYPT_AES_ECB_ALG_HANDLE, &mut h, None, k, 0).ok().ok()?;
-            let r = if chiffrer {
-                BCryptEncrypt(h, Some(bloc), None, None, Some(&mut sortie), &mut n, BCRYPT_FLAGS(0))
-            } else {
-                BCryptDecrypt(h, Some(bloc), None, None, Some(&mut sortie), &mut n, BCRYPT_FLAGS(0))
-            };
-            let _ = BCryptDestroyKey(h);
-            r.ok().ok()?;
-        }
-        Some(sortie)
+        let c = aes::Aes128::new_from_slice(k).ok()?;
+        let mut b = aes::Block::clone_from_slice(bloc.get(..16)?);
+        if chiffrer { c.encrypt_block(&mut b) } else { c.decrypt_block(&mut b) }
+        Some(b.into())
     };
     let mut tweak = [0u8; 16];
     tweak[8..].copy_from_slice(&secteur.to_be_bytes());

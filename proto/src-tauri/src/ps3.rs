@@ -1,12 +1,10 @@
 //! PS3 : RPCS3, collé dans notre fenêtre comme Cemu. Jeux : dossier de disque (PS3_GAME) ou .iso
 //! déchiffré. Le firmware n'est pas fourni : chacun installe celui de Sony (PS3UPDAT.PUP).
+use crate::plateforme::SansFenetre;
 use std::io::{Read, Seek, SeekFrom};
-use std::os::windows::process::CommandExt;
 use std::path::Path;
 use std::process::Command;
 use std::time::{Duration, Instant};
-
-const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 /// Champs texte d'un PARAM.SFO (TITLE, TITLE_ID…).
 pub fn sfo(b: &[u8]) -> Vec<(String, String)> {
@@ -86,8 +84,17 @@ fn sfo_iso(path: &str) -> Option<Vec<u8>> {
 }
 
 /// Firmware installé (dev_flash), sinon RPCS3 ne lance rien.
+/// Données de RPCS3 (config, dev_flash…) : à côté de rpcs3.exe ; sur Mac, dans « portable » à côté de
+/// RPCS3.app (mode portable de RPCS3 : sinon il range tout dans ~/Library/Application Support).
+fn donnees(dir: &str) -> String {
+    if cfg!(windows) { dir.to_string() } else { format!("{dir}/portable") }
+}
+fn programme(dir: &str) -> String {
+    if cfg!(windows) { crate::embed::exe(dir, "rpcs3.exe", crate::embed::EXE_PS3) } else { format!("{dir}/RPCS3.app/Contents/MacOS/rpcs3") }
+}
+
 pub fn firmware(dir: &str) -> bool {
-    Path::new(dir).join("dev_flash").join("vsh").join("etc").join("version.txt").exists()
+    Path::new(&donnees(dir)).join("dev_flash").join("vsh").join("etc").join("version.txt").exists()
 }
 
 /// Installe le PS3UPDAT.PUP de Sony choisi par le joueur. RPCS3 ne le fait qu'avec son interface :
@@ -97,7 +104,15 @@ pub fn installer_firmware(dir: &str, pup: &str) -> Result<(), String> {
         return Err("Choisis le fichier PS3UPDAT.PUP téléchargé sur le site de Sony.".into());
     }
     preparer(dir, &Default::default()).map_err(|e| e.to_string())?;
-    let mut child = Command::new(format!("{dir}\\rpcs3.exe")).args(["--installfw", pup]).spawn().map(crate::embed::tie).map_err(|e| e.to_string())?;
+    if !Path::new(&programme(dir)).is_file() {
+        return Err("RPCS3 (l'émulateur PS3) n'est pas installé.".into());
+    }
+    let _ = std::fs::create_dir_all(donnees(dir));
+    // macOS : RPCS3 ouvert caché (open -j) et en arrière-plan ; « open » se termine avec lui (-W).
+    #[cfg(not(windows))]
+    let mut child = Command::new("open").args(["-j", "-g", "-n", "-W", &format!("{dir}/RPCS3.app"), "--args", "--installfw", pup]).spawn().map_err(|e| e.to_string())?;
+    #[cfg(windows)]
+    let mut child = Command::new(programme(dir)).args(["--installfw", pup]).spawn().map(crate::embed::tie).map_err(|e| e.to_string())?;
     let fin = Instant::now() + Duration::from_secs(600);
     while !firmware(dir) && Instant::now() < fin && !matches!(child.try_wait(), Ok(Some(_))) {
         std::thread::sleep(Duration::from_millis(500));
@@ -105,6 +120,9 @@ pub fn installer_firmware(dir: &str, pup: &str) -> Result<(), String> {
     // Le fichier de version arrive en dernier : on laisse RPCS3 finir d'écrire.
     std::thread::sleep(Duration::from_secs(3));
     let _ = child.kill();
+    // macOS : c'est « open » qui a été arrêté, RPCS3 tourne encore.
+    #[cfg(not(windows))]
+    let _ = Command::new("pkill").args(["-f", &programme(dir)]).status();
     if firmware(dir) { Ok(()) } else { Err("RPCS3 n'a pas pu installer ce firmware.".into()) }
 }
 
@@ -121,11 +139,12 @@ fn bouton(o: &crate::reglages::Opts, id: &str, defaut: &str) -> &'static str {
 /// config.yml : sans plein écran, RPCS3 se ferme avec le jeu. Et jamais son écran de bienvenue
 /// ni ses confirmations (réglages de son interface, GuiConfigs\CurrentSettings.ini).
 fn preparer(dir: &str, o: &crate::reglages::Opts) -> std::io::Result<()> {
-    let cfg = format!("{dir}\\config");
-    std::fs::create_dir_all(format!("{cfg}\\input_configs\\global"))?;
-    std::fs::write(format!("{cfg}\\config.yml"), crate::reglages::rpcs3(o))?;
-    let gui = format!("{dir}\\GuiConfigs\\CurrentSettings.ini");
-    std::fs::create_dir_all(format!("{dir}\\GuiConfigs"))?;
+    let dir = &donnees(dir);
+    let cfg = chemin!("{dir}\\config");
+    std::fs::create_dir_all(chemin!("{cfg}\\input_configs\\global"))?;
+    std::fs::write(chemin!("{cfg}\\config.yml"), crate::reglages::rpcs3(o))?;
+    let gui = chemin!("{dir}\\GuiConfigs\\CurrentSettings.ini");
+    std::fs::create_dir_all(chemin!("{dir}\\GuiConfigs"))?;
     std::fs::write(&gui, sans_bienvenue(&std::fs::read_to_string(&gui).unwrap_or_default()))
 }
 
@@ -161,13 +180,16 @@ pub fn start(dir: &str, game: &str, parent: isize, o: &crate::reglages::Opts) ->
             pad += &format!("    {cle}: {}\n", bouton(o, id, d));
         }
     }
-    std::fs::write(format!("{dir}\\config\\input_configs\\global\\Default.yml"), pad).map_err(|e| e.to_string())?;
+    std::fs::write(chemin!("{}\\config\\input_configs\\global\\Default.yml", donnees(dir)), pad).map_err(|e| e.to_string())?;
     // Dossier de disque : RPCS3 veut le dossier du jeu (celui qui contient PS3_GAME).
     let cible = if game.to_lowercase().ends_with(".iso") { game.to_string() } else { Path::new(game).parent().and_then(|p| p.parent()).ok_or("dossier du jeu introuvable")?.to_string_lossy().into_owned() };
-    let child = Command::new(crate::embed::exe(dir, "rpcs3.exe", crate::embed::EXE_PS3))
+    let mut cmd = Command::new(programme(dir));
+    #[cfg(not(windows))]
+    crate::embed::suivre_cadre_injecte(&mut cmd);
+    let child = cmd
         .env("SDL_GAMECONTROLLERCONFIG", crate::pad::mappings())
         .args(["--no-gui", &cible])
-        .creation_flags(CREATE_NO_WINDOW)
+        .sans_fenetre()
         .spawn()
         .map(crate::embed::tie)
         .map_err(|e| e.to_string())?;

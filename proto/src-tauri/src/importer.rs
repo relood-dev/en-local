@@ -1,6 +1,7 @@
 //! Ajouter des jeux : fichiers ou archives (.zip, .7z, .rar) déposés dans l'app. Les archives sont
 //! décompressées, chaque jeu, mise à jour ou DLC va dans le dossier de sa console, puis le dossier
 //! des jeux est rangé. Les fichiers d'origine ne sont jamais supprimés quand ils viennent d'ailleurs.
+use crate::plateforme::SansFenetre;
 
 use crate::dossier::{self, Classer, CONSOLES, MAJ};
 use std::path::{Path, PathBuf};
@@ -18,7 +19,7 @@ pub struct Bilan {
     pub messages: Vec<String>,
 }
 
-fn est_archive(p: &Path) -> bool {
+pub fn est_archive(p: &Path) -> bool {
     p.extension().and_then(|e| e.to_str()).is_some_and(|e| ARCHIVES.contains(&e.to_lowercase().as_str()))
 }
 
@@ -104,9 +105,17 @@ fn sans_liens(d: &Path) -> bool {
 /// fichiers aux noms avec ™ ou 【】 (les DLC de Smash). .NET refuse aussi les chemins qui sortent de `vers`.
 /// Les .rar et .7z passent par 7-Zip, livré avec En Local : le tar de Windows lit mal les RAR5.
 /// Les chemins passent par l'environnement ou en arguments, jamais dans le texte d'une commande.
-fn decompresser(archive: &Path, vers: &Path) -> bool {
-    use std::os::windows::process::CommandExt;
+pub fn decompresser(archive: &Path, vers: &Path) -> bool {
     let zip = archive.extension().is_some_and(|e| e.eq_ignore_ascii_case("zip"));
+    // macOS : le tar du système (bsdtar) lit les .zip, .7z et .rar.
+    #[cfg(not(windows))]
+    let mut c = {
+        let _ = zip;
+        let mut c = std::process::Command::new("tar");
+        c.arg("-xf").arg(archive).arg("-C").arg(vers);
+        c
+    };
+    #[cfg(windows)]
     let mut c = if zip {
         let mut c = std::process::Command::new("powershell");
         c.args(["-NoProfile", "-NonInteractive", "-Command", "Add-Type -AssemblyName System.IO.Compression.FileSystem; [IO.Compression.ZipFile]::ExtractToDirectory($env:ENLOCAL_ARCHIVE, $env:ENLOCAL_VERS)"]);
@@ -121,7 +130,7 @@ fn decompresser(archive: &Path, vers: &Path) -> bool {
         c.arg("-xf").arg(archive).arg("-C").arg(vers);
         c
     };
-    c.creation_flags(0x0800_0000).status().is_ok_and(|s| s.success())
+    c.sans_fenetre().status().is_ok_and(|s| s.success())
 }
 
 /// Ajoute `chemins` (fichiers, dossiers, archives) au dossier des jeux. `etape` : texte de progression.
@@ -343,9 +352,12 @@ mod tests {
             std::fs::write(d.join("src").join(n), b"x").unwrap();
         }
         let zip = d.join("a.zip");
+        #[cfg(windows)]
         let ok = std::process::Command::new("powershell")
             .args(["-NoProfile", "-Command", "Add-Type -AssemblyName System.IO.Compression.FileSystem; [IO.Compression.ZipFile]::CreateFromDirectory($env:S, $env:Z)"])
             .env("S", d.join("src")).env("Z", &zip).status().unwrap().success();
+        #[cfg(not(windows))]
+        let ok = std::process::Command::new("zip").arg("-qj").arg(&zip).args(noms.iter().map(|n| d.join("src").join(n))).status().unwrap().success();
         assert!(ok);
         std::fs::create_dir_all(d.join("out")).unwrap();
         assert!(super::decompresser(&zip, &d.join("out")));

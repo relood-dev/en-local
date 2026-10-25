@@ -1,9 +1,7 @@
 //! Jeux Switch compressés (.nsz, .xcz), qu'Eden ne lit pas.
 //! nsz les décompresse au premier lancement avec les clés du joueur, puis l'original est supprimé.
-use std::os::windows::process::CommandExt;
+use crate::plateforme::SansFenetre;
 use std::path::{Path, PathBuf};
-
-const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 fn compresse(p: &Path) -> bool {
     p.extension().and_then(|x| x.to_str()).is_some_and(|x| x.eq_ignore_ascii_case("nsz") || x.eq_ignore_ascii_case("xcz"))
@@ -44,7 +42,7 @@ fn un(nsz: &Path, f: &Path, maison: &Path) -> Result<(), String> {
         .args([std::ffi::OsStr::new("-D"), std::ffi::OsStr::new("-o"), dir.as_os_str(), f.as_os_str()])
         .env("USERPROFILE", maison)
         .env("HOME", maison)
-        .creation_flags(CREATE_NO_WINDOW)
+        .sans_fenetre()
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status()
@@ -71,13 +69,13 @@ pub async fn preparer_switch(path: String) -> Result<String, String> {
         if fichiers.is_empty() {
             return Ok(path);
         }
-        let nsz = PathBuf::from(format!("{}\\emu\\nsz\\nsz.exe", crate::root()));
-        let cles = PathBuf::from(format!("{}\\user\\keys\\prod.keys", crate::eden()));
+        let nsz = PathBuf::from(chemin!("{}\\emu\\nsz\\nsz.exe", crate::root()));
+        let cles = PathBuf::from(chemin!("{}\\user\\keys\\prod.keys", crate::eden()));
         if !cles.exists() {
             return Err("Il faut d'abord les clés de ta Switch (Réglages, Nintendo Switch).".into());
         }
         // nsz cherche les clés dans ~\.switch : dossier temporaire le temps de la décompression.
-        let maison = PathBuf::from(format!("{}\\data\\nsz-maison", crate::root()));
+        let maison = PathBuf::from(chemin!("{}\\data\\nsz-maison", crate::root()));
         std::fs::create_dir_all(maison.join(".switch")).map_err(|e| e.to_string())?;
         std::fs::copy(&cles, maison.join(".switch").join("prod.keys")).map_err(|e| e.to_string())?;
         let r = fichiers.iter().try_for_each(|f| un(&nsz, f, &maison));

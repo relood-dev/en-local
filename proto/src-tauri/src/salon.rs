@@ -1,8 +1,8 @@
 //! Salon Switch hébergé sur le PC de l'hôte : pare-feu, port UPnP, vérification par Loc, puis Eden héberge.
 //! En cas d'échec, on reste sur le serveur du Local.
+use crate::plateforme::SansFenetre;
 use std::net::{SocketAddr, UdpSocket};
 use std::hash::Hasher;
-use std::os::windows::process::CommandExt;
 use std::process::Command;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -10,7 +10,6 @@ use std::time::{Duration, Instant};
 const PORTS: std::ops::RangeInclusive<u16> = 24872..=24891;
 // Le nom change avec le programme autorisé (la Switch est lancée sous le nom enlocal-switch.exe).
 const REGLE: &str = "En Local - salon du jeu (2)";
-const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 struct Salon {
     port: u16,
@@ -22,7 +21,7 @@ static SALON: Mutex<Option<Salon>> = Mutex::new(None);
 
 /// Règles du pare-feu (UDP entrant). Demande les droits admin une seule fois.
 fn pare_feu() -> Result<(), String> {
-    let existe = Command::new("netsh").args(["advfirewall", "firewall", "show", "rule", &format!("name={REGLE}")]).creation_flags(CREATE_NO_WINDOW).output();
+    let existe = Command::new("netsh").args(["advfirewall", "firewall", "show", "rule", &format!("name={REGLE}")]).sans_fenetre().output();
     if existe.is_ok_and(|o| o.status.success()) {
         return Ok(());
     }
@@ -31,7 +30,7 @@ fn pare_feu() -> Result<(), String> {
     let cmd = format!("{} & {}", regle(&exe.to_string_lossy()), regle(&crate::embed::exe(&crate::eden(), "eden.exe", crate::embed::EXE_SWITCH)));
     // Les guillemets simples sont doublés pour PowerShell.
     let ps = format!("Start-Process cmd -Verb RunAs -WindowStyle Hidden -Wait -ArgumentList '/c {}'", cmd.replace('\'', "''"));
-    let ok = Command::new("powershell").args(["-NoProfile", "-Command", &ps]).creation_flags(CREATE_NO_WINDOW).status().is_ok_and(|s| s.success());
+    let ok = Command::new("powershell").args(["-NoProfile", "-Command", &ps]).sans_fenetre().status().is_ok_and(|s| s.success());
     if ok { Ok(()) } else { Err("Le pare-feu de Windows n'a pas été autorisé.".into()) }
 }
 

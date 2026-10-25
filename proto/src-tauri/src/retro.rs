@@ -2,12 +2,10 @@
 //! et un cœur par console, collé dans notre fenêtre comme Cemu. En session, le netplay de RetroArch passe
 //! par le relais de Loc (loc-lab.fr:55435) : personne n'ouvre de port.
 //! PS1 : PCSX ReARMed, sans BIOS (le sien remplace celui de Sony). PS2 : LRPS2, avec le BIOS de sa PS2.
+use crate::plateforme::SansFenetre;
 use std::io::{Read, Seek, SeekFrom};
-use std::os::windows::process::CommandExt;
 use std::path::Path;
 use std::process::Command;
-
-const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 const RELAIS: &str = "loc-lab.fr";
 const PORT_RELAIS: u16 = 55435;
 
@@ -203,6 +201,26 @@ fn boutons(console: &str) -> &'static [(&'static str, &'static str, &'static str
     }
 }
 
+/// Cœurs chargés dans En Local (Mac) : les consoles dessinées par le processeur.
+pub fn dans_app(console: &str) -> bool {
+    cfg!(not(windows)) && matches!(console, "NES" | "SNES" | "GB" | "GBC" | "GBA" | "PS1")
+}
+pub fn coeur_dans_app(dir: &str, console: &str) -> Option<String> {
+    Some(chemin!("{dir}\\{}_libretro.dylib", coeur(console)?))
+}
+/// Pour chaque bouton du RetroPad, le bouton de la manette (touches choisies, sinon la même place).
+pub fn touches(console: &str, o: &crate::reglages::Opts) -> [u8; 16] {
+    const RETROPAD: [&str; 16] = ["b", "y", "select", "start", "up", "down", "left", "right", "a", "x", "l", "r", "l2", "r2", "l3", "r3"];
+    let mut t: [u8; 16] = std::array::from_fn(|i| i as u8);
+    for (id, retropad, defaut) in boutons(console) {
+        let p = crate::reglages::touche(o, id).unwrap_or(defaut);
+        if let (Some(i), Some(b)) = (RETROPAD.iter().position(|x| x == retropad), crate::reglages::PHYS.iter().position(|x| *x == p)) {
+            t[i] = b as u8;
+        }
+    }
+    t
+}
+
 /// Entrée SDL2 « manette de jeu » pour RetroArch : boutons 0 à 14, gâchettes sur les axes 4 et 5.
 fn entree(p: &str) -> (&'static str, &'static str) {
     match p {
@@ -290,8 +308,8 @@ fn options_n64(dir: &str, game: &str) -> std::io::Result<()> {
 
 /// Options d'un cœur (config\<cœur>\<cœur>.opt) imposées par En Local ; les autres sont gardées.
 fn options_coeur(dir: &str, coeur: &str, reglees: &[(&str, &str)]) -> std::io::Result<()> {
-    let d = format!("{dir}\\config\\{coeur}");
-    let f = format!("{d}\\{coeur}.opt");
+    let d = chemin!("{dir}\\config\\{coeur}");
+    let f = chemin!("{d}\\{coeur}.opt");
     let mut out: Vec<String> = std::fs::read_to_string(&f).unwrap_or_default().lines().filter(|x| !reglees.iter().any(|(k, _)| x.split(" =").next() == Some(*k))).map(String::from).collect();
     out.extend(reglees.iter().map(|(k, v)| format!("{k} = \"{v}\"")));
     std::fs::create_dir_all(d)?;
@@ -300,7 +318,7 @@ fn options_coeur(dir: &str, coeur: &str, reglees: &[(&str, &str)]) -> std::io::R
 
 pub fn start(dir: &str, game: &str, console: &str, parent: isize, o: &crate::reglages::Opts) -> Result<String, String> {
     let coeur = coeur(console).ok_or("console inconnue")?;
-    let dll = format!("{dir}\\cores\\{coeur}_libretro.dll");
+    let dll = chemin!("{dir}\\cores\\{coeur}_libretro.{}", if cfg!(windows) { "dll" } else { "dylib" });
     if !std::path::Path::new(&dll).exists() {
         return Err(format!("cœur {coeur} manquant"));
     }
@@ -316,9 +334,18 @@ pub fn start(dir: &str, game: &str, console: &str, parent: isize, o: &crate::reg
         let _ = options_coeur(dir, "LRPS2", &[("pcsx2_mtvu", "enabled")]);
     }
     let pseudo = o.get("pseudo").cloned().unwrap_or_default();
-    let cfg = format!("{dir}\\enlocal.cfg");
-    std::fs::write(&cfg, config(console, o, &pseudo)).map_err(|e| e.to_string())?;
-    let mut args: Vec<String> = vec!["-c".into(), cfg, "-v".into(), "--log-file".into(), format!("{dir}\\enlocal.log"), "-L".into(), dll, game.into()];
+    let cfg = chemin!("{dir}\\enlocal.cfg");
+    let mut texte = config(console, o, &pseudo);
+    // macOS : RetroArch range tout dans ~/Library sinon ; ici, à côté de lui, comme sur Windows.
+    if !cfg!(windows) {
+        for (k, sous) in [("system_directory", "system"), ("savefile_directory", "saves"), ("savestate_directory", "states"), ("rgui_config_directory", "config"), ("screenshot_directory", "screenshots"), ("libretro_info_path", "info"), ("playlist_directory", "playlists"), ("log_dir", "logs")] {
+            let _ = std::fs::create_dir_all(format!("{dir}/{sous}"));
+            texte += &format!("{k} = \"{dir}/{sous}\"\n");
+        }
+        texte += "input_joypad_driver = \"sdl2\"\nui_companion_enable = \"false\"\nvideo_window_show_decorations = \"false\"\n";
+    }
+    std::fs::write(&cfg, texte).map_err(|e| e.to_string())?;
+    let mut args: Vec<String> = vec!["-c".into(), cfg, "-v".into(), "--log-file".into(), chemin!("{dir}\\enlocal.log"), "-L".into(), dll, game.into()];
     match o.get("netplay").map(String::as_str) {
         Some("hote") => args.push("--host".into()),
         Some("invite") => {
@@ -327,14 +354,21 @@ pub fn start(dir: &str, game: &str, console: &str, parent: isize, o: &crate::reg
         }
         _ => {}
     }
-    let child = Command::new(crate::embed::exe(dir, "retroarch.exe", crate::embed::EXE_RETRO))
+    let programme = if cfg!(windows) { crate::embed::exe(dir, "retroarch.exe", crate::embed::EXE_RETRO) } else { format!("{dir}/RetroArch.app/Contents/MacOS/RetroArch") };
+    let mut cmd = Command::new(programme);
+    // macOS : notre RetroArch pose lui-même sa fenêtre dans le cadre d'En Local (forks/retroarch-mac-cadre.patch).
+    #[cfg(not(windows))]
+    crate::embed::suivre_cadre(&mut cmd);
+    let child = cmd
         .env("SDL_GAMECONTROLLERCONFIG", crate::pad::mappings())
+        // La manette marche aussi quand RetroArch n'a pas la main (sur macOS, En Local reste devant).
+        .env("SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS", "1")
         .args(&args)
         // Sorties fermées : sinon RetroArch ouvre sa « Log Console » à côté du jeu.
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
-        .creation_flags(CREATE_NO_WINDOW)
+        .sans_fenetre()
         .spawn()
         .map(crate::embed::tie)
         .map_err(|e| e.to_string())?;
@@ -413,6 +447,17 @@ mod tests {
         bios[0x2710..0x2717].copy_from_slice(b"ROMDIR\0");
         assert!(super::bios_ps2_valide(&bios) && !super::bios_ps2_valide(&bios[..1000]));
         let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn touches_retropad() {
+        // GBA : A à droite (A du RetroPad -> east), B en bas. Touche choisie : A sur le bouton du bas.
+        let t = super::touches("GBA", &opts(&[]));
+        assert_eq!((t[8], t[0]), (8, 0));
+        assert_eq!(super::touches("GBA", &opts(&[("touche_a", "south")]))[8], 0);
+        // PS1 : ✕ (B du RetroPad) en bas, △ (X) en haut.
+        let p = super::touches("PS1", &opts(&[]));
+        assert_eq!((p[0], p[9]), (0, 9));
     }
 
     #[test]

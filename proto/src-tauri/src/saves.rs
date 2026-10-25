@@ -6,14 +6,14 @@ use std::path::{Path, PathBuf};
 fn dossiers() -> Vec<(String, &'static str)> {
     let r = crate::root();
     vec![
-        (format!("{r}\\data\\ds\\saves"), "DS"),
-        (format!("{r}\\emu\\azahar-enlocal\\user\\sdmc\\Nintendo 3DS"), "3DS\\sdmc"),
-        (format!("{r}\\emu\\azahar-enlocal\\user\\nand\\data"), "3DS\\nand"),
-        (format!("{r}\\emu\\dolphin-enlocal\\User\\GC"), "GameCube"),
-        (format!("{r}\\emu\\dolphin-enlocal\\User\\Wii\\title"), "Wii"),
-        (format!("{r}\\emu\\cemu\\portable\\mlc01\\usr\\save"), "Wii U"),
-        (format!("{r}\\emu\\eden-enlocal\\user\\nand\\user\\save"), "Switch\\user"),
-        (format!("{r}\\emu\\eden-enlocal\\user\\nand\\system\\save"), "Switch\\system"),
+        (chemin!("{r}\\data\\ds\\saves"), "DS"),
+        (chemin!("{r}\\emu\\azahar-enlocal\\user\\sdmc\\Nintendo 3DS"), "3DS\\sdmc"),
+        (chemin!("{r}\\emu\\azahar-enlocal\\user\\nand\\data"), "3DS\\nand"),
+        (chemin!("{r}\\emu\\dolphin-enlocal\\User\\GC"), "GameCube"),
+        (chemin!("{r}\\emu\\dolphin-enlocal\\User\\Wii\\title"), "Wii"),
+        (chemin!("{r}\\emu\\cemu\\portable\\mlc01\\usr\\save"), "Wii U"),
+        (chemin!("{r}\\emu\\eden-enlocal\\user\\nand\\user\\save"), "Switch\\user"),
+        (chemin!("{r}\\emu\\eden-enlocal\\user\\nand\\system\\save"), "Switch\\system"),
     ]
 }
 
@@ -84,22 +84,22 @@ struct Zone {
 
 fn zones() -> Vec<Zone> {
     let z = |nom, dossier: String, profondeur| Zone { nom, dossier: PathBuf::from(dossier), profondeur };
-    let rpcs3 = if cfg!(windows) { format!("{}\\dev_hdd0", crate::rpcs3()) } else { format!("{}\\portable\\dev_hdd0", crate::rpcs3()) };
+    let rpcs3 = if cfg!(windows) { chemin!("{}\\dev_hdd0", crate::rpcs3()) } else { chemin!("{}\\portable\\dev_hdd0", crate::rpcs3()) };
     vec![
-        z("ds", format!("{}\\data\\ds\\saves", crate::root()), 2),
-        z("3ds", format!("{}\\user\\sdmc\\Nintendo 3DS", crate::azahar()), 5),
-        z("gc", format!("{}\\User\\GC", crate::dolphin()), 3),
-        z("wii", format!("{}\\User\\Wii\\title", crate::dolphin()), 2),
-        z("wiiu", format!("{}\\portable\\mlc01\\usr\\save", crate::cemu()), 2),
-        z("switch", format!("{}\\user\\nand\\user\\save", crate::eden()), 3),
-        z("retro", format!("{}\\saves", crate::retroarch()), 2),
-        z("ps3", format!("{rpcs3}\\home\\00000001\\savedata"), 1),
+        z("ds", chemin!("{}\\data\\ds\\saves", crate::root()), 2),
+        z("3ds", chemin!("{}\\user\\sdmc\\Nintendo 3DS", crate::azahar()), 5),
+        z("gc", chemin!("{}\\User\\GC", crate::dolphin()), 3),
+        z("wii", chemin!("{}\\User\\Wii\\title", crate::dolphin()), 2),
+        z("wiiu", chemin!("{}\\portable\\mlc01\\usr\\save", crate::cemu()), 2),
+        z("switch", chemin!("{}\\user\\nand\\user\\save", crate::eden()), 3),
+        z("retro", chemin!("{}\\saves", crate::retroarch()), 2),
+        z("ps3", chemin!("{rpcs3}\\home\\00000001\\savedata"), 1),
     ]
 }
 
 /// Le profil d'Eden (profiles.dat), sous les deux noms de dossier qu'Eden utilise pour lui.
-fn profil_eden() -> Option<(String, String)> {
-    let d = std::fs::read(format!("{}\\user\\nand\\system\\save\\8000000000000010\\su\\avators\\profiles.dat", crate::eden())).ok()?;
+pub fn profil_eden() -> Option<(String, String)> {
+    let d = std::fs::read(chemin!("{}\\user\\nand\\system\\save\\8000000000000010\\su\\avators\\profiles.dat", crate::eden())).ok()?;
     let u = d.get(0x10..0x20)?;
     let (lo, hi) = (u64::from_le_bytes(u[..8].try_into().ok()?), u64::from_le_bytes(u[8..].try_into().ok()?));
     if lo == 0 && hi == 0 {
@@ -179,7 +179,7 @@ fn parcourir(d: &Path, morceaux: &mut Vec<String>, out: &mut Vec<(Vec<String>, P
 }
 
 fn fichier_data(nom: &str) -> String {
-    format!("{}\\data\\{nom}", crate::root())
+    chemin!("{}\\data\\{nom}", crate::root())
 }
 fn lire_json<T: serde::de::DeserializeOwned + Default>(nom: &str) -> T {
     std::fs::read_to_string(fichier_data(nom)).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default()

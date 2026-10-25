@@ -1,0 +1,191 @@
+diff --git a/src/video_core/surface.cpp b/src/video_core/surface.cpp
+index 1998849..810da49 100644
+--- a/src/video_core/surface.cpp
++++ b/src/video_core/surface.cpp
+@@ -7,6 +7,8 @@
+ #include "common/common_types.h"
+ #include "common/math_util.h"
+ #include "common/settings.h"
++#include <utility>
++
+ #include "video_core/surface.h"
+ 
+ namespace VideoCore::Surface {
+@@ -199,10 +201,15 @@ PixelFormat PixelFormatFromRenderTargetFormat(Tegra::RenderTargetFormat format)
+         return PixelFormat::R8_SINT;
+     case Tegra::RenderTargetFormat::R8_UINT:
+         return PixelFormat::R8_UINT;
+-    default:
+-        UNIMPLEMENTED_MSG("Unimplemented format={}", format);
++    default: {
++        // En Local : signalé une fois. Certains jeux (Smash) le demandent des centaines de fois par
++        // seconde : le journal grossissait de plusieurs Mo par partie et prenait du temps au jeu.
++        static bool deja = false;
++        if (!std::exchange(deja, true))
++            UNIMPLEMENTED_MSG("Unimplemented format={}", format);
+         return PixelFormat::A8B8G8R8_UNORM;
+     }
++    }
+ }
+ 
+ PixelFormat PixelFormatFromGPUPixelFormat(Service::android::PixelFormat format) {
+diff --git a/src/yuzu/main_window.cpp b/src/yuzu/main_window.cpp
+index 4dfbed0..b6dc8aa 100644
+--- a/src/yuzu/main_window.cpp
++++ b/src/yuzu/main_window.cpp
+@@ -3,6 +3,12 @@
+ 
+ // Qt on macOS doesn't define VMA shit
+ #include <boost/algorithm/string/split.hpp>
++#ifdef __APPLE__
++// Runtime Objective-C, déclaré à la main : <objc/runtime.h> définit un type Category qui gêne celui d'Eden.
++extern "C" void* objc_getClass(const char*);
++extern "C" void* sel_registerName(const char*);
++extern "C" void objc_msgSend(void);
++#endif
+ #include "common/settings.h"
+ #include "common/settings_enums.h"
+ #include "frontend_common/settings_generator.h"
+@@ -77,6 +83,7 @@
+ #include <QDesktopServices>
+ #include <QDir>
+ #include <QFileDialog>
++#include <QDateTime>
+ #include <QFileInfo>
+ #include <QGuiApplication>
+ #include <QInputDialog>
+@@ -513,6 +520,55 @@ static void EnLocalSalon(std::string host, u16 port, std::string nickname, std::
+     });
+ }
+ 
++#ifdef __APPLE__
++// En Local (macOS) : la fenêtre du jeu s'affiche directement dans le cadre d'En Local, comme la fenêtre
++// fille sous Windows. Fichier ENLOCAL_CADRE : « x y largeur hauteur visible principale habillage »
++// (points ; numéros des fenêtres d'En Local). Visible : juste au-dessus de la fenêtre principale, sous
++// l'habillage (contours arrondis, décor, widgets), qui flotte au-dessus. Sinon (menu ouvert, En Local
++// caché ou réduit) : derrière tout.
++// Les clics traversent vers En Local, qui garde le clavier.
++// En Local : volume des jeux réglé dans l'app, en direct (fichier ENLOCAL_VOLUME_FICHIER, de 0 à 1).
++// Rend le nouveau volume s'il a changé depuis la dernière lecture, sinon -1.
++static double EnLocalVolume() {
++    static QDateTime lu;
++    const char* f = std::getenv("ENLOCAL_VOLUME_FICHIER");
++    if (!f)
++        return -1;
++    const QFileInfo info(QString::fromUtf8(f));
++    if (!info.exists() || info.lastModified() == lu)
++        return -1;
++    lu = info.lastModified();
++    QFile fichier(info.filePath());
++    bool ok = false;
++    const double v = fichier.open(QIODevice::ReadOnly) ? QString::fromUtf8(fichier.readAll()).trimmed().toDouble(&ok) : -1;
++    return ok && v >= 0 && v <= 1 ? v : -1;
++}
++
++static void EnLocalPlacer(void* vue, const QStringList& v) {
++    using Envoi = void* (*)(void*, void*);
++    using EnvoiL = void* (*)(void*, void*, long);
++    using Contient = signed char (*)(void*, void*, void*);
++    using Ordre = void (*)(void*, void*, long, long);
++    const auto sel = [](const char* n) { return reinterpret_cast<void*>(sel_registerName(n)); };
++    const auto classe = [](const char* n) { return reinterpret_cast<void*>(objc_getClass(n)); };
++    void* const fenetre = reinterpret_cast<Envoi>(objc_msgSend)(vue, sel("window"));
++    if (!fenetre)
++        return;
++    const long principale = v.value(5).toLong();
++    bool devant = v.value(4) == QStringLiteral("1") && principale > 0;
++    if (devant) {
++        // Fenêtres à l'écran, toutes apps confondues : celle d'En Local doit y être.
++        void* const liste = reinterpret_cast<EnvoiL>(objc_msgSend)(classe("NSWindow"), sel("windowNumbersWithOptions:"), 1);
++        void* const n = reinterpret_cast<EnvoiL>(objc_msgSend)(classe("NSNumber"), sel("numberWithLong:"), principale);
++        devant = liste && reinterpret_cast<Contient>(objc_msgSend)(liste, sel("containsObject:"), n);
++    }
++    reinterpret_cast<EnvoiL>(objc_msgSend)(fenetre, sel("setIgnoresMouseEvents:"), 1);
++    reinterpret_cast<EnvoiL>(objc_msgSend)(fenetre, sel("setLevel:"), devant ? 0 : -2147483623L + 1);
++    if (devant)
++        reinterpret_cast<Ordre>(objc_msgSend)(fenetre, sel("orderWindow:relativeTo:"), 1, principale);
++}
++#endif
++
+ MainWindow::MainWindow(bool has_broken_vulkan)
+     : ui{std::make_unique<Ui::MainWindow>()},
+       input_subsystem{std::make_shared<InputCommon::InputSubsystem>()}, user_data_migrator{this} {
+@@ -643,6 +699,11 @@ MainWindow::MainWindow(bool has_broken_vulkan)
+         const auto at = early_args.indexOf(QStringLiteral("--parent"));
+         if (at > 0 && at < early_args.size() - 1)
+             embed_parent = static_cast<WId>(early_args[at + 1].toULongLong());
++#ifdef __APPLE__
++        // macOS : la valeur n'est pas une fenêtre, seulement « hébergé par En Local ».
++        if (at > 0 && !embed_parent)
++            embed_parent = 1;
++#endif
+     }
+     if (embed_parent) {
+         ui->action_Single_Window_Mode->setChecked(false);
+@@ -650,9 +711,49 @@ MainWindow::MainWindow(bool has_broken_vulkan)
+         ui->horizontalLayout->removeWidget(render_window);
+         render_window->setParent(nullptr);
+         render_window->setWindowFlags(Qt::Window | Qt::FramelessWindowHint);
++#ifdef __APPLE__
++        // macOS : aucune fenêtre d'un autre processus ne peut être parente. La fenêtre de rendu, sans cadre,
++        // se pose dans le cadre d'En Local (EnLocalPlacer). App d'arrière-plan : pas d'icône dans le Dock,
++        // pas de barre de menus, ne prend jamais la main à En Local.
++        reinterpret_cast<void (*)(void*, void*, long)>(objc_msgSend)(
++            reinterpret_cast<void* (*)(void*, void*)>(objc_msgSend)(
++                objc_getClass("NSApplication"), sel_registerName("sharedApplication")),
++            sel_registerName("setActivationPolicy:"), 1);
++        render_window->resize(640, 360);
++        render_window->winId();
++        render_window->show();
++        // Au départ juste au-dessus du bureau, derrière En Local, le temps que le jeu démarre.
++        if (void* const window = reinterpret_cast<void* (*)(void*, void*)>(objc_msgSend)(
++                reinterpret_cast<void*>(render_window->winId()), sel_registerName("window"))) {
++            reinterpret_cast<void (*)(void*, void*, long)>(objc_msgSend)(window, sel_registerName("setLevel:"),
++                                                                         -2147483623L + 1);
++        }
++        if (const char* cadre = std::getenv("ENLOCAL_CADRE")) {
++            auto* const cadre_timer = new QTimer(this);
++            // À chaque tour, pas seulement quand le fichier change : un clic dans En Local repasse sa
++            // fenêtre devant, le jeu revient aussitôt au-dessus.
++            connect(cadre_timer, &QTimer::timeout, this, [this, path = QString::fromUtf8(cadre), place = QRect{}]() mutable {
++                QFile f(path);
++                const QString line = f.open(QIODevice::ReadOnly) ? QString::fromUtf8(f.readAll()).trimmed() : QString{};
++                const QStringList v = line.split(QLatin1Char(' '), Qt::SkipEmptyParts);
++                if (v.size() < 4 || v[2].toInt() <= 0 || v[3].toInt() <= 0)
++                    return;
++                const QRect r(v[0].toInt(), v[1].toInt(), v[2].toInt(), v[3].toInt());
++                if (r != place) {
++                    place = r;
++                    render_window->setGeometry(r);
++                }
++                EnLocalPlacer(reinterpret_cast<void*>(render_window->winId()), v);
++                if (const double vol = EnLocalVolume(); vol >= 0)
++                    Settings::values.volume.SetValue(static_cast<u8>(vol * 100 + 0.5));
++            });
++            cadre_timer->start(50);
++        }
++#else
+         render_window->winId();
+         render_window->windowHandle()->setParent(QWindow::fromWinId(embed_parent));
+         render_window->move(0, 0);
++#endif
+         // Manette : la première manette SDL devient le joueur 1, aussi après un
+         // branchement ; Guide reste au frontend (son menu), pas de HOME Switch.
+         auto* const pad_timer = new QTimer(this);
+@@ -2207,7 +2308,15 @@ void MainWindow::SetupSigInterrupts() {
+     sig_interrupt_notifier = new QSocketNotifier(sig_interrupt_fds[1], QSocketNotifier::Read, this);
+     connect(sig_interrupt_notifier, &QSocketNotifier::activated, this,
+             &MainWindow::OnSigInterruptNotifierActivated);
+-    connect(this, &MainWindow::SigInterrupt, this, &MainWindow::close);
++    // En Local : arrêt demandé par l'app (fenêtre principale cachée). Le jeu s'arrête proprement (sauvegardes,
++    // caches), puis Eden quitte sans refermer toute son interface : la fermeture prenait plus de 10 s.
++    connect(this, &MainWindow::SigInterrupt, this, [this] {
++        if (embed_parent) {
++            ShutdownGame();
++            std::_Exit(0);
++        }
++        close();
++    });
+ }
+ 
+ void MainWindow::HandleSigInterrupt(int sig) {

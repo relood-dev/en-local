@@ -1,0 +1,1907 @@
+From a32150fcddc7d9c26c6767909c8c22c903a58e0f Mon Sep 17 00:00:00 2001
+From: Relood <147659633+relood-dev@users.noreply.github.com>
+Date: Fri, 23 Oct 2026 09:02:32 +0200
+Subject: [PATCH 01/10] En Local : compile avec LibHac 0.20.0 de nuget.org
+ (serveur de Ryubing hors ligne)
+
+---
+ Directory.Packages.props                      |  2 +-
+ nuget.config                                  | 12 ----
+ .../Processes/Extensions/LibHacCompat.cs      | 72 +++++++++++++++++++
+ 3 files changed, 73 insertions(+), 13 deletions(-)
+ create mode 100644 src/Ryujinx.HLE/Loaders/Processes/Extensions/LibHacCompat.cs
+
+diff --git a/Directory.Packages.props b/Directory.Packages.props
+index 6bf619dd..9a9c75e0 100644
+--- a/Directory.Packages.props
++++ b/Directory.Packages.props
+@@ -75,7 +75,7 @@
+     <PackageVersion Include="Ryujinx.Audio.OpenAL" Version="1.25.2" />
+     <PackageVersion Include="Ryujinx.Graphics.Nvdec.Dependencies.AllArch" Version="6.1.4-build6" />
+     <PackageVersion Include="Ryujinx.Graphics.Vulkan.MoltenVK" Version="1.4.2-ryujinx.5" />
+-    <PackageVersion Include="Ryujinx.LibHac" Version="0.21.0-alpha.133" />
++    <PackageVersion Include="Ryujinx.LibHac" Version="0.20.0" />
+     <PackageVersion Include="Ryujinx.SDL3-CS" Version="2026.707.0" />
+     <PackageVersion Include="Ryujinx.Systems.Update.Common" Version="2.0.6" />
+     <PackageVersion Include="Ryujinx.UpdateClient" Version="2.0.6" />
+diff --git a/nuget.config b/nuget.config
+index 6ed8f8d8..e5524995 100644
+--- a/nuget.config
++++ b/nuget.config
+@@ -4,17 +4,5 @@
+     <packageSources>
+         <clear />
+         <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
+-        <!-- Only needed when using pre-release versions of Ryujinx.LibHac. -->
+-        <add key="LibHacAlpha" value="https://git.ryujinx.app/api/packages/projects/nuget/index.json" />
+     </packageSources>
+-    <packageSourceMapping>
+-        <!-- key value for <packageSource> should match key values from <packageSources> element -->
+-        <!-- These are defined and .NET still yells about multiple package sources with no mappings. Not sure what to do, this is in the docs lol -->
+-        <packageSource key="nuget.org">
+-            <package pattern="*" />
+-        </packageSource>
+-        <packageSource key="LibHacAlpha">
+-            <package pattern="Ryujinx.LibHac" />
+-        </packageSource>
+-    </packageSourceMapping>
+ </configuration>
+diff --git a/src/Ryujinx.HLE/Loaders/Processes/Extensions/LibHacCompat.cs b/src/Ryujinx.HLE/Loaders/Processes/Extensions/LibHacCompat.cs
+new file mode 100644
+index 00000000..d71ee546
+--- /dev/null
++++ b/src/Ryujinx.HLE/Loaders/Processes/Extensions/LibHacCompat.cs
+@@ -0,0 +1,72 @@
++global using Ryujinx.HLE.Loaders.Processes.Extensions;
++using LibHac.Common;
++using LibHac.Common.Keys;
++using LibHac.Fs;
++using LibHac.Fs.Fsa;
++using LibHac.FsSystem;
++using LibHac.Tools.FsSystem;
++using LibHac.Loader;
++using LibHac.Tools.FsSystem.NcaUtils;
++using System;
++
++namespace Ryujinx.HLE.Loaders.Processes.Extensions
++{
++    /// <summary>
++    /// En Local : le serveur NuGet de Ryubing (Ryujinx.LibHac 0.21) est hors ligne. Ce que la 0.21 a ajouté
++    /// à LibHac 0.20.0 (nuget.org), repris des extensions qu'avait Ryujinx avant le passage à la 0.21.
++    /// </summary>
++    public static class LibHacCompat
++    {
++        extension(Nca nca)
++        {
++            public ulong ProgramIdBase => nca.Header.TitleId & ~0x1FFFUL;
++            public int ProgramIndex => (int)(nca.Header.TitleId & 0xF);
++            public bool IsProgram => nca.Header.ContentType == NcaContentType.Program;
++            public bool IsPatch => nca.IsProgram && nca.SectionExists(NcaSectionType.Data)
++                && nca.Header.GetFsHeader(Nca.GetSectionIndexFromType(NcaSectionType.Data, NcaContentType.Program)).IsPatchSection();
++        }
++
++        extension(MetaLoader metaLoader)
++        {
++            public ulong ProgramId
++            {
++                get
++                {
++                    metaLoader.GetNpdm(out global::LibHac.Loader.Npdm npdm).ThrowIfFailure();
++                    return npdm.Aci.ProgramId.Value;
++                }
++            }
++
++            public bool IsProgram64Bit
++            {
++                get
++                {
++                    metaLoader.GetNpdm(out global::LibHac.Loader.Npdm npdm).ThrowIfFailure();
++                    return (npdm.Meta.Flags & 1) != 0;
++                }
++            }
++
++            public void LoadFromFile(IFileSystem fileSystem, string path = "")
++            {
++                if (string.IsNullOrEmpty(path))
++                {
++                    path = ProcessConst.MainNpdmPath;
++                }
++
++                using UniqueRef<IFile> npdmFile = new();
++                fileSystem.OpenFile(ref npdmFile.Ref, path.ToU8Span(), OpenMode.Read).ThrowIfFailure();
++                npdmFile.Get.GetSize(out long fileSize).ThrowIfFailure();
++                Span<byte> npdmBuffer = new byte[fileSize];
++                npdmFile.Get.Read(out _, 0, npdmBuffer).ThrowIfFailure();
++                metaLoader.Load(npdmBuffer).ThrowIfFailure();
++            }
++        }
++
++        public static Nca GetNca(this IFileSystem fileSystem, KeySet keySet, string path)
++        {
++            using UniqueRef<IFile> ncaFile = new();
++            fileSystem.OpenFile(ref ncaFile.Ref, path.ToU8Span(), OpenMode.Read).ThrowIfFailure();
++            return new Nca(keySet, ncaFile.Release().AsStorage());
++        }
++    }
++}
+-- 
+2.54.0 (Apple Git-157)
+
+
+From 789343c346adf474bcd439879bba412dc8a2d8bc Mon Sep 17 00:00:00 2001
+From: Relood <147659633+relood-dev@users.noreply.github.com>
+Date: Fri, 23 Oct 2026 09:24:17 +0200
+Subject: [PATCH 02/10] =?UTF-8?q?En=20Local=20:=20fen=C3=AAtre=20dans=20le?=
+ =?UTF-8?q?=20cadre,=20pause=20du=20menu,=20manette,=20langue,=20pseudo,?=
+ =?UTF-8?q?=20MAJ/DLC=20et=20sauvegardes=20partag=C3=A9es=20avec=20Eden?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ src/Ryujinx.HLE/EnLocalSauvegardes.cs         | 140 +++++++++
+ .../Processes/Extensions/NcaExtensions.cs     |   1 +
+ src/Ryujinx/EnLocal.cs                        | 275 ++++++++++++++++++
+ src/Ryujinx/Systems/AppHost.cs                |  10 +-
+ .../UI/ViewModels/MainWindowViewModel.cs      |   5 +
+ src/Ryujinx/UI/Windows/MainWindow.axaml.cs    |  15 +
+ 6 files changed, 445 insertions(+), 1 deletion(-)
+ create mode 100644 src/Ryujinx.HLE/EnLocalSauvegardes.cs
+ create mode 100644 src/Ryujinx/EnLocal.cs
+
+diff --git a/src/Ryujinx.HLE/EnLocalSauvegardes.cs b/src/Ryujinx.HLE/EnLocalSauvegardes.cs
+new file mode 100644
+index 00000000..56d7300e
+--- /dev/null
++++ b/src/Ryujinx.HLE/EnLocalSauvegardes.cs
+@@ -0,0 +1,140 @@
++using LibHac.Fs;
++using LibHac.Fs.Shim;
++using Ryujinx.Common.Logging;
++using Ryujinx.HLE.FileSystem;
++using System;
++using System.Collections.Generic;
++using System.IO;
++using System.Linq;
++using Path = System.IO.Path;
++
++namespace Ryujinx.HLE
++{
++    /// <summary>
++    /// En Local (macOS) : les sauvegardes restent celles d'Eden, synchronisées avec les autres appareils.
++    /// ENLOCAL_EDEN_SAVES : dossier nand/user/save/0000000000000000 d'Eden ; ENLOCAL_EDEN_PROFIL : son profil
++    /// (32 chiffres hexadécimaux). Au lancement, la plus récente des deux copies l'emporte ; à la fermeture
++    /// de Ryujinx, la sienne repart chez Eden.
++    /// </summary>
++    public static class EnLocalSauvegardes
++    {
++        private static readonly List<(string Ryu, string Eden)> _paires = [];
++
++        public static void Lier(Switch device, ulong programId)
++        {
++            string eden = Environment.GetEnvironmentVariable("ENLOCAL_EDEN_SAVES");
++            string profil = Environment.GetEnvironmentVariable("ENLOCAL_EDEN_PROFIL");
++            if (string.IsNullOrEmpty(eden) || profil is not { Length: 32 } || !profil.All(Uri.IsHexDigit))
++            {
++                Logger.Warning?.Print(LogClass.Application, "En Local : profil Eden inconnu, sauvegardes non liées.");
++                return;
++            }
++
++            string titre = programId.ToString("X16");
++            UserId moi = device.System.AccountManager.LastOpenedUser.UserId.ToLibHac();
++            foreach ((SaveDataType type, UserId user, string dossier) in new[]
++            {
++                (SaveDataType.Account, moi, profil.ToUpperInvariant()),
++                (SaveDataType.Device, default(UserId), new string('0', 32)),
++            })
++            {
++                SaveDataFilter filtre = SaveDataFilter.Make(programId, type, user, saveDataId: default, index: default);
++                LibHac.Result r = device.System.LibHacHorizonManager.RyujinxClient.Fs.FindSaveDataWithFilter(out SaveDataInfo info, SaveDataSpaceId.User, in filtre);
++                if (r.IsFailure())
++                {
++                    Logger.Info?.Print(LogClass.Application, $"En Local : pas de sauvegarde {type} ({r.ToStringWithName()}).");
++                    continue;
++                }
++
++                string racine = Path.Combine(VirtualFileSystem.GetNandPath(), $"user/save/{info.SaveDataId:x16}");
++                (string Ryu, string Eden) p = (racine, Path.Combine(eden, dossier, titre));
++                try
++                {
++                    if (Recent(p.Eden) > Recent(Dossier(p.Ryu)))
++                    {
++                        Copier(p.Eden, Path.Combine(p.Ryu, "0"));
++                        // Le dossier de travail est refait depuis le dossier validé au montage.
++                        if (Directory.Exists(Path.Combine(p.Ryu, "1")))
++                        {
++                            Directory.Delete(Path.Combine(p.Ryu, "1"), true);
++                        }
++                        Logger.Info?.Print(LogClass.Application, $"En Local : sauvegarde d'Eden reprise ({type}).");
++                    }
++                    lock (_paires)
++                    {
++                        _paires.Add(p);
++                    }
++                    Logger.Info?.Print(LogClass.Application, $"En Local : sauvegarde {type} liée à Eden ({info.SaveDataId:x16}).");
++                }
++                catch (Exception e)
++                {
++                    Logger.Error?.Print(LogClass.Application, $"En Local : sauvegarde d'Eden non reprise : {e.Message}");
++                }
++            }
++
++            AppDomain.CurrentDomain.ProcessExit -= Rendre;
++            AppDomain.CurrentDomain.ProcessExit += Rendre;
++        }
++
++        /// <summary>À la fermeture : la sauvegarde de Ryujinx, si elle est plus récente, repart chez Eden.</summary>
++        public static void Rendre(object sender = null, EventArgs e = null)
++        {
++            lock (_paires)
++            {
++                foreach ((string ryu, string eden) in _paires)
++                {
++                    try
++                    {
++                        string source = Dossier(ryu);
++                        if (Directory.Exists(source) && Recent(source) > Recent(eden))
++                        {
++                            Copier(source, eden);
++                        }
++                    }
++                    catch (Exception ex)
++                    {
++                        Logger.Error?.Print(LogClass.Application, $"En Local : sauvegarde non rendue à Eden : {ex.Message}");
++                    }
++                }
++            }
++        }
++
++        /// <summary>Dossier validé (0) s'il existe, sinon celui de travail (1) : celui que Ryujinx monte.</summary>
++        private static string Dossier(string racine) =>
++            Directory.Exists(Path.Combine(racine, "0")) ? Path.Combine(racine, "0") : Path.Combine(racine, "1");
++
++        private static bool Interne(string chemin) => Path.GetFileName(chemin).StartsWith(".yuzu", StringComparison.Ordinal);
++
++        private static DateTime Recent(string dossier) =>
++            Directory.Exists(dossier)
++                ? Directory.EnumerateFiles(dossier, "*", SearchOption.AllDirectories).Where(f => !Interne(f)).Select(File.GetLastWriteTimeUtc).DefaultIfEmpty(DateTime.MinValue).Max()
++                : DateTime.MinValue;
++
++        /// <summary>Copie à l'identique (les fichiers en trop sont retirés), sauf les fichiers internes d'Eden.</summary>
++        private static void Copier(string source, string cible)
++        {
++            Directory.CreateDirectory(cible);
++            HashSet<string> gardes = [];
++            foreach (string f in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
++            {
++                if (Interne(f))
++                {
++                    continue;
++                }
++                string rel = Path.GetRelativePath(source, f);
++                string dest = Path.Combine(cible, rel);
++                Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
++                File.Copy(f, dest, true);
++                File.SetLastWriteTimeUtc(dest, File.GetLastWriteTimeUtc(f));
++                gardes.Add(rel);
++            }
++            foreach (string f in Directory.EnumerateFiles(cible, "*", SearchOption.AllDirectories).ToList())
++            {
++                if (!Interne(f) && !gardes.Contains(Path.GetRelativePath(cible, f)))
++                {
++                    File.Delete(f);
++                }
++            }
++        }
++    }
++}
+diff --git a/src/Ryujinx.HLE/Loaders/Processes/Extensions/NcaExtensions.cs b/src/Ryujinx.HLE/Loaders/Processes/Extensions/NcaExtensions.cs
+index f2dddc86..2a0cf032 100644
+--- a/src/Ryujinx.HLE/Loaders/Processes/Extensions/NcaExtensions.cs
++++ b/src/Ryujinx.HLE/Loaders/Processes/Extensions/NcaExtensions.cs
+@@ -94,6 +94,7 @@ namespace Ryujinx.HLE.Loaders.Processes.Extensions
+                 // Multi-program applications can technically use any program ID for the main program, but in practice they always use 0 in the low nibble.
+                 // We'll know if this changes in the future because applications will get errors when trying to mount the correct save.
+                 ProcessLoaderHelper.EnsureSaveData(device, new ApplicationId(processResult.ProgramId & ~0xFul), nacpData);
++                EnLocalSauvegardes.Lier(device, processResult.ProgramId & ~0xFul);
+             }
+ 
+             return processResult;
+diff --git a/src/Ryujinx/EnLocal.cs b/src/Ryujinx/EnLocal.cs
+new file mode 100644
+index 00000000..90398583
+--- /dev/null
++++ b/src/Ryujinx/EnLocal.cs
+@@ -0,0 +1,275 @@
++using Avalonia.Controls;
++using Avalonia.Threading;
++using Ryujinx.Ava.Common.Models;
++using Ryujinx.Ava.Systems.AppLibrary;
++using Ryujinx.Ava.Systems;
++using Ryujinx.Ava.Systems.Configuration;
++using Ryujinx.Ava.Systems.Configuration.System;
++using Ryujinx.Ava.Systems.Configuration.UI;
++using Ryujinx.Ava.Common.Locale;
++using Ryujinx.Ava.UI.Windows;
++using Ryujinx.Ava.Utilities;
++using Ryujinx.Common.Configuration.Hid;
++using Ryujinx.Common.Configuration.Hid.Controller;
++using Ryujinx.Common.Logging;
++using Ryujinx.HLE.HOS.Services.Account.Acc;
++using Ryujinx.Input;
++using System;
++using System.Collections.Generic;
++using System.IO;
++using System.Linq;
++using System.Runtime.InteropServices;
++
++namespace Ryujinx.Ava
++{
++    /// <summary>
++    /// En Local (macOS) : Ryujinx lancé par En Local, comme Eden. Sa fenêtre, sans cadre ni menus, se pose dans
++    /// le cadre d'En Local (fichier ENLOCAL_CADRE : « x y largeur hauteur visible principale habillage », en
++    /// points ; numéros des fenêtres d'En Local) : juste au-dessus de la fenêtre principale quand le jeu est
++    /// visible, derrière tout sinon. Les clics traversent vers En Local, qui garde le clavier. Le jeu se met en
++    /// pause tant que le fichier ENLOCAL_MENU existe. La première manette est le joueur 1.
++    /// </summary>
++    internal static class EnLocal
++    {
++        private static readonly string _cadre = Environment.GetEnvironmentVariable("ENLOCAL_CADRE");
++        private static readonly string _menu = Environment.GetEnvironmentVariable("ENLOCAL_MENU");
++        public static bool Actif => !string.IsNullOrEmpty(_cadre);
++
++        /// <summary>Première image du jeu : la fenêtre, transparente pendant le chargement de Ryujinx, devient visible.</summary>
++        public static bool Rendu { get; set; }
++
++        private static bool _enPause;
++        private static string _place;
++
++        /// <summary>Réglages imposés par En Local, avant le lancement du jeu.</summary>
++        public static void Regler()
++        {
++            ConfigurationState c = ConfigurationState.Instance;
++            c.System.EnableDockedMode.Value = Environment.GetEnvironmentVariable("ENLOCAL_EN_MAIN") != "1";
++            c.EnableDiscordIntegration.Value = false;
++            c.UpdateCheckerType.Value = UpdaterType.Off;
++            c.ShowConfirmExit.Value = false;
++            // Pas de fenêtre « manette » par-dessus tout : la manette est prise dès qu'elle s'allume.
++            c.System.IgnoreControllerApplet.Value = true;
++            c.RememberWindowState.Value = false;
++            // Langue et région du joueur (numéros de la Switch), interface comprise ; volume en %.
++            if (int.TryParse(Environment.GetEnvironmentVariable("ENLOCAL_LANGUE"), out int langue) && Enum.IsDefined(typeof(Language), langue))
++            {
++                c.System.Language.Value = (Language)langue;
++                string[] codes = ["ja_JP", "en_US", "fr_FR", "de_DE", "it_IT", "es_ES", "zh_CN", "ko_KR", "nl_NL", "pt_BR", "ru_RU"];
++                if (langue < codes.Length)
++                {
++                    c.UI.LanguageCode.Value = codes[langue];
++                    LocaleManager.Instance.LoadLanguage(codes[langue]);
++                }
++            }
++            if (int.TryParse(Environment.GetEnvironmentVariable("ENLOCAL_REGION"), out int region) && Enum.IsDefined(typeof(Region), region))
++            {
++                c.System.Region.Value = (Region)region;
++            }
++            if (int.TryParse(Environment.GetEnvironmentVariable("ENLOCAL_VOLUME"), out int volume) && volume is >= 0 and <= 100)
++            {
++                c.System.AudioVolume.Value = volume / 100f;
++            }
++        }
++
++        /// <summary>Le profil porte le pseudo du joueur, comme dans Eden.</summary>
++        public static void Profil(AccountManager comptes)
++        {
++            string pseudo = Environment.GetEnvironmentVariable("ENLOCAL_PSEUDO")?.Trim();
++            if (!string.IsNullOrEmpty(pseudo) && comptes.LastOpenedUser != null && comptes.LastOpenedUser.Name != pseudo)
++            {
++                comptes.SetUserName(comptes.LastOpenedUser.UserId, pseudo.Length > 32 ? pseudo[..32] : pseudo);
++            }
++        }
++
++        /// <summary>
++        /// Mise à jour et DLC du jeu : fichiers de ENLOCAL_CONTENUS (un par ligne). La mise à jour la plus
++        /// récente est choisie (En Local n'envoie que celle choisie par le joueur, s'il en a choisi une).
++        /// </summary>
++        public static void Contenus(ApplicationLibrary bibliotheque, ulong idBase)
++        {
++            string[] fichiers = (Environment.GetEnvironmentVariable("ENLOCAL_CONTENUS") ?? "").Split('\n', StringSplitOptions.RemoveEmptyEntries);
++            List<TitleUpdateModel> majs = [];
++            List<DownloadableContentModel> dlcs = [];
++            foreach (string f in fichiers.Where(File.Exists))
++            {
++                if (bibliotheque.TryGetTitleUpdatesFromFile(f, out List<TitleUpdateModel> u))
++                {
++                    majs.AddRange(u.Where(x => x.TitleIdBase == idBase));
++                }
++                if (bibliotheque.TryGetDownloadableContentFromFile(f, out List<DownloadableContentModel> d))
++                {
++                    dlcs.AddRange(d.Where(x => x.TitleIdBase == idBase));
++                }
++            }
++            TitleUpdateModel derniere = majs.MaxBy(x => x.Version);
++            TitleUpdatesHelper.SaveTitleUpdatesJson(idBase, majs.Select(x => (x, x == derniere)).ToList());
++            DownloadableContentsHelper.SaveDownloadableContentsJson(idBase, dlcs.Select(x => (x, true)).ToList());
++        }
++
++        /// <summary>Manettes : la première branchée est le joueur 1 (en mode portable, la console elle-même).</summary>
++        public static List<InputConfig> Manettes(IGamepadDriver pilote)
++        {
++            bool dock = ConfigurationState.Instance.System.EnableDockedMode.Value;
++            string[] ids = pilote.GamepadsIds.ToArray();
++            Logger.Info?.Print(LogClass.Application, $"En Local : {ids.Length} manette(s) : {string.Join(", ", ids)}");
++            foreach (string id in ids)
++            {
++                using IGamepad manette = pilote.GetGamepad(id);
++                if (manette == null)
++                {
++                    continue;
++                }
++                string nom = manette.Name ?? "";
++                Logger.Info?.Print(LogClass.Application, $"En Local : joueur 1 = {nom} ({id}), {(dock ? "dock" : "portable")}");
++                return
++                [
++                    InputConfigDefaults.CreateDefaultControllerConfiguration(id, nom,
++                        dock ? ControllerType.ProController : ControllerType.Handheld,
++                        dock ? PlayerIndex.Player1 : PlayerIndex.Handheld,
++                        nom.Contains("Nintendo", StringComparison.OrdinalIgnoreCase)),
++                ];
++            }
++            return [];
++        }
++
++        public static void Suivre(MainWindow fenetre)
++        {
++            fenetre.WindowDecorations = WindowDecorations.None;
++            fenetre.ViewModel.ShowMenuAndStatusBar = false;
++            Objc.Envoyer(Objc.Envoyer(Objc.Classe("NSApplication"), "sharedApplication"), "setActivationPolicy:", 1);
++            DispatcherTimer minuterie = new() { Interval = TimeSpan.FromMilliseconds(50) };
++            minuterie.Tick += (_, _) => Tour(fenetre);
++            minuterie.Start();
++        }
++
++        private static void Tour(MainWindow fenetre)
++        {
++            if (fenetre.ViewModel.ShowMenuAndStatusBar)
++            {
++                fenetre.ViewModel.ShowMenuAndStatusBar = false;
++            }
++
++            AppHost hote = fenetre.ViewModel.AppHost;
++            bool menu = !string.IsNullOrEmpty(_menu) && File.Exists(_menu);
++            if (hote != null && menu != _enPause)
++            {
++                _enPause = menu;
++                if (menu)
++                {
++                    hote.Pause();
++                }
++                else
++                {
++                    hote.Resume();
++                }
++            }
++
++            IntPtr ns = NsWindow(fenetre);
++            if (ns == IntPtr.Zero)
++            {
++                return;
++            }
++            Objc.Envoyer(ns, "setAlphaValue:", Rendu ? 1.0 : 0.0);
++
++            string ligne;
++            try
++            {
++                ligne = File.ReadAllText(_cadre).Trim();
++            }
++            catch (IOException)
++            {
++                return;
++            }
++            string[] v = ligne.Split(' ', StringSplitOptions.RemoveEmptyEntries);
++            if (v.Length < 4 || !int.TryParse(v[0], out int x) || !int.TryParse(v[1], out int y) || !int.TryParse(v[2], out int l) || !int.TryParse(v[3], out int h) || l <= 0 || h <= 0)
++            {
++                return;
++            }
++            string place = string.Join(' ', v.Take(4));
++            if (place != _place)
++            {
++                _place = place;
++                // Points comptés depuis le haut de l'écran principal ; macOS compte depuis le bas.
++                IntPtr ecran = Objc.Envoyer(Objc.Envoyer(Objc.Classe("NSScreen"), "screens"), "objectAtIndex:", 0);
++                Objc.Rect cadre = Objc.Cadre(ecran, "frame");
++                Objc.PoserCadre(ns, new Objc.Rect(x, cadre.H - y - h, l, h));
++            }
++
++            long principale = v.Length > 5 && long.TryParse(v[5], out long n) ? n : 0;
++            bool devant = v.Length > 4 && v[4] == "1" && principale > 0 && Rendu;
++            if (devant)
++            {
++                // Fenêtres à l'écran, toutes apps confondues : celle d'En Local doit y être.
++                IntPtr liste = Objc.Envoyer(Objc.Classe("NSWindow"), "windowNumbersWithOptions:", 1);
++                IntPtr numero = Objc.Envoyer(Objc.Classe("NSNumber"), "numberWithLong:", principale);
++                devant = liste != IntPtr.Zero && Objc.Contient(liste, numero);
++            }
++            Objc.Envoyer(ns, "setIgnoresMouseEvents:", 1);
++            Objc.Envoyer(ns, "setLevel:", devant ? 0 : -2147483623L + 1);
++            if (devant)
++            {
++                Objc.Envoyer(ns, "orderWindow:relativeTo:", 1, principale);
++            }
++        }
++
++        private static IntPtr NsWindow(Window fenetre)
++        {
++            Avalonia.Platform.IPlatformHandle h = fenetre.TryGetPlatformHandle();
++            if (h == null || h.Handle == IntPtr.Zero)
++            {
++                return IntPtr.Zero;
++            }
++            return h.HandleDescriptor == "NSView" ? Objc.Envoyer(h.Handle, "window") : h.Handle;
++        }
++
++        private static class Objc
++        {
++            [StructLayout(LayoutKind.Sequential)]
++            public readonly record struct Rect(double X, double Y, double L, double H);
++
++            private const string Lib = "/usr/lib/libobjc.A.dylib";
++
++            [DllImport(Lib)]
++            private static extern IntPtr objc_getClass(string nom);
++
++            [DllImport(Lib)]
++            private static extern IntPtr sel_registerName(string nom);
++
++            [DllImport(Lib, EntryPoint = "objc_msgSend")]
++            private static extern IntPtr Msg(IntPtr o, IntPtr s);
++
++            [DllImport(Lib, EntryPoint = "objc_msgSend")]
++            private static extern IntPtr Msg(IntPtr o, IntPtr s, long a);
++
++            [DllImport(Lib, EntryPoint = "objc_msgSend")]
++            private static extern IntPtr Msg(IntPtr o, IntPtr s, long a, long b);
++
++            [DllImport(Lib, EntryPoint = "objc_msgSend")]
++            private static extern IntPtr Msg(IntPtr o, IntPtr s, IntPtr a);
++
++            [DllImport(Lib, EntryPoint = "objc_msgSend")]
++            private static extern byte MsgB(IntPtr o, IntPtr s, IntPtr a);
++
++            [DllImport(Lib, EntryPoint = "objc_msgSend")]
++            private static extern void MsgD(IntPtr o, IntPtr s, double a);
++
++            [DllImport(Lib, EntryPoint = "objc_msgSend")]
++            private static extern Rect MsgRect(IntPtr o, IntPtr s);
++
++            [DllImport(Lib, EntryPoint = "objc_msgSend")]
++            private static extern void MsgPoserCadre(IntPtr o, IntPtr s, Rect r, byte afficher);
++
++            public static IntPtr Classe(string nom) => objc_getClass(nom);
++            public static IntPtr Envoyer(IntPtr o, string s) => Msg(o, sel_registerName(s));
++            public static IntPtr Envoyer(IntPtr o, string s, long a) => Msg(o, sel_registerName(s), a);
++            public static IntPtr Envoyer(IntPtr o, string s, long a, long b) => Msg(o, sel_registerName(s), a, b);
++            public static IntPtr Envoyer(IntPtr o, string s, IntPtr a) => Msg(o, sel_registerName(s), a);
++            public static void Envoyer(IntPtr o, string s, double a) => MsgD(o, sel_registerName(s), a);
++            public static bool Contient(IntPtr liste, IntPtr objet) => MsgB(liste, sel_registerName("containsObject:"), objet) != 0;
++            public static Rect Cadre(IntPtr o, string s) => MsgRect(o, sel_registerName(s));
++            public static void PoserCadre(IntPtr o, Rect r) => MsgPoserCadre(o, sel_registerName("setFrame:display:"), r, 1);
++        }
++    }
++}
+diff --git a/src/Ryujinx/Systems/AppHost.cs b/src/Ryujinx/Systems/AppHost.cs
+index 650ea5ae..ae2193d6 100644
+--- a/src/Ryujinx/Systems/AppHost.cs
++++ b/src/Ryujinx/Systems/AppHost.cs
+@@ -466,7 +466,14 @@ namespace Ryujinx.Ava.Systems
+ 
+             DisplaySleep.Prevent();
+ 
+-            if (ConfigurationState.Instance.System.UseInputGlobalConfig.Value && Program.UseExtraConfig)
++            if (EnLocal.Actif)
++            {
++                IGamepadDriver pilote = RyujinxApp.MainWindow.InputManager.GamepadDriver;
++                NpadManager.Initialize(Device, EnLocal.Manettes(pilote), false, false);
++                pilote.OnGamepadConnected += _ => NpadManager.ReloadConfiguration(EnLocal.Manettes(pilote), false, false);
++                pilote.OnGamepadDisconnected += _ => NpadManager.ReloadConfiguration(EnLocal.Manettes(pilote), false, false);
++            }
++            else if (ConfigurationState.Instance.System.UseInputGlobalConfig.Value && Program.UseExtraConfig)
+             {
+                 NpadManager.Initialize(Device, ConfigurationState.InstanceExtra.Hid.InputConfig, ConfigurationState.InstanceExtra.Hid.PlayerInputAssignments, ConfigurationState.Instance.Hid.EnableKeyboard, ConfigurationState.Instance.Hid.EnableMouse);
+             }
+@@ -1151,6 +1158,7 @@ namespace Ryujinx.Ava.Systems
+                             if (!_renderingStarted)
+                             {
+                                 _renderingStarted = true;
++                                EnLocal.Rendu = true;
+                                 _viewModel.SwitchToRenderer(false);
+                                 InitStatus();
+                             }
+diff --git a/src/Ryujinx/UI/ViewModels/MainWindowViewModel.cs b/src/Ryujinx/UI/ViewModels/MainWindowViewModel.cs
+index 262af892..41154b2d 100644
+--- a/src/Ryujinx/UI/ViewModels/MainWindowViewModel.cs
++++ b/src/Ryujinx/UI/ViewModels/MainWindowViewModel.cs
+@@ -2007,6 +2007,11 @@ namespace Ryujinx.Ava.UI.ViewModels
+ 
+         public void AppHost_AppExit(object sender, EventArgs e)
+         {
++            if (EnLocal.Actif)
++            {
++                Environment.Exit(0);
++            }
++
+             if (IsClosing)
+             {
+                 return;
+diff --git a/src/Ryujinx/UI/Windows/MainWindow.axaml.cs b/src/Ryujinx/UI/Windows/MainWindow.axaml.cs
+index db490f3f..539395fe 100644
+--- a/src/Ryujinx/UI/Windows/MainWindow.axaml.cs
++++ b/src/Ryujinx/UI/Windows/MainWindow.axaml.cs
+@@ -394,6 +394,10 @@ namespace Ryujinx.Ava.UI.Windows
+                         else
+                         {
+                             applicationData = applications[0];
++                            if (EnLocal.Actif)
++                            {
++                                EnLocal.Contenus(ApplicationLibrary, applicationData.IdBase);
++                            }
+                             ViewModel.SelectedApplication = applicationData;
+                             await ViewModel.LoadApplication(applicationData, _startFullscreen);
+                         }
+@@ -497,8 +501,19 @@ namespace Ryujinx.Ava.UI.Windows
+         {
+             base.OnOpened(e);
+ 
++            if (EnLocal.Actif)
++            {
++                EnLocal.Regler();
++                EnLocal.Suivre(this);
++            }
++
+             Initialize();
+ 
++            if (EnLocal.Actif)
++            {
++                EnLocal.Profil(AccountManager);
++            }
++
+             _windowStartupWidthDelta = Math.Max(0, Width - ViewModel.WindowWidth);
+             _windowStartupHeightDelta = Math.Max(0, Height - ViewModel.WindowHeight);
+ 
+-- 
+2.54.0 (Apple Git-157)
+
+
+From dfb6dab27eb28bbbf298580acf857bf9fccbe20d Mon Sep 17 00:00:00 2001
+From: Relood <147659633+relood-dev@users.noreply.github.com>
+Date: Fri, 23 Oct 2026 09:26:28 +0200
+Subject: [PATCH 03/10] =?UTF-8?q?En=20Local=20:=20arr=C3=AAt=20imm=C3=A9di?=
+ =?UTF-8?q?at=20=C3=A0=20la=20demande=20d'En=20Local?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ src/Ryujinx.HLE/EnLocalSauvegardes.cs | 1 +
+ src/Ryujinx/EnLocal.cs                | 9 +++++++++
+ 2 files changed, 10 insertions(+)
+
+diff --git a/src/Ryujinx.HLE/EnLocalSauvegardes.cs b/src/Ryujinx.HLE/EnLocalSauvegardes.cs
+index 56d7300e..9adc2ac5 100644
+--- a/src/Ryujinx.HLE/EnLocalSauvegardes.cs
++++ b/src/Ryujinx.HLE/EnLocalSauvegardes.cs
+@@ -96,6 +96,7 @@ namespace Ryujinx.HLE
+                         Logger.Error?.Print(LogClass.Application, $"En Local : sauvegarde non rendue à Eden : {ex.Message}");
+                     }
+                 }
++                _paires.Clear();
+             }
+         }
+ 
+diff --git a/src/Ryujinx/EnLocal.cs b/src/Ryujinx/EnLocal.cs
+index 90398583..73f91988 100644
+--- a/src/Ryujinx/EnLocal.cs
++++ b/src/Ryujinx/EnLocal.cs
+@@ -39,6 +39,7 @@ namespace Ryujinx.Ava
+         public static bool Rendu { get; set; }
+ 
+         private static bool _enPause;
++        private static PosixSignalRegistration _arret;
+         private static string _place;
+ 
+         /// <summary>Réglages imposés par En Local, avant le lancement du jeu.</summary>
+@@ -139,6 +140,14 @@ namespace Ryujinx.Ava
+             fenetre.WindowDecorations = WindowDecorations.None;
+             fenetre.ViewModel.ShowMenuAndStatusBar = false;
+             Objc.Envoyer(Objc.Envoyer(Objc.Classe("NSApplication"), "sharedApplication"), "setActivationPolicy:", 1);
++            // Arrêt demandé par En Local : la sauvegarde repart chez Eden, puis Ryujinx quitte tout de suite
++            // (sinon le jeu tourne encore quelques secondes, le temps que toute l'interface se ferme).
++            _arret = PosixSignalRegistration.Create(PosixSignal.SIGTERM, contexte =>
++            {
++                contexte.Cancel = true;
++                HLE.EnLocalSauvegardes.Rendre();
++                System.Diagnostics.Process.GetCurrentProcess().Kill();
++            });
+             DispatcherTimer minuterie = new() { Interval = TimeSpan.FromMilliseconds(50) };
+             minuterie.Tick += (_, _) => Tour(fenetre);
+             minuterie.Start();
+-- 
+2.54.0 (Apple Git-157)
+
+
+From b00d60eabcc9793e14c28fbe22eaea6a0411b8d0 Mon Sep 17 00:00:00 2001
+From: Relood <147659633+relood-dev@users.noreply.github.com>
+Date: Fri, 23 Oct 2026 09:39:23 +0200
+Subject: [PATCH 04/10] En Local : pas de marge de barre de titre
+
+---
+ src/Ryujinx/EnLocal.cs | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/src/Ryujinx/EnLocal.cs b/src/Ryujinx/EnLocal.cs
+index 73f91988..5867fa39 100644
+--- a/src/Ryujinx/EnLocal.cs
++++ b/src/Ryujinx/EnLocal.cs
+@@ -137,6 +137,8 @@ namespace Ryujinx.Ava
+ 
+         public static void Suivre(MainWindow fenetre)
+         {
++            // Ni barre de titre ni marge réservée pour elle : le jeu remplit toute la fenêtre.
++            fenetre.TitleBar.ExtendsContentIntoTitleBar = false;
+             fenetre.WindowDecorations = WindowDecorations.None;
+             fenetre.ViewModel.ShowMenuAndStatusBar = false;
+             Objc.Envoyer(Objc.Envoyer(Objc.Classe("NSApplication"), "sharedApplication"), "setActivationPolicy:", 1);
+-- 
+2.54.0 (Apple Git-157)
+
+
+From 118e80152d77df568b6882bfc7fca788c3af3f59 Mon Sep 17 00:00:00 2001
+From: Relood <147659633+relood-dev@users.noreply.github.com>
+Date: Fri, 23 Oct 2026 09:59:11 +0200
+Subject: [PATCH 05/10] =?UTF-8?q?En=20Local=20:=20fen=C3=AAtre=20noire=20j?=
+ =?UTF-8?q?usqu'au=20premier=20rendu?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ src/Ryujinx/EnLocal.cs | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/src/Ryujinx/EnLocal.cs b/src/Ryujinx/EnLocal.cs
+index 5867fa39..1be3aced 100644
+--- a/src/Ryujinx/EnLocal.cs
++++ b/src/Ryujinx/EnLocal.cs
+@@ -140,6 +140,7 @@ namespace Ryujinx.Ava
+             // Ni barre de titre ni marge réservée pour elle : le jeu remplit toute la fenêtre.
+             fenetre.TitleBar.ExtendsContentIntoTitleBar = false;
+             fenetre.WindowDecorations = WindowDecorations.None;
++            fenetre.Background = Avalonia.Media.Brushes.Black;
+             fenetre.ViewModel.ShowMenuAndStatusBar = false;
+             Objc.Envoyer(Objc.Envoyer(Objc.Classe("NSApplication"), "sharedApplication"), "setActivationPolicy:", 1);
+             // Arrêt demandé par En Local : la sauvegarde repart chez Eden, puis Ryujinx quitte tout de suite
+@@ -161,6 +162,12 @@ namespace Ryujinx.Ava
+             {
+                 fenetre.ViewModel.ShowMenuAndStatusBar = false;
+             }
++            // Écran de chargement de Ryujinx jamais montré : la fenêtre reste noire jusqu'à la première image.
++            // En Local garde le sien, et prend cette première image pour le décor autour du jeu.
++            if (fenetre.ViewModel.ShowLoadProgress)
++            {
++                fenetre.ViewModel.ShowLoadProgress = false;
++            }
+ 
+             AppHost hote = fenetre.ViewModel.AppHost;
+             bool menu = !string.IsNullOrEmpty(_menu) && File.Exists(_menu);
+-- 
+2.54.0 (Apple Git-157)
+
+
+From cf9dd1803fc24be6c5d068c6ed1a4caeff57affb Mon Sep 17 00:00:00 2001
+From: Relood <147659633+relood-dev@users.noreply.github.com>
+Date: Fri, 23 Oct 2026 10:12:37 +0200
+Subject: [PATCH 06/10] En Local : Ryujinx rejoint les salons d'Eden (ENet, LDN
+ d'Eden, paquets du jeu en zstd), graine fixe en salon
+
+---
+ Directory.Packages.props                      |   1 +
+ distribution/macos/enlocal/.gitignore         |   1 +
+ distribution/macos/enlocal/ENET-LICENSE       |   7 +
+ distribution/macos/enlocal/build-enet.sh      |   9 +
+ .../UserServiceCreator/EnLocal/SalonEden.cs   | 305 +++++++++++++
+ .../EnLocal/SalonEdenClient.cs                | 412 ++++++++++++++++++
+ .../IUserLocalCommunicationService.cs         |   7 +
+ .../HOS/Services/Spl/IRandomInterface.cs      |  16 +-
+ src/Ryujinx.HLE/Ryujinx.HLE.csproj            |   1 +
+ src/Ryujinx/EnLocal.cs                        |   5 +-
+ src/Ryujinx/Ryujinx.csproj                    |   5 +
+ 11 files changed, 767 insertions(+), 2 deletions(-)
+ create mode 100644 distribution/macos/enlocal/.gitignore
+ create mode 100644 distribution/macos/enlocal/ENET-LICENSE
+ create mode 100644 distribution/macos/enlocal/build-enet.sh
+ create mode 100644 src/Ryujinx.HLE/HOS/Services/Ldn/UserServiceCreator/EnLocal/SalonEden.cs
+ create mode 100644 src/Ryujinx.HLE/HOS/Services/Ldn/UserServiceCreator/EnLocal/SalonEdenClient.cs
+
+diff --git a/Directory.Packages.props b/Directory.Packages.props
+index 9a9c75e0..cf53ea2e 100644
+--- a/Directory.Packages.props
++++ b/Directory.Packages.props
+@@ -76,6 +76,7 @@
+     <PackageVersion Include="Ryujinx.Graphics.Nvdec.Dependencies.AllArch" Version="6.1.4-build6" />
+     <PackageVersion Include="Ryujinx.Graphics.Vulkan.MoltenVK" Version="1.4.2-ryujinx.5" />
+     <PackageVersion Include="Ryujinx.LibHac" Version="0.20.0" />
++    <PackageVersion Include="ZstdSharp.Port" Version="0.8.8" />
+     <PackageVersion Include="Ryujinx.SDL3-CS" Version="2026.707.0" />
+     <PackageVersion Include="Ryujinx.Systems.Update.Common" Version="2.0.6" />
+     <PackageVersion Include="Ryujinx.UpdateClient" Version="2.0.6" />
+diff --git a/distribution/macos/enlocal/.gitignore b/distribution/macos/enlocal/.gitignore
+new file mode 100644
+index 00000000..3de943c4
+--- /dev/null
++++ b/distribution/macos/enlocal/.gitignore
+@@ -0,0 +1 @@
++libenet.dylib
+diff --git a/distribution/macos/enlocal/ENET-LICENSE b/distribution/macos/enlocal/ENET-LICENSE
+new file mode 100644
+index 00000000..ec14b3f0
+--- /dev/null
++++ b/distribution/macos/enlocal/ENET-LICENSE
+@@ -0,0 +1,7 @@
++Copyright (c) 2002-2024 Lee Salzman
++
++Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
++
++The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
++
++THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+diff --git a/distribution/macos/enlocal/build-enet.sh b/distribution/macos/enlocal/build-enet.sh
+new file mode 100644
+index 00000000..ce564c91
+--- /dev/null
++++ b/distribution/macos/enlocal/build-enet.sh
+@@ -0,0 +1,9 @@
++#!/bin/sh
++# En Local : ENet 1.3.18 (celui des salons d'Eden) en bibliothèque pour Ryujinx sur Mac.
++# Usage : build-enet.sh <dossier des sources d'enet 1.3.18>
++set -e
++OUT="$(cd "$(dirname "$0")" && pwd)"
++cd "$1"
++clang -dynamiclib -O2 -arch arm64 -Iinclude -DHAS_FCNTL=1 -DHAS_POLL=1 -DHAS_GETADDRINFO=1 -DHAS_GETNAMEINFO=1 \
++  -DHAS_INET_PTON=1 -DHAS_INET_NTOP=1 -DHAS_MSGHDR_FLAGS=1 -DHAS_SOCKLEN_T=1 -install_name @rpath/libenet.dylib \
++  callbacks.c compress.c host.c list.c packet.c peer.c protocol.c unix.c -o "$OUT/libenet.dylib"
+diff --git a/src/Ryujinx.HLE/HOS/Services/Ldn/UserServiceCreator/EnLocal/SalonEden.cs b/src/Ryujinx.HLE/HOS/Services/Ldn/UserServiceCreator/EnLocal/SalonEden.cs
+new file mode 100644
+index 00000000..dbebe1ed
+--- /dev/null
++++ b/src/Ryujinx.HLE/HOS/Services/Ldn/UserServiceCreator/EnLocal/SalonEden.cs
+@@ -0,0 +1,305 @@
++using Ryujinx.Common.Logging;
++using System;
++using System.Buffers.Binary;
++using System.Collections.Concurrent;
++using System.IO;
++using System.Runtime.InteropServices;
++using System.Text;
++using System.Threading;
++
++namespace Ryujinx.HLE.HOS.Services.Ldn.UserServiceCreator.EnLocal
++{
++    /// <summary>
++    /// En Local : Ryujinx entre dans un salon d'Eden (serveur du Local ou PC de l'hôte), comme un Eden.
++    /// Variables : ENLOCAL_SALON_HOTE, ENLOCAL_SALON_PORT, ENLOCAL_SALON_PSEUDO, ENLOCAL_SALON_MDP.
++    /// Protocole des salons d'Eden (network/room.h, room_member.cpp) : ENet (1.3.18, un canal, paquets
++    /// fiables), chaque message commence par son type ; entiers en gros-boutiste, chaînes et listes
++    /// précédées de leur taille (u32).
++    /// </summary>
++    public sealed class SalonEden
++    {
++        private const byte JoinRequest = 1, JoinSuccess = 2, SetGameInfo = 4, ProxyPacket = 5, LdnPacket = 6,
++            NameCollision = 8, IpCollision = 9, VersionMismatch = 10, WrongPassword = 11, CloseRoom = 12,
++            RoomIsFull = 13, HostKicked = 15, HostBanned = 16, JoinSuccessAsMod = 24;
++        private const uint NetworkVersion = 1;
++
++        public static SalonEden Instance { get; private set; }
++
++        /// <summary>Salon demandé par En Local ? Alors Ryujinx y entre dès son lancement.</summary>
++        public static void Demarrer()
++        {
++            string hote = Environment.GetEnvironmentVariable("ENLOCAL_SALON_HOTE");
++            if (Instance != null || string.IsNullOrEmpty(hote) || !ushort.TryParse(Environment.GetEnvironmentVariable("ENLOCAL_SALON_PORT"), out ushort port))
++            {
++                return;
++            }
++            Instance = new SalonEden(hote, port, Environment.GetEnvironmentVariable("ENLOCAL_SALON_PSEUDO") ?? "Ryujinx", Environment.GetEnvironmentVariable("ENLOCAL_SALON_MDP") ?? "");
++        }
++
++        private readonly string _hote, _pseudo, _mdp;
++        private readonly ushort _port;
++        private readonly ConcurrentQueue<byte[]> _sortants = new();
++        private readonly ManualResetEventSlim _dedans = new(false);
++
++        /// <summary>Adresse attribuée par le salon (192.168.x.y), null tant qu'on n'y est pas.</summary>
++        public byte[] Ip { get; private set; }
++
++        /// <summary>Message LDN reçu : type, IP de l'envoyeur, IP visée, diffusion, données.</summary>
++        public event Action<byte, byte[], byte[], bool, byte[]> Ldn;
++
++        /// <summary>Paquet du jeu reçu : IP et port de l'envoyeur, IP et port visés, protocole (Eden), diffusion, données.</summary>
++        public event Action<byte[], ushort, byte[], ushort, byte, bool, byte[]> Proxy;
++
++        private SalonEden(string hote, ushort port, string pseudo, string mdp)
++        {
++            (_hote, _port, _pseudo, _mdp) = (hote, port, pseudo, mdp);
++            new Thread(Boucle) { Name = "EnLocal.SalonEden", IsBackground = true }.Start();
++        }
++
++        /// <summary>Attend d'être dans le salon (au plus `ms`).</summary>
++        public bool Attendre(int ms) => _dedans.Wait(ms);
++
++        public void EnvoyerLdn(byte type, byte[] destination, bool diffusion, byte[] donnees)
++        {
++            if (Ip == null)
++            {
++                return;
++            }
++            Ecrivain e = new();
++            e.U8(LdnPacket).U8(type).Brut(Ip).Brut(destination ?? new byte[4]).Bool(diffusion).Liste(donnees ?? []);
++            _sortants.Enqueue(e.Fin());
++        }
++
++        public void EnvoyerProxy(ushort portLocal, byte[] destination, ushort portDistant, byte protocole, bool diffusion, byte[] donnees)
++        {
++            if (Ip == null)
++            {
++                return;
++            }
++            Ecrivain e = new();
++            e.U8(ProxyPacket).U8(1).Brut(Ip).U16(portLocal).U8(1).Brut(destination).U16(portDistant).U8(protocole).Bool(diffusion).Liste(donnees);
++            _sortants.Enqueue(e.Fin());
++        }
++
++        private unsafe void Boucle()
++        {
++            if (Enet.enet_initialize() != 0)
++            {
++                Logger.Error?.Print(LogClass.ServiceLdn, "En Local : ENet n'a pas démarré, pas de salon.");
++                return;
++            }
++            IntPtr hote = Enet.enet_host_create(null, 1, 1, 0, 0);
++            // Le salon de l'hôte n'existe qu'une fois son jeu lancé : comme Eden, on réessaie pendant 2 min.
++            for (int essai = 0; essai < 40; essai++)
++            {
++                Enet.Adresse adresse = new() { Port = _port };
++                if (Enet.enet_address_set_host(&adresse, _hote) != 0)
++                {
++                    Logger.Error?.Print(LogClass.ServiceLdn, $"En Local : adresse du salon introuvable ({_hote}).");
++                    return;
++                }
++                IntPtr pair = Enet.enet_host_connect(hote, &adresse, 1, 0);
++                Enet.Evenement ev;
++                if (pair != IntPtr.Zero && Enet.enet_host_service(hote, &ev, 5000) > 0 && ev.Type == Enet.Connect)
++                {
++                    Ecrivain e = new();
++                    e.U8(JoinRequest).Chaine(_pseudo).Brut([0xFF, 0xFF, 0xFF, 0xFF]).U32(NetworkVersion).Chaine(_mdp).Chaine("");
++                    _sortants.Enqueue(e.Fin());
++                    _sortants.Enqueue(new Ecrivain().U8(SetGameInfo).Chaine("").U64(0).Chaine("").Fin());
++                    if (!Connecte(hote, pair))
++                    {
++                        return; // refusé par le salon : inutile de réessayer
++                    }
++                }
++                else if (pair != IntPtr.Zero)
++                {
++                    Enet.enet_peer_reset(pair);
++                }
++                Thread.Sleep(3000);
++            }
++        }
++
++        /// <summary>Dans le salon, jusqu'à la déconnexion. Faux si le salon nous refuse.</summary>
++        private unsafe bool Connecte(IntPtr hote, IntPtr pair)
++        {
++            while (true)
++            {
++                Enet.Evenement ev;
++                if (Enet.enet_host_service(hote, &ev, 5) > 0)
++                {
++                    if (ev.Type == Enet.Disconnect)
++                    {
++                        Logger.Warning?.Print(LogClass.ServiceLdn, "En Local : déconnecté du salon, on y retourne.");
++                        Ip = null;
++                        _dedans.Reset();
++                        return true;
++                    }
++                    if (ev.Type == Enet.Receive)
++                    {
++                        byte[] octets = new ReadOnlySpan<byte>((void*)ev.Packet->Data, checked((int)ev.Packet->DataLength)).ToArray();
++                        Enet.enet_packet_destroy((IntPtr)ev.Packet);
++                        if (!Recevoir(octets))
++                        {
++                            Enet.enet_peer_disconnect(pair, 0);
++                            Enet.enet_host_flush(hote);
++                            return false;
++                        }
++                    }
++                }
++                while (_sortants.TryDequeue(out byte[] sortant))
++                {
++                    fixed (byte* p = sortant)
++                    {
++                        Enet.enet_peer_send(pair, 0, Enet.enet_packet_create(p, (nuint)sortant.Length, Enet.Reliable));
++                    }
++                }
++                Enet.enet_host_flush(hote);
++            }
++        }
++
++        /// <summary>Un message du salon. Faux s'il nous refuse.</summary>
++        private bool Recevoir(byte[] octets)
++        {
++            if (octets.Length == 0)
++            {
++                return true;
++            }
++            Lecteur l = new(octets, 1);
++            try
++            {
++                switch (octets[0])
++                {
++                    case JoinSuccess:
++                    case JoinSuccessAsMod:
++                        Ip = l.Brut(4);
++                        _dedans.Set();
++                        Logger.Info?.Print(LogClass.ServiceLdn, $"En Local : dans le salon {_hote}:{_port}, adresse {string.Join('.', Ip)}.");
++                        break;
++                    case LdnPacket:
++                    {
++                        byte type = l.U8();
++                        byte[] source = l.Brut(4), destination = l.Brut(4);
++                        bool diffusion = l.Bool();
++                        Ldn?.Invoke(type, source, destination, diffusion, l.Liste());
++                        break;
++                    }
++                    case ProxyPacket:
++                    {
++                        l.U8();
++                        byte[] source = l.Brut(4);
++                        ushort portSource = l.U16();
++                        l.U8();
++                        byte[] destination = l.Brut(4);
++                        ushort portDestination = l.U16();
++                        byte protocole = l.U8();
++                        bool diffusion = l.Bool();
++                        Proxy?.Invoke(source, portSource, destination, portDestination, protocole, diffusion, l.Liste());
++                        break;
++                    }
++                    case NameCollision:
++                    case IpCollision:
++                    case VersionMismatch:
++                    case WrongPassword:
++                    case RoomIsFull:
++                    case HostKicked:
++                    case HostBanned:
++                        Logger.Error?.Print(LogClass.ServiceLdn, $"En Local : le salon refuse l'entrée (message {octets[0]}).");
++                        Ip = null;
++                        return false;
++                    case CloseRoom:
++                        Logger.Warning?.Print(LogClass.ServiceLdn, "En Local : salon fermé.");
++                        Ip = null;
++                        _dedans.Reset();
++                        break;
++                }
++            }
++            catch (EndOfStreamException)
++            {
++                Logger.Warning?.Print(LogClass.ServiceLdn, $"En Local : message du salon tronqué (type {octets[0]}).");
++            }
++            return true;
++        }
++
++        /// <summary>Écriture d'un message de salon.</summary>
++        internal sealed class Ecrivain
++        {
++            private readonly MemoryStream _m = new();
++            public Ecrivain U8(byte v) { _m.WriteByte(v); return this; }
++            public Ecrivain Bool(bool v) => U8(v ? (byte)1 : (byte)0);
++            public Ecrivain U16(ushort v) { Span<byte> b = stackalloc byte[2]; BinaryPrimitives.WriteUInt16BigEndian(b, v); _m.Write(b); return this; }
++            public Ecrivain U32(uint v) { Span<byte> b = stackalloc byte[4]; BinaryPrimitives.WriteUInt32BigEndian(b, v); _m.Write(b); return this; }
++            public Ecrivain U64(ulong v) { Span<byte> b = stackalloc byte[8]; BinaryPrimitives.WriteUInt64BigEndian(b, v); _m.Write(b); return this; }
++            public Ecrivain Brut(byte[] v) { _m.Write(v); return this; }
++            public Ecrivain Liste(byte[] v) => U32((uint)v.Length).Brut(v);
++            public Ecrivain Chaine(string v) => Liste(Encoding.UTF8.GetBytes(v));
++            public byte[] Fin() => _m.ToArray();
++        }
++
++        /// <summary>Lecture d'un message de salon (EndOfStreamException s'il est tronqué).</summary>
++        internal sealed class Lecteur(byte[] octets, int debut)
++        {
++            private int _p = debut;
++            private ReadOnlySpan<byte> Prendre(int n)
++            {
++                if (n < 0 || n > octets.Length - _p)
++                {
++                    throw new EndOfStreamException();
++                }
++                _p += n;
++                return octets.AsSpan(_p - n, n);
++            }
++            public byte U8() => Prendre(1)[0];
++            public bool Bool() => U8() != 0;
++            public ushort U16() => BinaryPrimitives.ReadUInt16BigEndian(Prendre(2));
++            public uint U32() => BinaryPrimitives.ReadUInt32BigEndian(Prendre(4));
++            public byte[] Brut(int n) => Prendre(n).ToArray();
++            public byte[] Liste() => Brut(checked((int)U32()));
++        }
++    }
++
++    /// <summary>ENet 1.3.18 (libenet.dylib, à côté de Ryujinx), la bibliothèque réseau des salons d'Eden.</summary>
++    static unsafe class Enet
++    {
++        public const int Connect = 1, Disconnect = 2, Receive = 3;
++        public const uint Reliable = 1;
++
++        [StructLayout(LayoutKind.Sequential)]
++        public struct Adresse
++        {
++            public uint Hote;
++            public ushort Port;
++        }
++
++        [StructLayout(LayoutKind.Sequential)]
++        public struct Paquet
++        {
++            public nuint ReferenceCount;
++            public uint Flags;
++            public IntPtr Data;
++            public nuint DataLength;
++        }
++
++        [StructLayout(LayoutKind.Sequential)]
++        public struct Evenement
++        {
++            public int Type;
++            public IntPtr Peer;
++            public byte ChannelId;
++            public uint Data;
++            public Paquet* Packet;
++        }
++
++        private const string Lib = "enet";
++        [DllImport(Lib)] public static extern int enet_initialize();
++        [DllImport(Lib)] public static extern IntPtr enet_host_create(Adresse* adresse, nuint pairs, nuint canaux, uint entrant, uint sortant);
++        [DllImport(Lib)] public static extern int enet_address_set_host(Adresse* adresse, [MarshalAs(UnmanagedType.LPUTF8Str)] string nom);
++        [DllImport(Lib)] public static extern IntPtr enet_host_connect(IntPtr hote, Adresse* adresse, nuint canaux, uint donnee);
++        [DllImport(Lib)] public static extern int enet_host_service(IntPtr hote, Evenement* ev, uint attente);
++        [DllImport(Lib)] public static extern void enet_host_flush(IntPtr hote);
++        [DllImport(Lib)] public static extern IntPtr enet_packet_create(void* donnees, nuint taille, uint options);
++        [DllImport(Lib)] public static extern void enet_packet_destroy(IntPtr paquet);
++        [DllImport(Lib)] public static extern int enet_peer_send(IntPtr pair, byte canal, IntPtr paquet);
++        [DllImport(Lib)] public static extern void enet_peer_disconnect(IntPtr pair, uint donnee);
++        [DllImport(Lib)] public static extern void enet_peer_reset(IntPtr pair);
++    }
++}
+diff --git a/src/Ryujinx.HLE/HOS/Services/Ldn/UserServiceCreator/EnLocal/SalonEdenClient.cs b/src/Ryujinx.HLE/HOS/Services/Ldn/UserServiceCreator/EnLocal/SalonEdenClient.cs
+new file mode 100644
+index 00000000..9830ae04
+--- /dev/null
++++ b/src/Ryujinx.HLE/HOS/Services/Ldn/UserServiceCreator/EnLocal/SalonEdenClient.cs
+@@ -0,0 +1,412 @@
++using Ryujinx.Common.Logging;
++using Ryujinx.Common.Memory;
++using Ryujinx.HLE.HOS.Services.Ldn.Types;
++using Ryujinx.HLE.HOS.Services.Ldn.UserServiceCreator.LdnRyu;
++using Ryujinx.HLE.HOS.Services.Ldn.UserServiceCreator.LdnRyu.Proxy;
++using Ryujinx.HLE.HOS.Services.Ldn.UserServiceCreator.LdnRyu.Types;
++using Ryujinx.HLE.HOS.Services.Ldn.UserServiceCreator.Types;
++using Ryujinx.HLE.HOS.Services.Sockets.Bsd.Proxy;
++using System;
++using System.Buffers.Binary;
++using System.Collections.Generic;
++using System.Linq;
++using System.Net.Sockets;
++using System.Runtime.InteropServices;
++using System.Text;
++using System.Threading;
++using ZstdSharp;
++
++namespace Ryujinx.HLE.HOS.Services.Ldn.UserServiceCreator.EnLocal
++{
++    /// <summary>
++    /// En Local : le jeu sans fil local de Ryujinx passe par un salon d'Eden, comme celui d'Eden lui-même :
++    /// mêmes messages (core/hle/service/ldn/lan_discovery.cpp), mêmes structures nn::ldn (NetworkInfo,
++    /// NodeInfo), relayés par le salon. Celui qui crée la partie la tient à jour et l'envoie aux autres.
++    /// Les paquets du jeu (sockets UDP sur l'adresse du salon) passent par le salon, compressés en zstd
++    /// comme ceux d'Eden ; côté Ryujinx, par son proxy LDN (LdnProxy), décodé ici.
++    /// </summary>
++    sealed class SalonEdenClient : INetworkClient, IProxyClient
++    {
++        private const byte ScanLdn = 0, ScanResp = 1, ConnectLdn = 2, SyncNetwork = 3, DisconnectLdn = 4, DestroyNetwork = 5;
++        private const byte EdenTcp = 3, EdenUdp = 4;
++        private static readonly byte[] SsidEden = Encoding.ASCII.GetBytes("YuzuFakeSsidForLdn");
++
++        private readonly SalonEden _salon;
++        private readonly Lock _verrou = new();
++        // Le proxy de Ryujinx encode ses envois en protocole RyuLdn : relu ici, puis envoyé au salon.
++        private readonly RyuLdnProtocol _entree = new(), _sortie = new();
++        private readonly Dictionary<string, NetworkInfo> _trouves = new();
++        private readonly ManualResetEventSlim _synchro = new(false);
++
++        private NetworkInfo _reseau;
++        private NodeInfo _moi;
++        private bool _hote, _connecte;
++        private byte[] _ipHote;
++        private readonly List<byte[]> _clients = [];
++        private readonly bool[] _places = new bool[8];
++        private readonly LdnProxy _proxy;
++
++        public bool NeedsRealId => false; // comme Eden : l'identifiant de communication tel que le jeu le donne
++        public ProxyConfig Config { get; private set; }
++        public event EventHandler<NetworkChangeEventArgs> NetworkChange;
++
++        public SalonEdenClient(SalonEden salon)
++        {
++            _salon = salon;
++            _salon.Ldn += RecevoirLdn;
++            _salon.Proxy += RecevoirProxy;
++            _sortie.ProxyData += EnvoyerProxy;
++            if (_salon.Attendre(5000))
++            {
++                Config = new ProxyConfig { ProxyIp = BinaryPrimitives.ReadUInt32BigEndian(_salon.Ip), ProxySubnetMask = 0xFFFFFF00 };
++                _proxy = new LdnProxy(Config, this, _entree);
++                SocketHelpers.RegisterProxy(_proxy);
++            }
++            else
++            {
++                Logger.Warning?.Print(LogClass.ServiceLdn, "En Local : pas encore dans le salon.");
++            }
++        }
++
++        public void Dispose()
++        {
++            _salon.Ldn -= RecevoirLdn;
++            _salon.Proxy -= RecevoirProxy;
++            DisconnectNetwork();
++            SocketHelpers.UnregisterProxy();
++        }
++
++        private static byte[] Octets<T>(T valeur) where T : unmanaged => MemoryMarshal.AsBytes(new ReadOnlySpan<T>(ref valeur)).ToArray();
++
++        private static bool Lire<T>(byte[] donnees, out T valeur) where T : unmanaged
++        {
++            valeur = default;
++            if (donnees.Length < Marshal.SizeOf<T>())
++            {
++                return false;
++            }
++            valeur = MemoryMarshal.Read<T>(donnees);
++            return true;
++        }
++
++        private static string Cle(byte[] ip) => string.Join('.', ip);
++
++        /// <summary>Adresse du salon en entier (192.168.1.2 → 0xC0A80102), comme dans NodeInfo et chez Ryujinx.</summary>
++        private static uint Entier(byte[] ip) => BinaryPrimitives.ReadUInt32BigEndian(ip);
++        private static byte[] Ip(uint ip) => BitConverter.GetBytes(BinaryPrimitives.ReverseEndianness(ip));
++
++        private Array6<byte> Mac()
++        {
++            Array6<byte> mac = new();
++            mac[0] = 0x02;
++            mac[1] = 0x00;
++            _salon.Ip?.CopyTo(mac.AsSpan()[2..]);
++            return mac;
++        }
++
++        private NodeInfo Noeud(UserConfig utilisateur, ushort version)
++        {
++            NodeInfo n = new()
++            {
++                Ipv4Address = _salon.Ip == null ? 0 : Entier(_salon.Ip),
++                MacAddress = Mac(),
++                IsConnected = 1,
++                UserName = utilisateur.UserName,
++                LocalCommunicationVersion = version,
++            };
++            return n;
++        }
++
++        private void Changer(bool connecte, DisconnectReason raison = DisconnectReason.None)
++        {
++            _connecte = connecte;
++            NetworkChange?.Invoke(this, new NetworkChangeEventArgs(connecte ? _reseau : new NetworkInfo(), connecte, raison));
++        }
++
++        // --- Côté de celui qui crée la partie ---
++
++        public bool CreateNetwork(CreateAccessPointRequest request, byte[] advertiseData) =>
++            Creer(request.SecurityConfig, request.UserConfig, request.NetworkConfig, advertiseData);
++
++        public bool CreateNetworkPrivate(CreateAccessPointPrivateRequest request, byte[] advertiseData) =>
++            Creer(request.SecurityConfig, request.UserConfig, request.NetworkConfig, advertiseData);
++
++        private bool Creer(SecurityConfig securite, UserConfig utilisateur, NetworkConfig config, byte[] annonce)
++        {
++            if (_salon.Ip == null)
++            {
++                return false;
++            }
++            lock (_verrou)
++            {
++                _reseau = new NetworkInfo();
++                _reseau.Common.MacAddress = Mac();
++                _reseau.Common.Channel = config.Channel == 0 ? (ushort)6 : config.Channel;
++                _reseau.Common.LinkLevel = 2;
++                _reseau.Common.NetworkType = 2;
++                _reseau.Common.Ssid.Length = (byte)SsidEden.Length;
++                SsidEden.CopyTo(_reseau.Common.Ssid.Name.AsSpan());
++                _reseau.Ldn.NodeCountMax = config.NodeCountMax;
++                _reseau.Ldn.SecurityMode = (ushort)securite.SecurityMode;
++                Random.Shared.NextBytes(_reseau.NetworkId.SessionId.AsSpan());
++                _reseau.NetworkId.IntentId = config.IntentId;
++                for (int i = 0; i < 8; i++)
++                {
++                    _reseau.Ldn.Nodes[i].NodeId = (byte)i;
++                }
++                _moi = Noeud(utilisateur, config.LocalCommunicationVersion);
++                _reseau.Ldn.Nodes[0] = _moi;
++                PoserAnnonce(annonce ?? []);
++                _clients.Clear();
++                Array.Clear(_places);
++                _hote = true;
++                _reseau.Ldn.NodeCount = 1;
++                Changer(true);
++            }
++            return true;
++        }
++
++        private void PoserAnnonce(byte[] annonce)
++        {
++            int n = Math.Min(annonce.Length, _reseau.Ldn.AdvertiseData.Length);
++            _reseau.Ldn.AdvertiseData.AsSpan().Clear();
++            annonce.AsSpan(0, n).CopyTo(_reseau.Ldn.AdvertiseData.AsSpan());
++            _reseau.Ldn.AdvertiseDataSize = (ushort)n;
++        }
++
++        public void SetAdvertiseData(byte[] data)
++        {
++            lock (_verrou)
++            {
++                if (_hote)
++                {
++                    PoserAnnonce(data);
++                    Synchroniser();
++                }
++            }
++        }
++
++        /// <summary>Le réseau à jour, envoyé à chaque joueur et au jeu.</summary>
++        private void Synchroniser()
++        {
++            _reseau.Ldn.NodeCount = (byte)(1 + _places.Count(x => x));
++            byte[] info = Octets(_reseau);
++            foreach (byte[] ip in _clients)
++            {
++                _salon.EnvoyerLdn(SyncNetwork, ip, false, info);
++            }
++            Changer(true);
++        }
++
++        public ResultCode Reject(DisconnectReason disconnectReason, uint nodeId)
++        {
++            lock (_verrou)
++            {
++                if (!_hote || nodeId is 0 or > 7 || !_places[nodeId])
++                {
++                    return ResultCode.InvalidState;
++                }
++                byte[] ip = Ip(_reseau.Ldn.Nodes[(int)nodeId].Ipv4Address);
++                _salon.EnvoyerLdn(DestroyNetwork, ip, false, null);
++                _clients.RemoveAll(x => x.SequenceEqual(ip));
++                Liberer((int)nodeId);
++                Synchroniser();
++            }
++            return ResultCode.Success;
++        }
++
++        private void Liberer(int place)
++        {
++            _places[place] = false;
++            _reseau.Ldn.Nodes[place] = new NodeInfo { NodeId = (byte)place };
++        }
++
++        public void SetStationAcceptPolicy(AcceptPolicy acceptPolicy) { }
++
++        public void SetGameVersion(ReadOnlySpan<byte> versionString) { }
++
++        // --- Côté de ceux qui rejoignent ---
++
++        public NetworkInfo[] Scan(ushort channel, ScanFilter scanFilter)
++        {
++            lock (_verrou)
++            {
++                _trouves.Clear();
++            }
++            _salon.EnvoyerLdn(ScanLdn, null, true, null);
++            Thread.Sleep(1000); // comme Eden : les réponses arrivent pendant ce temps
++            lock (_verrou)
++            {
++                return _trouves.Values.Where(x => Garde(x, scanFilter)).ToArray();
++            }
++        }
++
++        private static bool Garde(NetworkInfo info, ScanFilter f)
++        {
++            if (f.Flag.HasFlag(ScanFilterFlag.LocalCommunicationId) && f.NetworkId.IntentId.LocalCommunicationId != info.NetworkId.IntentId.LocalCommunicationId)
++            {
++                return false;
++            }
++            if (f.Flag.HasFlag(ScanFilterFlag.SessionId) && !f.NetworkId.SessionId.AsSpan().SequenceEqual(info.NetworkId.SessionId.AsSpan()))
++            {
++                return false;
++            }
++            if (f.Flag.HasFlag(ScanFilterFlag.NetworkType) && (uint)f.NetworkType != info.Common.NetworkType)
++            {
++                return false;
++            }
++            if (f.Flag.HasFlag(ScanFilterFlag.Ssid) && (f.Ssid.Length != info.Common.Ssid.Length || !f.Ssid.Name.AsSpan()[..f.Ssid.Length].SequenceEqual(info.Common.Ssid.Name.AsSpan()[..info.Common.Ssid.Length])))
++            {
++                return false;
++            }
++            return !f.Flag.HasFlag(ScanFilterFlag.SceneId) || f.NetworkId.IntentId.SceneId == info.NetworkId.IntentId.SceneId;
++        }
++
++        public NetworkError Connect(ConnectRequest request)
++        {
++            if (_salon.Ip == null || request.NetworkInfo.Ldn.NodeCount == 0)
++            {
++                return NetworkError.ConnectFailure;
++            }
++            lock (_verrou)
++            {
++                _hote = false;
++                _moi = Noeud(request.UserConfig, (ushort)request.LocalCommunicationVersion);
++                _ipHote = Ip(request.NetworkInfo.Ldn.Nodes[0].Ipv4Address);
++                _synchro.Reset();
++            }
++            _salon.EnvoyerLdn(ConnectLdn, _ipHote, false, Octets(_moi));
++            return _synchro.Wait(4000) ? NetworkError.None : NetworkError.ConnectTimeout;
++        }
++
++        public NetworkError ConnectPrivate(ConnectPrivateRequest request) => NetworkError.ConnectNotFound;
++
++        public void DisconnectNetwork()
++        {
++            lock (_verrou)
++            {
++                if (_hote)
++                {
++                    foreach (byte[] ip in _clients)
++                    {
++                        _salon.EnvoyerLdn(DestroyNetwork, ip, false, null);
++                    }
++                    _clients.Clear();
++                    Array.Clear(_places);
++                    _hote = false;
++                }
++                else if (_ipHote != null)
++                {
++                    _salon.EnvoyerLdn(DisconnectLdn, _ipHote, false, Octets(_moi));
++                    _ipHote = null;
++                }
++                if (_connecte)
++                {
++                    Changer(false, DisconnectReason.DisconnectedByUser);
++                }
++            }
++        }
++
++        public void DisconnectAndStop() => DisconnectNetwork();
++
++        // --- Messages reçus du salon ---
++
++        private void RecevoirLdn(byte type, byte[] source, byte[] destination, bool diffusion, byte[] donnees)
++        {
++            lock (_verrou)
++            {
++                switch (type)
++                {
++                    case ScanLdn when _hote:
++                        _salon.EnvoyerLdn(ScanResp, source, false, Octets(_reseau));
++                        break;
++                    case ScanResp when Lire(donnees, out NetworkInfo trouve):
++                        _trouves[Cle(trouve.Common.MacAddress.AsSpan().ToArray())] = trouve;
++                        break;
++                    case ConnectLdn when _hote && Lire(donnees, out NodeInfo arrivant):
++                    {
++                        int place = Array.FindIndex(_places, 1, x => !x);
++                        if (place < 0 || place >= _reseau.Ldn.NodeCountMax)
++                        {
++                            break;
++                        }
++                        arrivant.NodeId = (byte)place;
++                        arrivant.IsConnected = 1;
++                        _reseau.Ldn.Nodes[place] = arrivant;
++                        _places[place] = true;
++                        _clients.RemoveAll(x => x.SequenceEqual(source));
++                        _clients.Add(source);
++                        Synchroniser();
++                        break;
++                    }
++                    case DisconnectLdn when _hote && Lire(donnees, out NodeInfo partant):
++                    {
++                        _clients.RemoveAll(x => x.SequenceEqual(source));
++                        for (int i = 1; i < 8; i++)
++                        {
++                            if (_places[i] && _reseau.Ldn.Nodes[i].MacAddress.AsSpan().SequenceEqual(partant.MacAddress.AsSpan()))
++                            {
++                                Liberer(i);
++                                break;
++                            }
++                        }
++                        Synchroniser();
++                        break;
++                    }
++                    case DestroyNetwork when !_hote && _connecte:
++                        _ipHote = null;
++                        Changer(false, DisconnectReason.DestroyedByUser);
++                        break;
++                    case SyncNetwork when !_hote && _ipHote != null && Lire(donnees, out NetworkInfo reseau):
++                        _reseau = reseau;
++                        Changer(true);
++                        _synchro.Set();
++                        break;
++                }
++            }
++        }
++
++        /// <summary>Paquet du jeu reçu d'un autre joueur : décompressé, puis remis au socket qui l'attend.</summary>
++        private void RecevoirProxy(byte[] source, ushort portSource, byte[] destination, ushort portDestination, byte protocole, bool diffusion, byte[] donnees)
++        {
++            byte[] brut;
++            try
++            {
++                using Decompressor d = new();
++                brut = d.Unwrap(donnees).ToArray();
++            }
++            catch (ZstdException)
++            {
++                return;
++            }
++            ProxyDataHeader entete = new()
++            {
++                Info = new ProxyInfo
++                {
++                    SourceIpV4 = Entier(source),
++                    SourcePort = portSource,
++                    DestIpV4 = diffusion && Config.ProxyIp != 0 ? Config.ProxyIp | ~Config.ProxySubnetMask : Entier(destination),
++                    DestPort = portDestination,
++                    Protocol = protocole == EdenTcp ? ProtocolType.Tcp : ProtocolType.Udp,
++                },
++                DataLength = (uint)brut.Length,
++            };
++            _proxy?.HandleData(default, entete, brut);
++        }
++
++        /// <summary>Envoi du proxy de Ryujinx (protocole RyuLdn) : relu, les données partent au salon.</summary>
++        public bool SendAsync(byte[] buffer)
++        {
++            _sortie.Read(buffer, 0, buffer.Length);
++            return true;
++        }
++
++        private void EnvoyerProxy(LdnHeader header, ProxyDataHeader entete, byte[] donnees)
++        {
++            using Compressor c = new(3);
++            byte[] destination = Ip(entete.Info.DestIpV4);
++            _salon.EnvoyerProxy(entete.Info.SourcePort, destination, entete.Info.DestPort,
++                entete.Info.Protocol == ProtocolType.Tcp ? EdenTcp : EdenUdp, destination[3] == 255, c.Wrap(donnees).ToArray());
++        }
++    }
++}
+diff --git a/src/Ryujinx.HLE/HOS/Services/Ldn/UserServiceCreator/IUserLocalCommunicationService.cs b/src/Ryujinx.HLE/HOS/Services/Ldn/UserServiceCreator/IUserLocalCommunicationService.cs
+index f5ca0fd8..a391cf9c 100644
+--- a/src/Ryujinx.HLE/HOS/Services/Ldn/UserServiceCreator/IUserLocalCommunicationService.cs
++++ b/src/Ryujinx.HLE/HOS/Services/Ldn/UserServiceCreator/IUserLocalCommunicationService.cs
+@@ -1176,6 +1176,13 @@ namespace Ryujinx.HLE.HOS.Services.Ldn.UserServiceCreator
+ 
+                         Logger.Info?.PrintMsg(LogClass.ServiceLdn, $"Initializing with multiplayer mode: {mode}");
+ 
++                        // En Local : salon d'Eden demandé, quel que soit le réglage de Ryujinx.
++                        if (EnLocal.SalonEden.Instance is { } salon)
++                        {
++                            mode = (MultiplayerMode)(-1);
++                            NetworkClient = new EnLocal.SalonEdenClient(salon);
++                        }
++
+                         switch (mode)
+                         {
+                             case MultiplayerMode.LdnRyu:
+diff --git a/src/Ryujinx.HLE/HOS/Services/Spl/IRandomInterface.cs b/src/Ryujinx.HLE/HOS/Services/Spl/IRandomInterface.cs
+index fc58613f..d8ccd7ed 100644
+--- a/src/Ryujinx.HLE/HOS/Services/Spl/IRandomInterface.cs
++++ b/src/Ryujinx.HLE/HOS/Services/Spl/IRandomInterface.cs
+@@ -1,3 +1,4 @@
++using System;
+ using System.Security.Cryptography;
+ 
+ namespace Ryujinx.HLE.HOS.Services.Spl
+@@ -6,10 +7,16 @@ namespace Ryujinx.HLE.HOS.Services.Spl
+     class IRandomInterface : DisposableIpcService
+     {
+         private readonly RandomNumberGenerator _rng;
++        // En Local : en salon, même graine pour tous les joueurs (comme rng_seed d'Eden), sinon Smash se désynchronise.
++        private readonly Random _graine;
+ 
+         public IRandomInterface(ServiceCtx context)
+         {
+             _rng = RandomNumberGenerator.Create();
++            if (int.TryParse(Environment.GetEnvironmentVariable("ENLOCAL_GRAINE"), out int graine))
++            {
++                _graine = new Random(graine);
++            }
+         }
+ 
+         [CommandCmif(0)]
+@@ -18,7 +25,14 @@ namespace Ryujinx.HLE.HOS.Services.Spl
+         {
+             byte[] randomBytes = new byte[context.Request.ReceiveBuff[0].Size];
+ 
+-            _rng.GetBytes(randomBytes);
++            if (_graine != null)
++            {
++                _graine.NextBytes(randomBytes);
++            }
++            else
++            {
++                _rng.GetBytes(randomBytes);
++            }
+ 
+             context.Memory.Write(context.Request.ReceiveBuff[0].Position, randomBytes);
+ 
+diff --git a/src/Ryujinx.HLE/Ryujinx.HLE.csproj b/src/Ryujinx.HLE/Ryujinx.HLE.csproj
+index 450e9979..e5f67b6a 100644
+--- a/src/Ryujinx.HLE/Ryujinx.HLE.csproj
++++ b/src/Ryujinx.HLE/Ryujinx.HLE.csproj
+@@ -24,6 +24,7 @@
+ 
+   <ItemGroup>
+     <PackageReference Include="Ryujinx.LibHac" />
++    <PackageReference Include="ZstdSharp.Port" />
+     <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" />
+     <PackageReference Include="MsgPack.Cli" />
+     <PackageReference Include="SkiaSharp" />
+diff --git a/src/Ryujinx/EnLocal.cs b/src/Ryujinx/EnLocal.cs
+index 1be3aced..a9d0fc19 100644
+--- a/src/Ryujinx/EnLocal.cs
++++ b/src/Ryujinx/EnLocal.cs
+@@ -50,6 +50,8 @@ namespace Ryujinx.Ava
+             c.EnableDiscordIntegration.Value = false;
+             c.UpdateCheckerType.Value = UpdaterType.Off;
+             c.ShowConfirmExit.Value = false;
++            // Salon d'Eden demandé : Ryujinx y entre tout de suite, comme Eden.
++            HLE.HOS.Services.Ldn.UserServiceCreator.EnLocal.SalonEden.Demarrer();
+             // Pas de fenêtre « manette » par-dessus tout : la manette est prise dès qu'elle s'allume.
+             c.System.IgnoreControllerApplet.Value = true;
+             c.RememberWindowState.Value = false;
+@@ -170,7 +172,8 @@ namespace Ryujinx.Ava
+             }
+ 
+             AppHost hote = fenetre.ViewModel.AppHost;
+-            bool menu = !string.IsNullOrEmpty(_menu) && File.Exists(_menu);
++            // En salon, pas de pause : les autres joueurs perdraient la partie (comme Eden).
++            bool menu = !string.IsNullOrEmpty(_menu) && File.Exists(_menu) && HLE.HOS.Services.Ldn.UserServiceCreator.EnLocal.SalonEden.Instance == null;
+             if (hote != null && menu != _enPause)
+             {
+                 _enPause = menu;
+diff --git a/src/Ryujinx/Ryujinx.csproj b/src/Ryujinx/Ryujinx.csproj
+index 6c2e68e3..9f7b46db 100644
+--- a/src/Ryujinx/Ryujinx.csproj
++++ b/src/Ryujinx/Ryujinx.csproj
+@@ -102,6 +102,11 @@
+       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+       <TargetPath>alsoft.ini</TargetPath>
+     </Content>
++    <!-- En Local : ENet des salons d'Eden (distribution/macos/enlocal/build-enet.sh). -->
++    <Content Include="..\..\distribution\macos\enlocal\libenet.dylib" Condition="'$(RuntimeIdentifier)' == 'osx-arm64' AND Exists('..\..\distribution\macos\enlocal\libenet.dylib')">
++      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
++      <TargetPath>libenet.dylib</TargetPath>
++    </Content>
+     <Content Include="..\..\distribution\legal\THIRDPARTY.md">
+       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+       <TargetPath>THIRDPARTY.md</TargetPath>
+-- 
+2.54.0 (Apple Git-157)
+
+
+From 9180b6f1b3183f7b7544567868ac8335fa5e13ef Mon Sep 17 00:00:00 2001
+From: Relood <147659633+relood-dev@users.noreply.github.com>
+Date: Fri, 23 Oct 2026 10:16:06 +0200
+Subject: [PATCH 07/10] =?UTF-8?q?En=20Local=20:=20pseudo=20=C2=AB=20-mac?=
+ =?UTF-8?q?=20=C2=BB=20si=20le=20m=C3=AAme=20compte=20est=20d=C3=A9j=C3=A0?=
+ =?UTF-8?q?=20dans=20le=20salon?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../Ldn/UserServiceCreator/EnLocal/SalonEden.cs | 17 +++++++++++++++--
+ 1 file changed, 15 insertions(+), 2 deletions(-)
+
+diff --git a/src/Ryujinx.HLE/HOS/Services/Ldn/UserServiceCreator/EnLocal/SalonEden.cs b/src/Ryujinx.HLE/HOS/Services/Ldn/UserServiceCreator/EnLocal/SalonEden.cs
+index dbebe1ed..8fce6591 100644
+--- a/src/Ryujinx.HLE/HOS/Services/Ldn/UserServiceCreator/EnLocal/SalonEden.cs
++++ b/src/Ryujinx.HLE/HOS/Services/Ldn/UserServiceCreator/EnLocal/SalonEden.cs
+@@ -36,7 +36,9 @@ namespace Ryujinx.HLE.HOS.Services.Ldn.UserServiceCreator.EnLocal
+             Instance = new SalonEden(hote, port, Environment.GetEnvironmentVariable("ENLOCAL_SALON_PSEUDO") ?? "Ryujinx", Environment.GetEnvironmentVariable("ENLOCAL_SALON_MDP") ?? "");
+         }
+ 
+-        private readonly string _hote, _pseudo, _mdp;
++        private readonly string _hote, _mdp;
++        private string _pseudo;
++        private bool _renomme, _refuse;
+         private readonly ushort _port;
+         private readonly ConcurrentQueue<byte[]> _sortants = new();
+         private readonly ManualResetEventSlim _dedans = new(false);
+@@ -106,7 +108,7 @@ namespace Ryujinx.HLE.HOS.Services.Ldn.UserServiceCreator.EnLocal
+                     e.U8(JoinRequest).Chaine(_pseudo).Brut([0xFF, 0xFF, 0xFF, 0xFF]).U32(NetworkVersion).Chaine(_mdp).Chaine("");
+                     _sortants.Enqueue(e.Fin());
+                     _sortants.Enqueue(new Ecrivain().U8(SetGameInfo).Chaine("").U64(0).Chaine("").Fin());
+-                    if (!Connecte(hote, pair))
++                    if (!Connecte(hote, pair) && _refuse)
+                     {
+                         return; // refusé par le salon : inutile de réessayer
+                     }
+@@ -142,6 +144,8 @@ namespace Ryujinx.HLE.HOS.Services.Ldn.UserServiceCreator.EnLocal
+                         {
+                             Enet.enet_peer_disconnect(pair, 0);
+                             Enet.enet_host_flush(hote);
++                            // Une seule connexion possible : libérée tout de suite pour pouvoir revenir.
++                            Enet.enet_peer_reset(pair);
+                             return false;
+                         }
+                     }
+@@ -196,6 +200,14 @@ namespace Ryujinx.HLE.HOS.Services.Ldn.UserServiceCreator.EnLocal
+                         Proxy?.Invoke(source, portSource, destination, portDestination, protocole, diffusion, l.Liste());
+                         break;
+                     }
++                    // Même pseudo déjà dans le salon (le même compte Discord sur un autre appareil) :
++                    // une fois, on revient avec « -mac » au bout.
++                    case NameCollision when !_renomme:
++                        _renomme = true;
++                        _pseudo = (_pseudo.Length > 16 ? _pseudo[..16] : _pseudo) + "-mac";
++                        Logger.Warning?.Print(LogClass.ServiceLdn, $"En Local : pseudo déjà pris dans le salon, on revient en {_pseudo}.");
++                        Ip = null;
++                        return false;
+                     case NameCollision:
+                     case IpCollision:
+                     case VersionMismatch:
+@@ -205,6 +217,7 @@ namespace Ryujinx.HLE.HOS.Services.Ldn.UserServiceCreator.EnLocal
+                     case HostBanned:
+                         Logger.Error?.Print(LogClass.ServiceLdn, $"En Local : le salon refuse l'entrée (message {octets[0]}).");
+                         Ip = null;
++                        _refuse = true;
+                         return false;
+                     case CloseRoom:
+                         Logger.Warning?.Print(LogClass.ServiceLdn, "En Local : salon fermé.");
+-- 
+2.54.0 (Apple Git-157)
+
+
+From 1dbd565454fc3c1402e50eea7f633866624bae26 Mon Sep 17 00:00:00 2001
+From: Relood <147659633+relood-dev@users.noreply.github.com>
+Date: Fri, 23 Oct 2026 10:23:49 +0200
+Subject: [PATCH 08/10] =?UTF-8?q?En=20Local=20:=20pseudo=20toujours=20en?=
+ =?UTF-8?q?=20=C2=AB=20-mac=20=C2=BB=20dans=20les=20salons?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../Services/Ldn/UserServiceCreator/EnLocal/SalonEden.cs | 9 +++++----
+ 1 file changed, 5 insertions(+), 4 deletions(-)
+
+diff --git a/src/Ryujinx.HLE/HOS/Services/Ldn/UserServiceCreator/EnLocal/SalonEden.cs b/src/Ryujinx.HLE/HOS/Services/Ldn/UserServiceCreator/EnLocal/SalonEden.cs
+index 8fce6591..b60c7726 100644
+--- a/src/Ryujinx.HLE/HOS/Services/Ldn/UserServiceCreator/EnLocal/SalonEden.cs
++++ b/src/Ryujinx.HLE/HOS/Services/Ldn/UserServiceCreator/EnLocal/SalonEden.cs
+@@ -54,7 +54,9 @@ namespace Ryujinx.HLE.HOS.Services.Ldn.UserServiceCreator.EnLocal
+ 
+         private SalonEden(string hote, ushort port, string pseudo, string mdp)
+         {
+-            (_hote, _port, _pseudo, _mdp) = (hote, port, pseudo, mdp);
++            // Toujours « -mac » au bout : le même compte Discord peut être sur son PC dans le même salon,
++            // et Eden refuse deux fois le même pseudo (le premier arrivé le garde).
++            (_hote, _port, _pseudo, _mdp) = (hote, port, (pseudo.Length > 16 ? pseudo[..16] : pseudo) + "-mac", mdp);
+             new Thread(Boucle) { Name = "EnLocal.SalonEden", IsBackground = true }.Start();
+         }
+ 
+@@ -200,11 +202,10 @@ namespace Ryujinx.HLE.HOS.Services.Ldn.UserServiceCreator.EnLocal
+                         Proxy?.Invoke(source, portSource, destination, portDestination, protocole, diffusion, l.Liste());
+                         break;
+                     }
+-                    // Même pseudo déjà dans le salon (le même compte Discord sur un autre appareil) :
+-                    // une fois, on revient avec « -mac » au bout.
++                    // Pseudo déjà pris (un autre Mac du même compte) : une fois, on revient en « -mac2 ».
+                     case NameCollision when !_renomme:
+                         _renomme = true;
+-                        _pseudo = (_pseudo.Length > 16 ? _pseudo[..16] : _pseudo) + "-mac";
++                        _pseudo += "2";
+                         Logger.Warning?.Print(LogClass.ServiceLdn, $"En Local : pseudo déjà pris dans le salon, on revient en {_pseudo}.");
+                         Ip = null;
+                         return false;
+-- 
+2.54.0 (Apple Git-157)
+
+
+From 20f44000a9ab36dc7a1bfe69d24cbd2e3f6fdda4 Mon Sep 17 00:00:00 2001
+From: Relood <147659633+relood-dev@users.noreply.github.com>
+Date: Fri, 23 Oct 2026 10:33:57 +0200
+Subject: [PATCH 09/10] =?UTF-8?q?En=20Local=20:=20paquets=20du=20salon=20e?=
+ =?UTF-8?q?nvoy=C3=A9s=20en=201=20ms?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .../HOS/Services/Ldn/UserServiceCreator/EnLocal/SalonEden.cs   | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/src/Ryujinx.HLE/HOS/Services/Ldn/UserServiceCreator/EnLocal/SalonEden.cs b/src/Ryujinx.HLE/HOS/Services/Ldn/UserServiceCreator/EnLocal/SalonEden.cs
+index b60c7726..7f7342c8 100644
+--- a/src/Ryujinx.HLE/HOS/Services/Ldn/UserServiceCreator/EnLocal/SalonEden.cs
++++ b/src/Ryujinx.HLE/HOS/Services/Ldn/UserServiceCreator/EnLocal/SalonEden.cs
+@@ -129,7 +129,8 @@ namespace Ryujinx.HLE.HOS.Services.Ldn.UserServiceCreator.EnLocal
+             while (true)
+             {
+                 Enet.Evenement ev;
+-                if (Enet.enet_host_service(hote, &ev, 5) > 0)
++                // 1 ms (Eden : 5 ms) : un paquet du jeu attend au plus 1 ms avant de partir.
++                if (Enet.enet_host_service(hote, &ev, 1) > 0)
+                 {
+                     if (ev.Type == Enet.Disconnect)
+                     {
+-- 
+2.54.0 (Apple Git-157)
+
+
+From 7c0e8c5f229fa2d14325fd16fd398ccb16c91113 Mon Sep 17 00:00:00 2001
+From: Relood <147659633+relood-dev@users.noreply.github.com>
+Date: Fri, 23 Oct 2026 11:47:13 +0200
+Subject: [PATCH 10/10] En Local : volume des jeux en direct
+
+---
+ src/Ryujinx/EnLocal.cs | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/src/Ryujinx/EnLocal.cs b/src/Ryujinx/EnLocal.cs
+index a9d0fc19..d89d3f83 100644
+--- a/src/Ryujinx/EnLocal.cs
++++ b/src/Ryujinx/EnLocal.cs
+@@ -33,6 +33,8 @@ namespace Ryujinx.Ava
+     {
+         private static readonly string _cadre = Environment.GetEnvironmentVariable("ENLOCAL_CADRE");
+         private static readonly string _menu = Environment.GetEnvironmentVariable("ENLOCAL_MENU");
++        private static readonly string _volume = Environment.GetEnvironmentVariable("ENLOCAL_VOLUME_FICHIER");
++        private static DateTime _volumeLu;
+         public static bool Actif => !string.IsNullOrEmpty(_cadre);
+ 
+         /// <summary>Première image du jeu : la fenêtre, transparente pendant le chargement de Ryujinx, devient visible.</summary>
+@@ -187,6 +189,16 @@ namespace Ryujinx.Ava
+                 }
+             }
+ 
++            // Volume des jeux réglé dans En Local, en direct (fichier de 0 à 1).
++            if (!string.IsNullOrEmpty(_volume) && File.Exists(_volume) && File.GetLastWriteTimeUtc(_volume) != _volumeLu)
++            {
++                _volumeLu = File.GetLastWriteTimeUtc(_volume);
++                if (float.TryParse(File.ReadAllText(_volume).Trim(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float niveau) && niveau is >= 0 and <= 1)
++                {
++                    ConfigurationState.Instance.System.AudioVolume.Value = niveau;
++                }
++            }
++
+             IntPtr ns = NsWindow(fenetre);
+             if (ns == IntPtr.Zero)
+             {
+-- 
+2.54.0 (Apple Git-157)
+

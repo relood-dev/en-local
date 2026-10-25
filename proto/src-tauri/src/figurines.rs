@@ -7,7 +7,7 @@ pub fn dossier(sorte: &str) -> PathBuf {
     crate::medias::racine().join(if sorte == "amiibo" { "Amiibo" } else { "Skylanders" })
 }
 pub fn fichier(sorte: &str) -> String {
-    format!("{}\\data\\{sorte}.txt", crate::root())
+    chemin!("{}\\data\\{sorte}.txt", crate::root())
 }
 /// Au lancement d'un jeu : rien sur le lecteur ni sur le portail.
 pub fn vider() {

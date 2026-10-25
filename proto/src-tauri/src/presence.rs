@@ -26,7 +26,7 @@ pub struct Presence {
 
 /// Dernier échange avec Discord, dans data\presence.log.
 fn noter(texte: &str) {
-    let _ = std::fs::write(format!("{}\\data\\presence.log", crate::root()), texte);
+    let _ = std::fs::write(chemin!("{}\\data\\presence.log", crate::root()), texte);
 }
 
 fn with_client<E: std::fmt::Display>(f: impl FnOnce(&mut DiscordIpcClient) -> Result<(), E>) {

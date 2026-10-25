@@ -181,6 +181,7 @@ pub fn selectionner(owner: isize, titre: &str) -> Option<String> {
 pub fn selectionner_fichier(owner: isize, titre: &str, filtre: (&str, &str)) -> Option<String> {
     choisir(owner, titre, Some(filtre))
 }
+#[cfg(windows)]
 fn choisir(owner: isize, titre: &str, filtre: Option<(&str, &str)>) -> Option<String> {
     use windows::core::{HSTRING, PCWSTR};
     use windows::Win32::Foundation::HWND;
@@ -208,6 +209,7 @@ fn choisir(owner: isize, titre: &str, filtre: Option<(&str, &str)>) -> Option<St
 }
 
 /// Fenêtre Windows de choix de plusieurs fichiers (jeux et archives). Rend la liste, vide si annulé.
+#[cfg(windows)]
 pub fn selectionner_plusieurs(owner: isize, titre: &str) -> Vec<String> {
     use windows::core::{HSTRING, PCWSTR};
     use windows::Win32::Foundation::HWND;
@@ -247,6 +249,7 @@ pub struct Disque {
     pub libre: u64,
     pub total: u64,
 }
+#[cfg(windows)]
 pub fn disques() -> Vec<Disque> {
     use windows::Win32::Storage::FileSystem::{GetDiskFreeSpaceExW, GetDriveTypeW};
     let mut out = Vec::new();
@@ -263,6 +266,28 @@ pub fn disques() -> Vec<Disque> {
         }
     }
     out
+}
+
+/* macOS : fenêtres de choix du système (rfd), disques sous /Volumes. */
+#[cfg(not(windows))]
+fn choisir(_owner: isize, titre: &str, filtre: Option<(&str, &str)>) -> Option<String> {
+    let d = rfd::FileDialog::new().set_title(titre);
+    match filtre {
+        None => d.pick_folder(),
+        Some((nom, motif)) => {
+            let ext: Vec<String> = motif.split(';').filter_map(|m| m.trim().strip_prefix("*.")).filter(|e| *e != "*").map(String::from).collect();
+            if ext.is_empty() { d.pick_file() } else { d.add_filter(nom, &ext).pick_file() }
+        }
+    }
+    .map(|p| p.to_string_lossy().into_owned())
+}
+#[cfg(not(windows))]
+pub fn selectionner_plusieurs(_owner: isize, titre: &str) -> Vec<String> {
+    rfd::FileDialog::new().set_title(titre).pick_files().unwrap_or_default().into_iter().map(|p| p.to_string_lossy().into_owned()).collect()
+}
+#[cfg(not(windows))]
+pub fn disques() -> Vec<Disque> {
+    Vec::new()
 }
 
 #[cfg(test)]

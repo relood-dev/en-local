@@ -1,4 +1,5 @@
 // Fiches des jeux GameTDB (gametdb.com). Bases téléchargées dans data\gametdb\, renouvelées chaque mois.
+use crate::plateforme::SansFenetre;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
@@ -49,16 +50,15 @@ fn xml(name: &str) -> Option<PathBuf> {
     if !fresh {
         let _ = std::fs::create_dir_all(dir());
         let extra = if name == "wiitdb" { "&GAMECUBE=1" } else { "" };
-        let script = format!(
-            "$ErrorActionPreference='Stop'; $z = Join-Path $env:TEMP 'enlocal-{name}.zip'; \
-             Invoke-WebRequest -UseBasicParsing 'https://www.gametdb.com/{name}.zip?LANG=FR{extra}' -OutFile $z; \
-             Expand-Archive -Force $z '{}'; Remove-Item $z",
-            // Apostrophes doublées : le chemin passe entre guillemets simples.
-            dir().display().to_string().replace('\'', "''")
-        );
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        let _ = std::process::Command::new("powershell").args(["-NoProfile", "-Command", &script]).creation_flags(CREATE_NO_WINDOW).status();
+        // curl et tar sont livrés avec Windows 10 et macOS (tar lit les .zip).
+        let z = std::env::temp_dir().join(format!("enlocal-{name}.zip"));
+        let ok = std::process::Command::new(crate::plateforme::CURL)
+            .args(["-f", "-s", "-L", "--max-time", "120", "-o"]).arg(&z).arg(format!("https://www.gametdb.com/{name}.zip?LANG=FR{extra}"))
+            .sans_fenetre().status().is_ok_and(|s| s.success());
+        if ok {
+            let _ = std::process::Command::new("tar").arg("-xf").arg(&z).arg("-C").arg(dir()).sans_fenetre().status();
+        }
+        let _ = std::fs::remove_file(&z);
     }
     file.exists().then_some(file)
 }
@@ -75,7 +75,8 @@ pub fn infos(wanted: Vec<(String, String)>) -> HashMap<String, Info> {
     for (b, ids) in by_base {
         let Some(text) = xml(b).and_then(|f| std::fs::read_to_string(f).ok()) else { continue };
         for id in ids {
-            let found = if b == "switchtdb" { find_by_title(&text, &id) } else { find(&text, &id) };
+            let par_nom = b == "switchtdb" || (b == "wiiutdb" && !(id.len() == 6 && id.bytes().all(|c| c.is_ascii_alphanumeric())));
+            let found = if par_nom { find_by_title(&text, &id) } else { find(&text, &id) };
             if let Some(info) = found {
                 out.insert(id, info);
             }
@@ -124,8 +125,20 @@ fn find(text: &str, id: &str) -> Option<Info> {
     })
 }
 
-/// Fiche dont le titre correspond au nom, sans accents ni ponctuation.
+/// Fiche dont le titre correspond au nom, sans accents ni ponctuation, ni ce qui est entre parenthèses ou crochets
+/// (« Skylanders™ Imaginators (EU) (v16) »).
 fn find_by_title(text: &str, name: &str) -> Option<Info> {
+    let mut nom = String::new();
+    let mut dedans = 0;
+    for c in name.chars() {
+        match c {
+            '(' | '[' => dedans += 1,
+            ')' | ']' => dedans = 0.max(dedans - 1),
+            c if dedans == 0 => nom.push(c),
+            _ => {}
+        }
+    }
+    let name = nom.as_str();
     let want = simple(name);
     if want.is_empty() {
         return None;
@@ -226,11 +239,11 @@ mod tests {
     #[test]
     #[ignore]
     fn vraies_fiches() {
-        let r = super::infos(vec![("3DS".into(), "EKJA".into()), ("GC".into(), "GALP01".into()), ("WiiU".into(), "ALZP01".into()), ("DS".into(), "CPUF".into()), ("Switch".into(), "Super Smash Bros Ultimate".into())]);
+        let r = super::infos(vec![("3DS".into(), "EKJA".into()), ("GC".into(), "GALP01".into()), ("WiiU".into(), "ALZP01".into()), ("DS".into(), "CPUF".into()), ("Switch".into(), "Super Smash Bros Ultimate".into()), ("WiiU".into(), "Skylanders™ Imaginators (EU) (v16)".into())]);
         for (id, i) in &r {
             println!("{id} : {} ({}, {}) {} joueurs, en ligne {} — {:.60}", i.title, i.developer, i.year, i.players, i.online, i.synopsis);
         }
-        assert_eq!(r.len(), 5);
+        assert_eq!(r.len(), 6);
     }
 
     #[test]

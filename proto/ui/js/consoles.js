@@ -86,7 +86,9 @@ const REGLAGES_CONSOLE = {
 };
 const DOLPHIN = (wii) => [
   wii ? LANGUE : { ...LANGUE, valeurs: LANGUES.filter(([l]) => l !== 'ja'), aide: 'Pour les jeux GameCube européens, qui ont plusieurs langues. Les jeux américains et japonais restent dans la leur.' },
-  { id: 'api', label: 'Pilote graphique', parDefaut: 'Direct3D 11', aide: 'Direct3D 11 : le plus sûr sur Windows. Vulkan : souvent plus fluide, moins de saccades. Direct3D 12 et OpenGL : si un jeu s\'affiche mal.', valeurs: [['D3D', 'Direct3D 11'], ['Vulkan', 'Vulkan'], ['D3D12', 'Direct3D 12'], ['OGL', 'OpenGL']] },
+  /Macintosh/.test(navigator.userAgent)
+    ? { id: 'api', label: 'Pilote graphique', parDefaut: 'Metal', aide: 'Metal : celui du Mac, le plus fluide. Vulkan et OpenGL : si un jeu s\'affiche mal.', valeurs: [['Metal', 'Metal'], ['Vulkan', 'Vulkan'], ['OGL', 'OpenGL']] }
+    : { id: 'api', label: 'Pilote graphique', parDefaut: 'Direct3D 11', aide: 'Direct3D 11 : le plus sûr sur Windows. Vulkan : souvent plus fluide, moins de saccades. Direct3D 12 et OpenGL : si un jeu s\'affiche mal.', valeurs: [['D3D', 'Direct3D 11'], ['Vulkan', 'Vulkan'], ['D3D12', 'Direct3D 12'], ['OGL', 'OpenGL']] },
   { id: 'resolution', label: 'Résolution', aide: 'Les jeux s\'affichaient en 480p : plus haut, ils sont bien plus nets. Demande plus à la carte graphique.', valeurs: [['1', 'D\'origine (480p)'], ['2', '2× (720p)'], ['3', '3× (1080p)'], ['4', '4× (1440p)'], ['5', '5× (1800p)'], ['6', '6× (4K)'], ['8', '8× (5K)']] },
   { id: 'aa', label: 'Anticrénelage', aide: 'Lisse les bords en escalier.', valeurs: [['1', 'Aucun'], ['2', 'MSAA 2×'], ['4', 'MSAA 4×'], ['8', 'MSAA 8×']] },
   { id: 'aniso', label: 'Filtrage anisotrope', aide: 'Textures plus nettes au loin.', valeurs: [['-1', 'Selon le jeu'], ['0', '1×'], ['1', '2×'], ['2', '4×'], ['3', '8×'], ['4', '16×']] },
@@ -630,7 +632,7 @@ function profilRecommande(m) {
   c.Switch.shaders_async = 'oui';
   if (cpu === 0) c.Switch.mode = '0'; // mode portable : moins de travail pour un petit processeur
   // Vulkan pour NVIDIA et AMD, Direct3D/OpenGL pour Intel.
-  c.GC.api = c.Wii.api = intel ? 'D3D' : 'Vulkan';
+  c.GC.api = c.Wii.api = /Macintosh/.test(navigator.userAgent) ? 'Metal' : intel ? 'D3D' : 'Vulkan';
   c['3DS'].api = intel ? '1' : '2';
   const largeur = gpu?.largeur || 1920;
   const wiiu = niveau === 0 ? [1280, 720] : niveau === 1 ? [Math.min(1920, largeur), Math.min(1080, h)] : [largeur, h];

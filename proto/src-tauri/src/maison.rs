@@ -1,5 +1,6 @@
 // Côté machine de l'accueil : icônes des jeux, images posées et captures.
 // L'interface ne lit que data\home et data\captures (protocole asset).
+use crate::plateforme::SansFenetre;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -378,7 +379,6 @@ mod tests {
 
 /// Sprite d'un Pokémon (ou d'un badge) depuis PokéAPI, téléchargé une fois dans data\\sprites.
 pub fn sprite(n: u16, chroma: bool, badge: bool) -> Option<String> {
-    use std::os::windows::process::CommandExt;
     if n == 0 || n > if badge { 77 } else { 1025 } {
         return None;
     }
@@ -394,9 +394,9 @@ pub fn sprite(n: u16, chroma: bool, badge: bool) -> Option<String> {
         format!("https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/{}{n}.png", if chroma { "shiny/" } else { "" })
     };
     let tmp = f.with_extension("part");
-    let ok = std::process::Command::new("curl.exe")
+    let ok = std::process::Command::new(crate::plateforme::CURL)
         .args(["-f", "-s", "-L", "--max-time", "20", "-o"]).arg(&tmp).arg(&url)
-        .creation_flags(0x0800_0000)
+        .sans_fenetre()
         .status()
         .is_ok_and(|s| s.success());
     if ok && std::fs::metadata(&tmp).is_ok_and(|m| m.len() > 100) && std::fs::rename(&tmp, &f).is_ok() {
@@ -407,7 +407,6 @@ pub fn sprite(n: u16, chroma: bool, badge: bool) -> Option<String> {
 }
 
 pub fn jaquette(urls: &[String]) -> Option<(String, usize)> {
-    use std::os::windows::process::CommandExt;
     let dir = dossier("jaquettes");
     let _ = std::fs::create_dir_all(&dir);
     let nom = |u: &str| -> Option<String> {
@@ -427,13 +426,12 @@ pub fn jaquette(urls: &[String]) -> Option<(String, usize)> {
             return Some((f.to_string_lossy().into_owned(), i));
         }
     }
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     for (i, u) in urls.iter().enumerate() {
         let f = dir.join(nom(u)?);
         let tmp = f.with_extension("part");
-        let ok = std::process::Command::new("curl.exe")
+        let ok = std::process::Command::new(crate::plateforme::CURL)
             .args(["-f", "-s", "-L", "--max-time", "25", "-o"]).arg(&tmp).arg(u)
-            .creation_flags(CREATE_NO_WINDOW)
+            .sans_fenetre()
             .status()
             .is_ok_and(|s| s.success());
         if ok && std::fs::metadata(&tmp).is_ok_and(|m| m.len() > 500) && std::fs::rename(&tmp, &f).is_ok() {

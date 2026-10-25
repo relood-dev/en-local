@@ -9,8 +9,8 @@ pub fn propre(nom: &str) -> Option<String> {
 
 /// Eden : nom du profil dans profiles.dat. Créé s'il n'existe pas.
 pub fn eden(user: &str, nom: &str) {
-    let dir = format!("{user}\\nand\\system\\save\\8000000000000010\\su\\avators");
-    let f = format!("{dir}\\profiles.dat");
+    let dir = chemin!("{user}\\nand\\system\\save\\8000000000000010\\su\\avators");
+    let f = chemin!("{dir}\\profiles.dat");
     let mut b = match std::fs::read(&f) {
         Ok(b) if b.len() == 0x650 => b,
         Ok(_) => return, // format inconnu : on n'y touche pas
@@ -45,7 +45,7 @@ pub fn eden(user: &str, nom: &str) {
 
 /// Azahar : bloc 0x000A0000 de la config console. Le fichier existe après un premier lancement.
 pub fn azahar(user: &str, nom: &str) {
-    let f = format!("{user}\\nand\\data\\00000000000000000000000000000000\\sysdata\\00010017\\00000000\\config");
+    let f = chemin!("{user}\\nand\\data\\00000000000000000000000000000000\\sysdata\\00010017\\00000000\\config");
     let Ok(mut b) = std::fs::read(&f) else { return };
     if b.len() < 4 {
         return;
@@ -95,7 +95,7 @@ mod tests {
         let t = std::env::temp_dir().join(format!("enlocal-pseudo-{}", std::process::id()));
         let user = t.to_string_lossy().into_owned();
         super::eden(&user, "joueur02");
-        let f = format!("{user}\\nand\\system\\save\\8000000000000010\\su\\avators\\profiles.dat");
+        let f = chemin!("{user}\\nand\\system\\save\\8000000000000010\\su\\avators\\profiles.dat");
         let b = std::fs::read(&f).unwrap();
         assert_eq!(b.len(), 0x650);
         assert_eq!(b[0x10..0x20], b[0x20..0x30]);

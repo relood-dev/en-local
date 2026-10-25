@@ -1,14 +1,12 @@
 //! Clips vidéo : ffmpeg filme En Local en continu dans un tampon de morceaux de 2 s.
 //! Un clip garde les dernières secondes. Image : ddagrab et la carte graphique. Son : boucle WASAPI.
+use crate::plateforme::SansFenetre;
 use std::io::Write;
-use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-
-const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 const MORCEAU: u64 = 2;
 
 struct Enregistrement {
@@ -191,7 +189,7 @@ fn demarrer_zone(sortie: u32, x: i32, y: i32, w: i32, h: i32, secs: u64, qualite
         cmd.args(video(encodeur, qualite));
         cmd.args(["-g", "60", "-f", "segment", "-segment_time", &MORCEAU.to_string(), "-segment_wrap", &morceaux, "-reset_timestamps", "1", "-segment_format", "mpegts"]);
         cmd.arg(dir.join("m%03d.ts"));
-        let Ok(mut child) = cmd.stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::null()).creation_flags(CREATE_NO_WINDOW).spawn() else { continue };
+        let Ok(mut child) = cmd.stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::null()).sans_fenetre().spawn() else { continue };
         let stop = Arc::new(AtomicBool::new(false));
         if let (Some((rate, canaux)), Some(stdin)) = (format, child.stdin.take()) {
             let s = stop.clone();
@@ -243,7 +241,7 @@ pub async fn miniature(path: String) -> Option<String> {
                 let ok = Command::new(ffmpeg())
                     .args(["-y", "-v", "error", "-ss", debut, "-i"]).arg(&video)
                     .args(["-frames:v", "1", "-vf", "scale=480:-2", "-q:v", "4"]).arg(&f)
-                    .creation_flags(CREATE_NO_WINDOW).stdout(Stdio::null()).stderr(Stdio::null())
+                    .sans_fenetre().stdout(Stdio::null()).stderr(Stdio::null())
                     .status().is_ok_and(|s| s.success());
                 if ok && f.exists() {
                     break;
@@ -299,7 +297,7 @@ pub async fn clip(jeu: String, avant: Option<f64>) -> Result<String, String> {
         let brut = travail.join("assemble.mp4");
         let fin = sortie.join(format!("{}.mp4", nom_clip(&jeu)));
         // En cas d'échec, l'erreur ffmpeg va dans data\\ui.log.
-        let ok = |args: &[&std::ffi::OsStr]| match Command::new(ffmpeg()).args(args).creation_flags(CREATE_NO_WINDOW).stdout(Stdio::null()).stderr(Stdio::piped()).output() {
+        let ok = |args: &[&std::ffi::OsStr]| match Command::new(ffmpeg()).args(args).sans_fenetre().stdout(Stdio::null()).stderr(Stdio::piped()).output() {
             Ok(o) if o.status.success() => true,
             Ok(o) => {
                 let e = String::from_utf8_lossy(&o.stderr);

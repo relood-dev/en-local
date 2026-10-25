@@ -1,12 +1,15 @@
 // Émulateurs lancés dans la fenêtre d'En Local (--parent), en mode portable.
 // En Local écrit leur configuration avant chaque lancement.
-use std::os::windows::process::CommandExt;
+use crate::plateforme::SansFenetre;
 use std::process::{Child, Command};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+#[cfg(windows)]
 use windows::Win32::Foundation::{BOOL, HWND, LPARAM, RECT, WPARAM};
+#[cfg(windows)]
 use windows::Win32::Graphics::Gdi::*;
+#[cfg(windows)]
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 struct Game {
@@ -47,6 +50,7 @@ pub fn habillage_ds(parent: isize, f: f64, visible: bool) {
     DS.store(visible, std::sync::atomic::Ordering::Relaxed);
     placer_habillage(parent, visible);
 }
+#[cfg(windows)]
 /// Zone du jeu dans la fenêtre (x, y, largeur, hauteur).
 fn rect_jeu(parent: isize) -> (i32, i32, i32, i32) {
     let mut r = RECT::default();
@@ -82,6 +86,7 @@ fn rect_zoom(parent: isize) -> (i32, i32, i32, i32) {
     let (zw, zh) = ((w as f64 * zx).round() as i32, (h as f64 * zy).round() as i32);
     (x - (zw - w) / 2, y - (zh - h) / 2, zw, zh)
 }
+#[cfg(windows)]
 /// L'habillage suit la fenêtre, et reste là pour les notifications.
 fn placer_habillage(parent: isize, visible: bool) {
     let h = HABILLAGE.load(std::sync::atomic::Ordering::Relaxed);
@@ -143,6 +148,7 @@ pub fn title_id(path: &str) -> Option<String> {
     Some(format!("{:016X}", u64::from_le_bytes(hdr[0x108..0x110].try_into().unwrap())))
 }
 
+#[cfg(windows)]
 /// Pause : on gèle les threads de l'émulateur sauf celui de sa fenêtre.
 /// Sinon Windows bloque En Local au changement de focus.
 fn freeze(child: &Child, render: isize, frozen: bool) {
@@ -173,6 +179,7 @@ fn freeze(child: &Child, render: isize, frozen: bool) {
     }
 }
 
+#[cfg(windows)]
 /// Image du jeu (largeur u16, hauteur u16, RGBA), affichée sous le menu.
 pub fn capture() -> Option<Vec<u8>> {
     let render = GAME.lock().unwrap().as_ref()?.render;
@@ -219,18 +226,19 @@ pub fn capture() -> Option<Vec<u8>> {
 }
 
 fn write_config(emu_dir: &str, o: &crate::reglages::Opts) -> std::io::Result<()> {
-    let dir = format!("{emu_dir}\\user\\config");
+    let dir = chemin!("{emu_dir}\\user\\config");
     std::fs::create_dir_all(&dir)?;
     let ini = format!(
         "[UI]\nenable_discord_presence=false\nsingleWindowMode=false\nfullscreen=false\nconfirmClose=false\nfirstStart=false\nshowStatusBar=false\npauseWhenInBackground=false\nmuteWhenInBackground=false\nhideInactiveMouse=true\n\n\
          [Miscellaneous]\ncheck_for_update_on_start=false\n\n{}",
         crate::reglages::azahar_controles(o)
     );
-    std::fs::write(format!("{dir}\\qt-config.ini"), ini + &crate::reglages::azahar_ini(o))?;
+    std::fs::write(chemin!("{dir}\\qt-config.ini"), ini + &crate::reglages::azahar_ini(o))?;
     crate::reglages::azahar_langue(emu_dir, o)
 }
 
 
+#[cfg(windows)]
 /// Les émulateurs sont dans un job Windows : si En Local se ferme ou plante, ils s'arrêtent aussi.
 pub fn tie(child: Child) -> Child {
     use std::os::windows::io::AsRawHandle;
@@ -249,6 +257,7 @@ pub fn tie(child: Child) -> Child {
     child
 }
 
+#[cfg(windows)]
 /// Fenêtre WebView2 : elle se dessine par-dessus le jeu.
 fn webview_of(parent: isize) -> isize {
     unsafe {
@@ -256,6 +265,7 @@ fn webview_of(parent: isize) -> isize {
     }
 }
 
+#[cfg(windows)]
 /// Pendant le jeu, l'interface est poussée hors de la fenêtre (cachée, elle ne se dessinerait plus).
 fn place_webview(webview: isize, visible: bool) {
     paint_shot(webview); // voir paint_shot
@@ -270,6 +280,7 @@ fn place_webview(webview: isize, visible: bool) {
 static SHOT: Mutex<(i32, i32, Vec<u8>)> = Mutex::new((0, 0, Vec::new()));
 static WEBVIEW_PROC: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
 
+#[cfg(windows)]
 /// Peint la dernière image du jeu le temps que WebView2 arrive, pour éviter un flash gris.
 fn paint_shot(webview: isize) {
     unsafe extern "system" fn proc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) -> windows::Win32::Foundation::LRESULT {
@@ -308,6 +319,7 @@ fn paint_shot(webview: isize) {
     }
 }
 
+#[cfg(windows)]
 pub fn fit(parent: isize) {
     if let Some(g) = GAME.lock().unwrap().as_ref() {
         // Wry a replacé l'interface : en jeu, on la réécarte.
@@ -324,6 +336,7 @@ pub fn fit(parent: isize) {
     }
 }
 
+#[cfg(windows)]
 /// Garde la fenêtre du jeu à notre taille (Eden la remet parfois en 1280×720).
 fn garder_la_taille(render: isize, parent: isize) {
     std::thread::spawn(move || loop {
@@ -342,6 +355,7 @@ fn garder_la_taille(render: isize, parent: isize) {
     });
 }
 
+#[cfg(windows)]
 fn child_of(parent: isize, pid: u32) -> Option<HWND> {
     unsafe extern "system" fn each(hwnd: HWND, l: LPARAM) -> BOOL {
         let acc = &mut *(l.0 as *mut (u32, Option<HWND>));
@@ -415,8 +429,8 @@ pub fn start(exe: &str, emu_dir: &str, game: &str, parent: isize, room: Option<&
     if let Some(m) = crate::mii::du_joueur(o) {
         crate::mii::trois_ds(emu_dir, &m);
     }
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    let mut args = vec!["--parent".to_string(), parent.to_string()];
+    // --parent : sur Mac, notre version ne colle pas la fenêtre, elle la pose dans le cadre (ENLOCAL_CADRE).
+    let mut args = vec!["--parent".to_string(), parent.max(1).to_string()];
     args.extend(room_args(room));
     EN_SALON.store(room.is_some(), std::sync::atomic::Ordering::Relaxed);
     args.push(game.into());
@@ -425,6 +439,9 @@ pub fn start(exe: &str, emu_dir: &str, game: &str, parent: isize, room: Option<&
     let _ = std::fs::remove_file(clavier_fichier());
     let _ = std::fs::remove_file(format!("{}.ok", clavier_fichier()));
     crate::figurines::vider();
+    #[cfg(not(windows))]
+    let child = lancer_azahar_mac(emu_dir, &args)?;
+    #[cfg(windows)]
     let child = Command::new(exe)
         .args(&args)
         // Le style Windows 11 de Qt 6.9 fait planter les menus d'AzaharPlus.
@@ -435,7 +452,7 @@ pub fn start(exe: &str, emu_dir: &str, game: &str, parent: isize, room: Option<&
         .env("ENLOCAL_MENU", menu_fichier())
         .env("SDL_GAMECONTROLLERCONFIG", crate::pad::mappings())
         .env("ENLOCAL_MII", crate::mii::hex(o))
-        .creation_flags(CREATE_NO_WINDOW)
+        .sans_fenetre()
         .spawn()
         .map(tie)
         .map_err(|e| e.to_string())?;
@@ -456,7 +473,15 @@ pub const EXE_RETRO: &str = "enlocal-retro.exe";
 /// Copie de l'émulateur sous un nom d'En Local : les logiciels de clips (Medal…) reconnaissent les
 /// émulateurs à leur nom et filmeraient l'émulateur seul, sans En Local autour. Refaite après une mise à jour.
 pub fn exe(dir: &str, exe: &str, nom: &str) -> String {
-    let (src, dst) = (format!("{dir}\\{exe}"), format!("{dir}\\{nom}"));
+    // macOS : le programme dans son app (Dolphin.exe → Dolphin.app/Contents/MacOS/Dolphin).
+    #[cfg(not(windows))]
+    {
+        let _ = nom;
+        let base = exe.trim_end_matches(".exe");
+        return format!("{dir}/{base}.app/Contents/MacOS/{base}");
+    }
+    #[allow(unreachable_code)]
+    let (src, dst) = (chemin!("{dir}\\{exe}"), chemin!("{dir}\\{nom}"));
     let pareil = match (std::fs::metadata(&src), std::fs::metadata(&dst)) {
         (Ok(a), Ok(b)) => a.len() == b.len() && a.modified().ok() == b.modified().ok(),
         _ => false,
@@ -466,17 +491,17 @@ pub fn exe(dir: &str, exe: &str, nom: &str) -> String {
 
 /// Menu d'En Local ouvert pendant une session : Eden et Azahar mettent le jeu en pause tant qu'il existe.
 pub fn menu_fichier() -> String {
-    format!("{}\\data\\menu-en-jeu.txt", crate::root())
+    chemin!("{}\\data\\menu-en-jeu.txt", crate::root())
 }
 
 /// Clavier du jeu (3DS et Switch) : l'émulateur y écrit sa demande quand le jeu attend un texte, En Local répond dans <fichier>.ok.
 pub fn clavier_fichier() -> String {
-    format!("{}\\data\\clavier-3ds.txt", crate::root())
+    chemin!("{}\\data\\clavier-3ds.txt", crate::root())
 }
 
 /// Fichier surveillé par Eden pendant la partie, pour entrer dans un salon.
 fn salon_en_jeu_fichier() -> String {
-    format!("{}\\data\\salon-en-jeu.txt", crate::root())
+    chemin!("{}\\data\\salon-en-jeu.txt", crate::root())
 }
 /// Session lancée en pleine partie : Eden ou Azahar entre dans le salon sans relancer le jeu.
 pub fn salon_en_jeu(r: &Room) -> Result<(), String> {
@@ -521,6 +546,9 @@ fn attach(child: Child, parent: isize, failure: impl Fn() -> String) -> Result<S
 }
 
 fn adopt(child: Child, render: HWND, parent: isize) {
+    // macOS : l'émulateur a sa propre fenêtre, En Local repasse devant.
+    #[cfg(not(windows))]
+    devant();
     let webview = webview_of(parent);
     *GAME.lock().unwrap() = Some(Game { child, render: render.0 as isize, webview });
     fit(parent);
@@ -529,6 +557,11 @@ fn adopt(child: Child, render: HWND, parent: isize) {
     std::thread::sleep(Duration::from_millis(1500));
     HIDDEN.store(true, std::sync::atomic::Ordering::Relaxed);
     show(true);
+}
+
+#[cfg(windows)]
+fn fenetre_vivante(h: isize) -> bool {
+    unsafe { IsWindow(HWND(h as _)) }.as_bool()
 }
 
 /// GameCube ou Wii, d'après l'en-tête du disque (aussi en RVZ/WIA). .wbfs et .wad : Wii.
@@ -561,11 +594,11 @@ pub fn dolphin_game_id(path: &str) -> Option<String> {
 
 /// Configuration de Dolphin : la manette devient la manette GameCube 1 et la Wiimote 1.
 fn dolphin_config(dir: &str, game: &str, o: &crate::reglages::Opts) -> std::io::Result<()> {
-    std::fs::write(format!("{dir}\\portable.txt"), "")?;
-    let cfg = format!("{dir}\\User\\Config");
+    std::fs::write(chemin!("{dir}\\portable.txt"), "")?;
+    let cfg = chemin!("{dir}\\User\\Config");
     std::fs::create_dir_all(&cfg)?;
     std::fs::write(
-        format!("{cfg}\\Dolphin.ini"),
+        chemin!("{cfg}\\Dolphin.ini"),
         format!(
             "[Interface]\nConfirmStop = False\nUsePanicHandlers = False\nOnScreenDisplayMessages = True\n\
          [Display]\nRenderToMain = False\nFullscreen = False\n\
@@ -607,7 +640,7 @@ fn dolphin_config(dir: &str, game: &str, o: &crate::reglages::Opts) -> std::io::
     for (k, v) in gc {
         ini += &format!("{k} = {}\n", b(v));
     }
-    std::fs::write(format!("{cfg}\\GCPadNew.ini"), ini)?;
+    std::fs::write(chemin!("{cfg}\\GCPadNew.ini"), ini)?;
     let wii = [
         ("D-Pad/Up", "Pad N"), ("D-Pad/Down", "Pad S"), ("D-Pad/Left", "Pad W"), ("D-Pad/Right", "Pad E"),
         ("IR/Up", "Right Y+"), ("IR/Down", "Right Y-"), ("IR/Left", "Right X-"), ("IR/Right", "Right X+"),
@@ -648,7 +681,7 @@ fn dolphin_config(dir: &str, game: &str, o: &crate::reglages::Opts) -> std::io::
             }
         }
     }
-    std::fs::write(format!("{cfg}\\WiimoteNew.ini"), ini)
+    std::fs::write(chemin!("{cfg}\\WiimoteNew.ini"), ini)
 }
 
 fn dolphin_reglages(dir: &str, game: &str, o: &crate::reglages::Opts) -> Vec<String> {
@@ -670,7 +703,7 @@ fn gfx_ini(dir: &str, args: &[String]) -> std::io::Result<()> {
         }
     }
     let texte: String = sections.iter().map(|(s, l)| format!("[{s}]\n{}\n", l.join("\n"))).collect();
-    std::fs::write(format!("{dir}\\User\\Config\\GFX.ini"), texte)
+    std::fs::write(chemin!("{dir}\\User\\Config\\GFX.ini"), texte)
 }
 
 /// GameCube / Wii : Dolphin sans interface (-b).
@@ -681,28 +714,37 @@ pub fn start_dolphin(dir: &str, game: &str, parent: isize, o: &crate::reglages::
     dolphin_config(dir, game, o).map_err(|e| e.to_string())?;
     let reglages = dolphin_reglages(dir, game, o);
     gfx_ini(dir, &reglages).map_err(|e| e.to_string())?;
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     if let Some(m) = crate::mii::du_joueur(o) {
         crate::mii::wii(dir, &m);
     }
     crate::figurines::vider();
-    let child = Command::new(exe(dir, "Dolphin.exe", EXE_WII))
+    let mut cmd = Command::new(exe(dir, "Dolphin.exe", EXE_WII));
+    #[cfg(not(windows))]
+    suivre_cadre(&mut cmd);
+    let child = cmd
+        // macOS : pas de portable.txt (il serait dans l'app) ; sur Windows, portable.txt passe avant.
+        .env("DOLPHIN_EMU_USERPATH", chemin!("{dir}\\User"))
         .env("SDL_GAMECONTROLLERCONFIG", crate::pad::mappings())
         .env("ENLOCAL_SKYLANDERS", crate::figurines::fichier("skylanders"))
         .args(["-b", "--parent", &parent.to_string()])
         .args(reglages)
         .args(["-e", game])
-        .creation_flags(CREATE_NO_WINDOW)
+        .sans_fenetre()
         .spawn()
         .map(tie)
         .map_err(|e| e.to_string())?;
     attach(child, parent, || "le jeu ne s'est pas affiché (Dolphin n'a pas pu le charger)".into())
 }
 
+#[cfg(windows)]
+fn termine(child: &mut Child) -> bool {
+    matches!(child.try_wait(), Ok(Some(_)))
+}
+
 pub fn is_running() -> bool {
     let mut g = GAME.lock().unwrap();
     if let Some(game) = g.as_mut() {
-        if matches!(game.child.try_wait(), Ok(Some(_))) {
+        if termine(&mut game.child) {
             place_webview(game.webview, true);
             placer_habillage(0, false);
             *g = None;
@@ -711,6 +753,7 @@ pub fn is_running() -> bool {
     g.is_some()
 }
 
+#[cfg(windows)]
 /// Menu : gèle et cache le jeu, ou le remontre.
 pub fn show(visible: bool) {
     // Windows compte les gels : un seul changement d'état à la fois.
@@ -743,6 +786,7 @@ pub fn show(visible: bool) {
     }
 }
 
+#[cfg(windows)]
 pub fn stop() {
     placer_habillage(0, false);
     if let Some(mut g) = GAME.lock().unwrap().take() {
@@ -780,6 +824,7 @@ pub fn attendre_fermeture() {
     }
 }
 
+#[cfg(windows)]
 /// WM_CLOSE à toutes les fenêtres du processus, cachées comprises.
 fn close_top_windows(pid: u32) {
     unsafe extern "system" fn each(hwnd: HWND, l: LPARAM) -> BOOL {
@@ -799,12 +844,12 @@ fn close_top_windows(pid: u32) {
 
 /// Configuration de Cemu. Avec settings.xml, l'assistant de premier lancement ne s'ouvre pas.
 fn cemu_config(dir: &str, o: &crate::reglages::Opts) -> std::io::Result<()> {
-    let cfg = format!("{dir}\\portable");
-    std::fs::create_dir_all(format!("{cfg}\\controllerProfiles"))?;
+    let cfg = chemin!("{dir}\\portable");
+    std::fs::create_dir_all(chemin!("{cfg}\\controllerProfiles"))?;
     // Réécrit à chaque lancement : fenêtre hors écran, son sur la sortie par défaut, sans notifications.
     let r = crate::reglages::cemu(o);
     std::fs::write(
-        format!("{cfg}\\settings.xml"),
+        chemin!("{cfg}\\settings.xml"),
         format!(
             "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<content>\n  <check_update>false</check_update>\n  <fullscreen>false</fullscreen>\n  <fullscreen_menubar>false</fullscreen_menubar>\n{}  <window_position>\n    <x>-20000</x>\n    <y>-20000</y>\n  </window_position>\n  <GraphicPack>\n{}  </GraphicPack>\n  <Graphic>\n    <api>{}</api>\n{}    <Notification>\n      <ControllerProfiles>false</ControllerProfiles>\n      <ControllerBattery>false</ControllerBattery>\n      <ShaderCompiling>false</ShaderCompiling>\n      <FriendService>false</FriendService>\n    </Notification>\n  </Graphic>\n  <Audio>\n    <api>3</api>\n    <TVDevice>default</TVDevice>\n    <TVVolume>{}</TVVolume>\n    <InputDevice>{}</InputDevice>\n    <InputVolume>100</InputVolume>\n    <InputChannels>0</InputChannels>\n  </Audio>\n</content>\n",
             r.langue.map_or(String::new(), |l| format!("  <console_language>{l}</console_language>\n")),
@@ -839,7 +884,7 @@ fn cemu_config(dir: &str, o: &crate::reglages::Opts) -> std::io::Result<()> {
     let xml = format!(
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<emulated_controller>\n  <type>{modele}</type>\n  <controller>\n    <api>SDLController</api>\n    <uuid>0_{guid}</uuid>\n    <display_name>{name}</display_name>\n    <rumble>{rumble}</rumble>\n    <axis>\n      <deadzone>0.15</deadzone>\n      <range>1</range>\n    </axis>\n    <rotation>\n      <deadzone>0.15</deadzone>\n      <range>1</range>\n    </rotation>\n    <trigger>\n      <deadzone>0.25</deadzone>\n      <range>1</range>\n    </trigger>\n    <mappings>\n{entries}    </mappings>\n  </controller>\n</emulated_controller>\n"
     );
-    std::fs::write(format!("{cfg}\\controllerProfiles\\controller0.xml"), xml)
+    std::fs::write(chemin!("{cfg}\\controllerProfiles\\controller0.xml"), xml)
 }
 
 /// Numéro Cemu d'un bouton du GamePad pour la manette Pro (enum ProController::ButtonId : HOME en 11).
@@ -852,7 +897,7 @@ fn sdl2_guid(dir: &str, sdl3: &str) -> Option<String> {
     #[repr(C)]
     struct Guid([u8; 16]);
     unsafe {
-        let lib = libloading::Library::new(format!("{dir}\\SDL2.dll")).ok()?;
+        let lib = libloading::Library::new(chemin!("{dir}\\SDL2.dll")).ok()?;
         let hint: libloading::Symbol<unsafe extern "C" fn(*const u8, *const u8) -> i32> = lib.get(b"SDL_SetHint\0").ok()?;
         let init: libloading::Symbol<unsafe extern "C" fn(u32) -> i32> = lib.get(b"SDL_Init\0").ok()?;
         let count: libloading::Symbol<unsafe extern "C" fn() -> i32> = lib.get(b"SDL_NumJoysticks\0").ok()?;
@@ -875,12 +920,14 @@ fn sdl2_guid(dir: &str, sdl3: &str) -> Option<String> {
     }
 }
 
+#[cfg(windows)]
 fn title_of(hwnd: HWND) -> String {
     let mut buf = [0u16; 256];
     let n = unsafe { GetWindowTextW(hwnd, &mut buf) };
     String::from_utf16_lossy(&buf[..n.max(0) as usize])
 }
 
+#[cfg(windows)]
 fn top_window(pid: u32, prefix: &str) -> Option<HWND> {
     unsafe extern "system" fn each(hwnd: HWND, l: LPARAM) -> BOOL {
         let acc = &mut *(l.0 as *mut (u32, String, Option<HWND>));
@@ -906,13 +953,12 @@ fn top_window(pid: u32, prefix: &str) -> Option<HWND> {
 /// Wii U : MAJ et DLC décompressés du dossier des jeux, reliés dans Cemu par une jonction :
 /// Cemu ne les lit que dans son mlc01. Rien n'est copié. Title ID : code\app.xml (celui de meta.xml est parfois celui du jeu).
 pub fn lier_contenus_wiiu(dir: &str) {
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     let mut a_voir = vec![(crate::dossier::jeux().join("Wii U"), 0)];
     while let Some((d, profondeur)) = a_voir.pop() {
         let meta = [d.join("code").join("app.xml"), d.join("meta").join("meta.xml")].iter().find_map(|f| std::fs::read_to_string(f).ok()).unwrap_or_default();
         if let Some(id) = meta.split("<title_id").nth(1).and_then(|r| r.split('>').nth(1)?.split('<').next()).map(|x| x.trim().to_lowercase()) {
             if id.len() == 16 && id.bytes().all(|b| b.is_ascii_hexdigit()) && (id.starts_with("0005000e") || id.starts_with("0005000c")) {
-                let lien = std::path::PathBuf::from(format!("{dir}\\portable\\mlc01\\usr\\title\\{}\\{}", &id[..8], &id[8..]));
+                let lien = std::path::PathBuf::from(chemin!("{dir}\\portable\\mlc01\\usr\\title\\{}\\{}", &id[..8], &id[8..]));
                 if !lien.exists() {
                     let _ = std::fs::create_dir_all(lien.parent().unwrap());
                     // Chemins passés en variables d'environnement : jamais interprétés comme du code.
@@ -920,7 +966,7 @@ pub fn lier_contenus_wiiu(dir: &str) {
                         .args(["-NoProfile", "-NonInteractive", "-Command", "New-Item -ItemType Junction -Path $env:EL_LIEN -Target ([WildcardPattern]::Escape($env:EL_CIBLE)) | Out-Null"])
                         .env("EL_LIEN", &lien)
                         .env("EL_CIBLE", &d)
-                        .creation_flags(CREATE_NO_WINDOW)
+                        .sans_fenetre()
                         .output();
                 }
             }
@@ -943,14 +989,17 @@ pub fn start_cemu(dir: &str, game: &str, parent: isize, o: &crate::reglages::Opt
     }
     cemu_config(dir, o).map_err(|e| e.to_string())?;
     lier_contenus_wiiu(dir);
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     if let Some(m) = crate::mii::du_joueur(o) {
         crate::mii::cemu(dir, &m);
     }
-    let child = Command::new(exe(dir, "Cemu.exe", EXE_WIIU)).env("SDL_GAMECONTROLLERCONFIG", crate::pad::mappings()).args(["-g", game]).creation_flags(CREATE_NO_WINDOW).spawn().map(tie).map_err(|e| e.to_string())?;
+    let mut cmd = Command::new(exe(dir, "Cemu.exe", EXE_WIIU));
+    #[cfg(not(windows))]
+    suivre_cadre_injecte(&mut cmd);
+    let child = cmd.env("SDL_GAMECONTROLLERCONFIG", crate::pad::mappings()).args(["-g", game]).sans_fenetre().spawn().map(tie).map_err(|e| e.to_string())?;
     coller(child, parent, "Cemu", "Cemu", "FPS", Duration::from_secs(30))
 }
 
+#[cfg(windows)]
 /// Fenêtre d'un émulateur collée dans la nôtre, sans menu ni cadre, une fois le jeu lancé.
 /// titre : début du titre de sa fenêtre ; pret : texte du titre une fois le jeu lancé (FPS), "" pour ne pas attendre.
 /// attente : temps laissé pour que cette fenêtre apparaisse.
@@ -1010,15 +1059,15 @@ fn eden_updates_dir(ini: &str, dirs: &[String]) -> std::io::Result<()> {
 fn contenu_choisi(fichiers: &[std::path::PathBuf]) -> std::io::Result<Vec<String>> {
     // Un lien physique ne change pas de disque : un dossier de liens par disque.
     let lecteur = |p: &std::path::Path| p.components().next().map(|c| c.as_os_str().to_string_lossy().to_uppercase()).unwrap_or_default();
-    let chez_nous = std::path::PathBuf::from(format!("{}\\data\\eden-contenu", crate::root()));
+    let chez_nous = std::path::PathBuf::from(chemin!("{}\\data\\eden-contenu", crate::root()));
     let mut dossiers: Vec<std::path::PathBuf> = Vec::new();
     for (n, f) in fichiers.iter().enumerate() {
-        let dir = if lecteur(f) == lecteur(&chez_nous) { chez_nous.clone() } else { std::path::PathBuf::from(format!("{}\\.en-local-contenu", lecteur(f))) };
+        let dir = if lecteur(f) == lecteur(&chez_nous) { chez_nous.clone() } else { std::path::PathBuf::from(chemin!("{}\\.en-local-contenu", lecteur(f))) };
         if !dossiers.contains(&dir) {
             let _ = std::fs::remove_dir_all(&dir);
             std::fs::create_dir_all(&dir)?;
             if dir != chez_nous {
-                let _ = std::process::Command::new("attrib").args(["+h", &dir.to_string_lossy()]).creation_flags(0x0800_0000).status();
+                let _ = std::process::Command::new("attrib").args(["+h", &dir.to_string_lossy()]).sans_fenetre().status();
             }
             dossiers.push(dir.clone());
         }
@@ -1029,6 +1078,7 @@ fn contenu_choisi(fichiers: &[std::path::PathBuf]) -> std::io::Result<Vec<String
     Ok(dossiers.into_iter().map(|d| d.to_string_lossy().into_owned()).collect())
 }
 
+#[cfg(windows)]
 /// Carte réseau qui sort sur Internet, par son nom Windows.
 fn carte_reseau() -> Option<String> {
     use windows::Win32::NetworkManagement::IpHelper::*;
@@ -1067,15 +1117,15 @@ pub fn start_eden(dir: &str, game: &str, parent: isize, room: Option<&Room>, con
         return Err("Un jeu tourne déjà".into());
     }
     attendre_fermeture();
-    let user = format!("{dir}\\user");
-    if !std::path::Path::new(&format!("{user}\\keys\\prod.keys")).exists() {
+    let user = chemin!("{dir}\\user");
+    if !std::path::Path::new(&chemin!("{user}\\keys\\prod.keys")).exists() {
         return Err(format!("Il manque les clés de ta Switch : copie le prod.keys sorti de ta console (Lockpick_RCM) dans {user}\\keys."));
     }
-    let firmware = std::fs::read_dir(format!("{user}\\nand\\system\\Contents\\registered")).map_or(false, |mut d| d.next().is_some());
+    let firmware = std::fs::read_dir(chemin!("{user}\\nand\\system\\Contents\\registered")).map_or(false, |mut d| d.next().is_some());
     if !firmware {
         return Err(format!("Il manque le firmware de ta Switch : copie les fichiers .nca sortis de ta console (TegraExplorer) dans {user}\\nand\\system\\Contents\\registered."));
     }
-    std::fs::create_dir_all(format!("{user}\\config")).map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(chemin!("{user}\\config")).map_err(|e| e.to_string())?;
     let dossiers = if choisie {
         contenu_choisi(&contenu).map_err(|e| format!("Mise à jour choisie : {e}"))?
     } else {
@@ -1084,8 +1134,8 @@ pub fn start_eden(dir: &str, game: &str, parent: isize, room: Option<&Room>, con
         d.dedup();
         d
     };
-    eden_updates_dir(&format!("{user}\\config\\qt-config.ini"), &dossiers).map_err(|e| e.to_string())?;
-    let ini = format!("{user}\\config\\qt-config.ini");
+    eden_updates_dir(&chemin!("{user}\\config\\qt-config.ini"), &dossiers).map_err(|e| e.to_string())?;
+    let ini = chemin!("{user}\\config\\qt-config.ini");
     let texte = std::fs::read_to_string(&ini).unwrap_or_default();
     let texte = crate::reglages::eden(&texte, o, title_id);
     // En session, même graine du hasard pour tous, sinon Smash se désynchronise.
@@ -1111,13 +1161,19 @@ pub fn start_eden(dir: &str, game: &str, parent: isize, room: Option<&Room>, con
     args.extend(room_args(room));
     EN_SALON.store(room.is_some(), std::sync::atomic::Ordering::Relaxed);
     args.extend(["-g".into(), game.into()]);
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     let _ = std::fs::remove_file(salon_en_jeu_fichier());
     let _ = std::fs::remove_file(menu_fichier());
     let _ = std::fs::remove_file(clavier_fichier());
     let _ = std::fs::remove_file(format!("{}.ok", clavier_fichier()));
     crate::figurines::vider();
-    let child = Command::new(exe(dir, "eden.exe", EXE_SWITCH)).args(&args).env("ENLOCAL_CLAVIER", clavier_fichier()).env("ENLOCAL_AMIIBO", crate::figurines::fichier("amiibo")).env("SDL_GAMECONTROLLERCONFIG", crate::pad::mappings()).env("ENLOCAL_MII", crate::mii::hex(o)).env("ENLOCAL_MENU", menu_fichier()).env("ENLOCAL_SALON", salon_en_jeu_fichier()).env("ENLOCAL_TOUCHES", crate::reglages::eden_touches(o)).env("ENLOCAL_MANETTE", *crate::pad::KIND.lock().unwrap()).env(if title_id.is_some_and(crate::reglages::en_main) && !distance { "ENLOCAL_EN_MAIN" } else { "ENLOCAL_PAS_EN_MAIN" }, "1").env(if invites { "ENLOCAL_DISTANCE" } else { "ENLOCAL_SEUL" }, "1").creation_flags(CREATE_NO_WINDOW).spawn().map(tie).map_err(|e| e.to_string())?;
+    let mut cmd = Command::new(exe(dir, "eden.exe", EXE_SWITCH));
+    // macOS : Eden prend le dossier « user » du dossier courant (sur Windows, celui du programme).
+    #[cfg(not(windows))]
+    {
+        cmd.current_dir(dir);
+        suivre_cadre(&mut cmd);
+    }
+    let child = cmd.args(&args).env("ENLOCAL_CLAVIER", clavier_fichier()).env("ENLOCAL_AMIIBO", crate::figurines::fichier("amiibo")).env("SDL_GAMECONTROLLERCONFIG", crate::pad::mappings()).env("ENLOCAL_MII", crate::mii::hex(o)).env("ENLOCAL_MENU", menu_fichier()).env("ENLOCAL_SALON", salon_en_jeu_fichier()).env("ENLOCAL_TOUCHES", crate::reglages::eden_touches(o)).env("ENLOCAL_MANETTE", *crate::pad::KIND.lock().unwrap()).env(if title_id.is_some_and(crate::reglages::en_main) && !distance { "ENLOCAL_EN_MAIN" } else { "ENLOCAL_PAS_EN_MAIN" }, "1").env(if invites { "ENLOCAL_DISTANCE" } else { "ENLOCAL_SEUL" }, "1").sans_fenetre().spawn().map(tie).map_err(|e| e.to_string())?;
     let r = attach(child, parent, || "le jeu ne s'est pas affiché (Eden n'a pas pu le charger)".into());
     ARRET_PROPRE.store(r.is_ok(), std::sync::atomic::Ordering::Relaxed);
     r
@@ -1128,7 +1184,7 @@ pub fn start_eden(dir: &str, game: &str, parent: isize, room: Option<&Room>, con
 /// Salle d'attente : pas encore de fenêtre de jeu.
 static LOBBY: Mutex<Option<Child>> = Mutex::new(None);
 fn netplay_status() -> String {
-    format!("{}\\data\\netplay.txt", crate::root())
+    chemin!("{}\\data\\netplay.txt", crate::root())
 }
 
 /// État envoyé à l'interface toutes les 500 ms.
@@ -1139,6 +1195,8 @@ pub struct Lobby {
     pub error: bool,
     pub playing: bool,
     pub closed: bool,
+    /// Partie lancée chez Dolphin (macOS : pas de fenêtre fille à guetter).
+    pub running: bool,
 }
 
 fn read_lobby() -> Lobby {
@@ -1149,6 +1207,7 @@ fn read_lobby() -> Lobby {
             Some(("players", n)) => l.players = n.trim().parse().unwrap_or(0),
             Some(("code", c)) => l.code = c.trim().to_string(),
             Some(("state", "error")) => l.error = true,
+            Some(("running", r)) => l.running = r.trim() == "1",
             _ => {}
         }
     }
@@ -1161,7 +1220,7 @@ pub fn start_netplay(dir: &str, game: &str, host_code: &str, name: &str, parent:
         return Err("Un jeu tourne déjà".into());
     }
     dolphin_config(dir, game, o).map_err(|e| e.to_string())?;
-    let _ = std::fs::create_dir_all(format!("{}\\data", crate::root()));
+    let _ = std::fs::create_dir_all(chemin!("{}\\data", crate::root()));
     for ext in ["", ".start", ".stop", ".msg"] {
         let _ = std::fs::remove_file(format!("{}{ext}", netplay_status()));
     }
@@ -1174,8 +1233,10 @@ pub fn start_netplay(dir: &str, game: &str, host_code: &str, name: &str, parent:
     } else {
         args.extend(["--netplay-join".into(), host_code.into()]);
     }
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    let child = Command::new(exe(dir, "Dolphin.exe", EXE_WII)).args(&args).env("SDL_GAMECONTROLLERCONFIG", crate::pad::mappings()).creation_flags(CREATE_NO_WINDOW).spawn().map(tie).map_err(|e| e.to_string())?;
+    let mut cmd = Command::new(exe(dir, "Dolphin.exe", EXE_WII));
+    #[cfg(not(windows))]
+    suivre_cadre(&mut cmd);
+    let child = cmd.args(&args).env("DOLPHIN_EMU_USERPATH", chemin!("{dir}\\User")).env("SDL_GAMECONTROLLERCONFIG", crate::pad::mappings()).sans_fenetre().spawn().map(tie).map_err(|e| e.to_string())?;
     let pid = child.id();
     *LOBBY.lock().unwrap() = Some(child);
     std::thread::spawn(move || loop {
@@ -1186,7 +1247,7 @@ pub fn start_netplay(dir: &str, game: &str, host_code: &str, name: &str, parent:
                 *lobby = None;
                 return on_change(Lobby { closed: true, ..read_lobby() });
             }
-            if let Some(render) = child_of(parent, pid) {
+            if let Some(render) = child_of(parent, pid).filter(|_| cfg!(windows) || read_lobby().running) {
                 let child = lobby.take().unwrap();
                 drop(lobby);
                 adopt(child, render, parent);
@@ -1205,7 +1266,7 @@ pub fn start_netplay(dir: &str, game: &str, host_code: &str, name: &str, parent:
             *game = None;
             return on_change(Lobby { closed: true, ..read_lobby() });
         }
-        if !unsafe { IsWindow(HWND(g.render as _)) }.as_bool() {
+        if !fenetre_vivante(g.render) || (!cfg!(windows) && !read_lobby().running) {
             let g = game.take().unwrap();
             freeze(&g.child, g.render, false);
             place_webview(g.webview, true);
@@ -1298,11 +1359,11 @@ mod tests {
         assert!(text.contains("gamedirs\\size=3\n[Core]"));
     }
 
+    #[cfg(windows)]
     #[test]
     fn emulateur_lie_a_en_local() {
         use std::os::windows::io::AsRawHandle;
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        let mut child = tie(Command::new("ping").args(["-n", "5", "127.0.0.1"]).creation_flags(CREATE_NO_WINDOW).spawn().unwrap());
+        let mut child = tie(Command::new("ping").args(["-n", "5", "127.0.0.1"]).sans_fenetre().spawn().unwrap());
         let mut inside = BOOL(0);
         unsafe { windows::Win32::System::JobObjects::IsProcessInJob(windows::Win32::Foundation::HANDLE(child.as_raw_handle()), None, &mut inside).unwrap() };
         let _ = child.kill();
@@ -1326,3 +1387,7 @@ mod tests_contenu {
         let _ = std::fs::remove_file(&f);
     }
 }
+
+// macOS : pas de fenêtre collée dans la nôtre, l'émulateur a la sienne (voir embed_mac.rs).
+#[cfg(not(windows))]
+include!("embed_mac.rs");

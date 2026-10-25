@@ -14,6 +14,7 @@ pub struct Micro {
 }
 
 /// Micros branchés et actifs.
+#[cfg(windows)]
 #[tauri::command]
 pub fn micros() -> Vec<Micro> {
     use windows::Win32::Devices::FunctionDiscovery::PKEY_Device_FriendlyName;
@@ -36,6 +37,13 @@ pub fn micros() -> Vec<Micro> {
         }
     }
     out
+}
+
+/// macOS : les micros vus par cpal (CoreAudio), le nom sert aussi d'identifiant.
+#[cfg(not(windows))]
+#[tauri::command]
+pub fn micros() -> Vec<Micro> {
+    cpal::default_host().input_devices().map(|l| l.filter_map(|d| d.name().ok()).map(|n| Micro { id: n.clone(), nom: n }).collect()).unwrap_or_default()
 }
 
 /// Nom Windows du micro d'identifiant `id` (None : le micro par défaut).

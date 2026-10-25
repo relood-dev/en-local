@@ -1,0 +1,231 @@
+diff --git a/Makefile.common b/Makefile.common
+index 57dabf5..d052cf3 100644
+--- a/Makefile.common
++++ b/Makefile.common
+@@ -2584,7 +2584,12 @@ ifeq ($(HAVE_COCOA_COMMON),1)
+    DEFINES += -DHAVE_MAIN -DOSX
+    OBJ += input/drivers/cocoa_input.o \
+           ui/drivers/ui_cocoa.o \
+-          ui/drivers/cocoa/cocoa_common.o
++          ui/drivers/cocoa/cocoa_common.o \
++          ui/drivers/cocoa/RetroArchPlaylistManager.o \
++          gfx/display_servers/dispserv_apple.o \
++          location/drivers/corelocation.o \
++          audio/drivers/coreaudio_mic_macos.o
++   LIBS += -framework QuartzCore -framework AVFAudio -framework CoreLocation
+ 
+    ifeq ($(HAVE_OPENGL), 1)
+            DEFINES += -DGL_SILENCE_DEPRECATION
+diff --git a/audio/drivers/sdl_audio.c b/audio/drivers/sdl_audio.c
+index 4986f7b..9ed0ba0 100644
+--- a/audio/drivers/sdl_audio.c
++++ b/audio/drivers/sdl_audio.c
+@@ -32,6 +32,11 @@
+ 
+ #include "../audio_driver.h"
+ #include "../../verbosity.h"
++#ifdef __APPLE__
++#include <string/stdstring.h>
++#include "../../msg_hash.h"
++#include "../../runloop.h"
++#endif
+ 
+ static INLINE int sdl_audio_find_num_frames(int rate, int latency)
+ {
+diff --git a/libretro-common/utils/md5.c b/libretro-common/utils/md5.c
+index 50f5d30..4451e61 100644
+--- a/libretro-common/utils/md5.c
++++ b/libretro-common/utils/md5.c
+@@ -36,6 +36,9 @@
+  */
+ #include <lrc_hash.h>
+ 
++/* Apple : MD5 de CommonCrypto (voir lrc_hash.h). */
++#ifndef __APPLE__
++
+ #include <string.h>
+ 
+ /*
+@@ -286,3 +289,5 @@ void MD5_Final(unsigned char *result, MD5_CTX *ctx)
+ 
+ 	memset(ctx, 0, sizeof(*ctx));
+ }
++
++#endif
+diff --git a/menu/menu_displaylist.c b/menu/menu_displaylist.c
+index f976a49..7e5a363 100644
+--- a/menu/menu_displaylist.c
++++ b/menu/menu_displaylist.c
+@@ -17,6 +17,9 @@
+  */
+ 
+ #include <stddef.h>
++#ifdef __APPLE__
++#include <CoreFoundation/CoreFoundation.h>
++#endif
+ 
+ #include <compat/strl.h>
+ #include <compat/strcasestr.h>
+diff --git a/ui/drivers/cocoa/RetroArchPlaylistManager.m b/ui/drivers/cocoa/RetroArchPlaylistManager.m
+index 86a2954..faafd2f 100644
+--- a/ui/drivers/cocoa/RetroArchPlaylistManager.m
++++ b/ui/drivers/cocoa/RetroArchPlaylistManager.m
+@@ -5,7 +5,9 @@
+ //  Unified playlist management for iOS and tvOS
+ //
+ 
++#include <retro_miscellaneous.h>
+ #import "RetroArchPlaylistManager.h"
++#include <retro_miscellaneous.h>
+ #include "../../../playlist.h"
+ #include "../../../paths.h"
+ #include "../../../retroarch.h"
+diff --git a/ui/drivers/cocoa/cocoa_common.m b/ui/drivers/cocoa/cocoa_common.m
+index dc9f565..5928184 100644
+--- a/ui/drivers/cocoa/cocoa_common.m
++++ b/ui/drivers/cocoa/cocoa_common.m
+@@ -21,6 +21,7 @@
+ #include "apple_platform.h"
+ #include "../ui_cocoa.h"
+ #include <compat/apple_compat.h>
++#include <retro_miscellaneous.h>
+ #include "RetroArchPlaylistManager.h"
+ 
+ #ifdef HAVE_COCOATOUCH
+diff --git a/ui/drivers/ui_cocoa.m b/ui/drivers/ui_cocoa.m
+index 7c34ce2..9e5bbef 100644
+--- a/ui/drivers/ui_cocoa.m
++++ b/ui/drivers/ui_cocoa.m
+@@ -49,8 +49,21 @@
+ #include "../../tasks/task_content.h"
+ #include "../../tasks/tasks_internal.h"
+ #include "../../verbosity.h"
++#include "../../audio/audio_driver.h"
++#include "../../command.h"
++#include <math.h>
++#include <sys/stat.h>
+ 
+ #include "ui_cocoa.h"
++#include "../../gfx/video_display_server.h"
++#ifdef HAVE_MENU
++#include "../../menu/menu_displaylist.h"
++#include "../../menu/menu_cbs.h"
++#endif
++/* Déclarées pour iOS seulement (apple_platform.h, cocoa_common.m) : la compilation par make en a besoin. */
++void rarch_start_draw_observer(void);
++void rarch_stop_draw_observer(void);
++void cocoa_file_load_with_detect_core(const char *filename);
+ 
+ #ifdef HAVE_SWIFT
+ #import "RetroArch-Swift.h"
+@@ -614,6 +627,102 @@ - (void)dealloc
+ 
+ #define NS_WINDOW_COLLECTION_BEHAVIOR_FULLSCREEN_PRIMARY (1 << 7)
+ 
++/* En Local (macOS) : la fenêtre du jeu s'affiche directement dans le cadre d'En Local, comme la fenêtre
++ * fille sous Windows. Fichier ENLOCAL_CADRE : « x y largeur hauteur visible principale habillage »
++ * (points, origine en haut à gauche ; numéros des fenêtres d'En Local). Visible : juste au-dessus de la
++ * fenêtre principale, sous l'habillage. Sinon (menu ouvert, En Local caché ou réduit) : derrière tout.
++ * Les clics traversent vers En Local. ENLOCAL_MENU : pause tant que le fichier existe.
++ * ENLOCAL_VOLUME_FICHIER : volume des jeux réglé dans l'app, de 0 à 1, relu à chaque changement. */
++static char *enlocal_lire(const char *chemin, char *buf, size_t taille)
++{
++   FILE *f = fopen(chemin, "rb");
++   size_t n;
++   if (!f)
++      return NULL;
++   n = fread(buf, 1, taille - 1, f);
++   fclose(f);
++   buf[n] = '\0';
++   return buf;
++}
++
++static void enlocal_cadre(NSWindow *fenetre, const char *chemin)
++{
++   char buf[256];
++   long x = 0, y = 0, l = 0, h = 0, visible = 0, principale = 0, habillage = 0;
++   BOOL devant;
++   if (!enlocal_lire(chemin, buf, sizeof(buf))
++         || sscanf(buf, "%ld %ld %ld %ld %ld %ld %ld", &x, &y, &l, &h, &visible, &principale, &habillage) < 4)
++      return;
++   devant = visible == 1 && principale > 0
++      && [[NSWindow windowNumbersWithOptions:NSWindowNumberListAllApplications] containsObject:@(principale)];
++   if (l > 0 && h > 0)
++   {
++      /* Cocoa : origine en bas à gauche de l'écran principal. */
++      CGFloat haut = [[NSScreen screens] firstObject].frame.size.height;
++      NSRect voulu = NSMakeRect(x, haut - y - h, l, h);
++      if (!NSEqualRects(fenetre.frame, voulu))
++         [fenetre setFrame:voulu display:YES];
++   }
++   [fenetre setIgnoresMouseEvents:YES];
++   [fenetre setLevel:devant ? NSNormalWindowLevel : kCGDesktopWindowLevel + 1];
++   if (devant)
++      [fenetre orderWindow:NSWindowAbove relativeTo:principale];
++}
++
++static void enlocal_menu(const char *chemin)
++{
++   static int pause = 0;
++   struct stat st;
++   int voulu = stat(chemin, &st) == 0;
++   if (voulu == pause)
++      return;
++   pause = voulu;
++   command_event(pause ? CMD_EVENT_PAUSE : CMD_EVENT_UNPAUSE, NULL);
++}
++
++static void enlocal_volume(const char *chemin)
++{
++   static struct timespec lu;
++   struct stat st;
++   char buf[32];
++   double v;
++   settings_t *settings = config_get_ptr();
++   if (stat(chemin, &st) != 0
++         || (st.st_mtimespec.tv_sec == lu.tv_sec && st.st_mtimespec.tv_nsec == lu.tv_nsec))
++      return;
++   lu = st.st_mtimespec;
++   if (!enlocal_lire(chemin, buf, sizeof(buf)))
++      return;
++   v = atof(buf);
++   v = v < 0 ? 0 : v > 1 ? 1 : v;
++   settings->floats.audio_volume = v > 0.0001 ? (float)(20.0 * log10(v)) : -80.0f;
++   audio_set_float(AUDIO_ACTION_VOLUME_GAIN, settings->floats.audio_volume);
++}
++
++static void enlocal_demarrer(NSWindow *fenetre)
++{
++   const char *cadre  = getenv("ENLOCAL_CADRE");
++   const char *menu   = getenv("ENLOCAL_MENU");
++   const char *volume = getenv("ENLOCAL_VOLUME_FICHIER");
++   if (!cadre)
++      return;
++   /* App d'arrière-plan : pas d'icône dans le Dock, pas de barre de menus, ne prend jamais la main. */
++   [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
++   /* Sans barre de titre ni bords (video_window_show_decorations n'est appliqué qu'au premier plan). */
++   fenetre.styleMask = NSWindowStyleMaskBorderless;
++   fenetre.hasShadow = NO;
++   /* Au départ juste au-dessus du bureau, derrière En Local, le temps que le jeu démarre. */
++   [fenetre setLevel:kCGDesktopWindowLevel + 1];
++   NSTimer *t = [NSTimer timerWithTimeInterval:0.05 repeats:YES block:^(NSTimer *timer) {
++      enlocal_cadre(fenetre, cadre);
++      if (menu)
++         enlocal_menu(menu);
++      if (volume)
++         enlocal_volume(volume);
++   }];
++   [[NSRunLoop mainRunLoop] addTimer:t forMode:NSRunLoopCommonModes];
++}
++
+ - (void)applicationDidFinishLaunching:(NSNotification *)aNotification
+ {
+    unsigned i;
+@@ -657,6 +766,7 @@ - (void)applicationDidFinishLaunching:(NSNotification *)aNotification
+ #ifdef HAVE_COCOA_METAL
+    [self setupMainWindow];
+ #endif
++   enlocal_demarrer(self.window);
+ 
+ #if HAVE_SWIFT
+    if (@available(macOS 13.0, *)) {

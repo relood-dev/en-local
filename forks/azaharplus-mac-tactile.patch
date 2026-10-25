@@ -1,0 +1,45 @@
+--- a/src/citra_qt/citra_qt.cpp	2026-10-24 05:22:34
++++ b/src/citra_qt/citra_qt.cpp	2026-10-24 05:22:34
+@@ -1424,7 +1424,9 @@
+     return ok && v >= 0 && v <= 1 ? v : -1;
+ }
+ 
+-static void EnLocalPlacer(void* vue, const QStringList& v) {
++// tactile : l'écran du bas, en points dans la fenêtre (origine en haut à gauche). La souris au-dessus,
++// la fenêtre reçoit les clics (l'écran tactile, comme sous Windows) ; ailleurs ils traversent vers En Local.
++static void EnLocalPlacer(void* vue, const QStringList& v, const QRectF& tactile) {
+     using Envoi = void* (*)(void*, void*);
+     using EnvoiL = void* (*)(void*, void*, long);
+     using Contient = signed char (*)(void*, void*, void*);
+@@ -1442,7 +1444,16 @@
+         void* const n = reinterpret_cast<EnvoiL>(objc_msgSend)(classe("NSNumber"), sel("numberWithLong:"), principale);
+         devant = liste && reinterpret_cast<Contient>(objc_msgSend)(liste, sel("containsObject:"), n);
+     }
+-    reinterpret_cast<EnvoiL>(objc_msgSend)(fenetre, sel("setIgnoresMouseEvents:"), 1);
++    struct Point {
++        double x, y;
++    };
++    struct Cadre {
++        double x, y, l, h;
++    };
++    const Point souris = reinterpret_cast<Point (*)(void*, void*)>(objc_msgSend)(classe("NSEvent"), sel("mouseLocation"));
++    const Cadre f = reinterpret_cast<Cadre (*)(void*, void*)>(objc_msgSend)(fenetre, sel("frame"));
++    const bool toucher = devant && tactile.contains(QPointF(souris.x - f.x, f.h - (souris.y - f.y)));
++    reinterpret_cast<EnvoiL>(objc_msgSend)(fenetre, sel("setIgnoresMouseEvents:"), toucher ? 0 : 1);
+     reinterpret_cast<EnvoiL>(objc_msgSend)(fenetre, sel("setLevel:"), devant ? 0 : -2147483623L + 1);
+     if (devant)
+         reinterpret_cast<Ordre>(objc_msgSend)(fenetre, sel("orderWindow:relativeTo:"), 1, principale);
+@@ -1757,7 +1768,12 @@
+                     place = r;
+                     render_window->setGeometry(r);
+                 }
+-                EnLocalPlacer(reinterpret_cast<void*>(render_window->winId()), v);
++                const auto& ecrans = render_window->GetFramebufferLayout();
++                const auto& bas = ecrans.bottom_screen;
++                const qreal px = render_window->devicePixelRatioF();
++                const QRectF tactile = ecrans.bottom_screen_enabled
++                    ? QRectF(bas.left / px, bas.top / px, bas.GetWidth() / px, bas.GetHeight() / px) : QRectF{};
++                EnLocalPlacer(reinterpret_cast<void*>(render_window->winId()), v, tactile);
+                 if (const double vol = EnLocalVolume(); vol >= 0)
+                     Settings::values.volume.SetValue(static_cast<float>(vol));
+             });

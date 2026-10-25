@@ -15,10 +15,13 @@ igd-next = "0.18"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 png = "0.17"
-sha2 = "0.10"
 libloading = "0.8"
 cpal = "0.15"
+aes = "0.8"
+sha2 = "0.10"
 sdl3 = { version = "0.20", features = ["build-from-source-static"] }
+
+[target.'cfg(windows)'.dependencies]
 windows-core = "0.58"
 windows = { version = "0.58", features = [
   "implement",
@@ -47,3 +50,8 @@ windows = { version = "0.58", features = [
   "Win32_NetworkManagement_Ndis",
   "Win32_Networking_WinSock",
 ] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+rfd = "0.15"
+screencapturekit = { version = "11", features = ["macos_14_0"] }
+objc2 = "0.6"
