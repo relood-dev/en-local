@@ -253,7 +253,7 @@ function drawProfil() {
   if (pokedexOuvert && !profilVu) {
     profActions = [];
     const actionPd = (fn) => (profActions.push(fn), profActions.length - 1);
-    $('#section').innerHTML = vuePokedex(actionPd);
+    $('#section').html = vuePokedex(actionPd);
     $('#section').querySelectorAll('.prof-el').forEach((b) => (b.onclick = () => ((profFocus = +b.dataset.n), profActions[profFocus]())));
     $('#titre').textContent = 'Pokédex';
     spritesPokedex();
@@ -276,7 +276,7 @@ function drawProfil() {
     ? `<button class="prof-el prof-bouton" data-n="${action(me ? () => allerA('reglages') : login)}">${me ? 'Réglages du compte' : 'Se connecter'}</button>`
     : `<button class="prof-el prof-bouton" data-n="${action(() => invoke('open_discord_user', { id: profilVu.m.id }))}">Lui écrire sur Discord</button>`;
   const qui = p.moi ? 'Mes' : 'Ses';
-  $('#section').innerHTML = `<div class="prof">
+  $('#section').html = `<div class="prof">
     <div class="prof-tete">
       <img class="av" src="${esc(p.avatar || 'img/hang-coucou.png')}" alt="">
       <div><h1>${esc(p.nom)}</h1>${p.lignes.map((l) => `<p>${esc(l)}</p>`).join('')}</div>

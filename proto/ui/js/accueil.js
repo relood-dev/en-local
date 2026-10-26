@@ -275,47 +275,82 @@ function lierItems() {
   board.querySelectorAll('.item').forEach((el) => {
     const n = +el.dataset.n;
     el.onclick = (e) => {
+      // Un glisser-déposer qui finit sur l'élément n'est pas un clic.
+      if (el._glisse) return (el._glisse = false);
       if (e.target.classList.contains('poignee')) return (focusTile(n), tailleSuivante());
       if (modif) return (focusTile(n), prendre());
       focusTile(n);
       activer(el);
     };
     el.oncontextmenu = (e) => { e.preventDefault(); focusTile(n); modif ? menuModif() : ouvrirContexte(el); };
+    // À la souris, tout élément se prend et se pose ailleurs, même hors du mode Personnaliser.
     el.onpointerdown = (e) => {
-      if (!modif || e.button !== 0 || e.target.classList.contains('poignee')) return;
+      if (e.button !== 0 || e.target.classList.contains('poignee')) return;
+      const x = surPage()[n];
       const depart = { x: e.clientX, y: e.clientY };
-      let bouge = false;
+      // Case de l'élément tenue par le pointeur : un grand widget se pose là où on le voit.
+      const c0 = caseSous(e.clientX, e.clientY);
+      const prisEn = c0 ? { x: c0.x - x.x, y: c0.y - x.y } : { x: 0, y: 0 };
+      let bouge = false, cible = null;
+      const versPage = { sens: 0, t: 0 };
+      const repere = Object.assign(document.createElement('i'), { className: 'cible' });
       const suit = (m) => {
         const dx = m.clientX - depart.x, dy = m.clientY - depart.y;
         if (!bouge && Math.hypot(dx, dy) < 6) return;
-        bouge = true;
+        if (!bouge) {
+          bouge = true;
+          focusTile(n);
+          el.classList.add('traine');
+          document.body.classList.add('glisse');
+          $('#board .grille').appendChild(repere);
+        }
         const z = parseFloat($('#accueil').style.getPropertyValue('--s')) || 1;
         el.style.transform = `translate(${dx / z}px, ${dy / z}px) scale(1.06)`;
-        el.classList.add('traine');
+        // Tenu contre le bord gauche ou droit : l'élément passe à la page d'à côté.
+        const r = $('#board').getBoundingClientRect(), bord = m.clientX < r.left + 40 * z ? -1 : m.clientX > r.right - 40 * z ? 1 : 0;
+        if (bord !== versPage.sens) {
+          clearTimeout(versPage.t);
+          versPage.sens = bord;
+          if (bord) versPage.t = setTimeout(() => ((versPage.passe = true), pose(), passerPage(x, page + bord)), 550);
+        }
+        const c = caseSous(m.clientX, m.clientY);
+        cible = c && { x: Math.max(0, Math.min(COLS - x.w, c.x - prisEn.x)), y: Math.max(0, Math.min(ROWS - x.h, c.y - prisEn.y)) };
+        repere.style.display = cible ? '' : 'none';
+        if (!cible) return;
+        repere.style.gridArea = `${cible.y + 1} / ${cible.x + 1} / span ${x.h} / span ${x.w}`;
+        repere.classList.toggle('non', !peutAller(x, cible.x, cible.y));
       };
-      const pose = (m) => {
+      const pose = () => {
+        clearTimeout(versPage.t);
         removeEventListener('pointermove', suit);
         removeEventListener('pointerup', pose);
+        removeEventListener('pointercancel', pose);
+        document.body.classList.remove('glisse');
+        repere.remove();
         el.classList.remove('traine');
         el.style.transform = '';
-        if (!bouge) return;
-        const c = caseSous(m.clientX, m.clientY);
-        if (c) deplacerVers(surPage()[n], c.x, c.y);
+        if (!bouge || versPage.passe) return;
+        el._glisse = true;
+        setTimeout(() => (el._glisse = false), 0);
+        if (cible && (cible.x !== x.x || cible.y !== x.y)) deplacerVers(x, cible.x, cible.y);
+      };
+      const passerPage = (x, p) => {
+        if (p < 0 || p >= PAGES) return;
+        prise = surPage().indexOf(x);
+        changerPage(p);
+        if (!modif) prise = -1;
       };
       addEventListener('pointermove', suit);
       addEventListener('pointerup', pose);
+      addEventListener('pointercancel', pose);
     };
   });
 }
-/** Molette : une page par cran. */
-let moletteAttente = 0;
+/** Molette : une page par geste. */
 function suivreMolette() {
   $('#board').addEventListener('wheel', (e) => {
-    if (onglet !== 'accueil' || Date.now() < moletteAttente) return;
-    const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
-    if (Math.abs(d) < 10) return;
-    moletteAttente = Date.now() + 350;
-    changerPage(page + (d > 0 ? 1 : -1));
+    const d = onglet === 'accueil' && !modif ? cran(e, true) : 0;
+    if (d) changerPage(page + d);
   }, { passive: true });
 }
 
@@ -442,16 +477,18 @@ function prendre() {
   drawMaison(true);
 }
 /** Déplace un élément, ou l'échange avec un élément de même taille. */
+/** Place libre, ou occupée par un élément de même taille (ils s'échangent) : null si impossible. */
+function peutAller(x, nx, ny) {
+  if (libre(page, nx, ny, x.w, x.h, x)) return { libre: true };
+  const autre = surPage().find((o) => o !== x && o.x === nx && o.y === ny && o.w === x.w && o.h === x.h);
+  return autre ? { autre } : null;
+}
 function deplacerVers(x, nx, ny) {
   if (!x) return;
-  if (libre(page, nx, ny, x.w, x.h, x)) {
-    Object.assign(x, { x: nx, y: ny });
-  } else {
-    const autre = surPage().find((o) => o !== x && o.x === nx && o.y === ny && o.w === x.w && o.h === x.h);
-    if (!autre) return refus();
-    Object.assign(autre, { x: x.x, y: x.y });
-    Object.assign(x, { x: nx, y: ny });
-  }
+  const ok = peutAller(x, nx, ny);
+  if (!ok) return refus();
+  if (ok.autre) Object.assign(ok.autre, { x: x.x, y: x.y });
+  Object.assign(x, { x: nx, y: ny });
   garderMaison();
   const k = surPage().indexOf(x);
   if (prise >= 0) prise = k;

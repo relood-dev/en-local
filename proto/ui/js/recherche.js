@@ -92,7 +92,7 @@ function drawRecherche() {
   const vide = recherche.trim()
     ? `<div class="r-vide"><img src="img/loc/loc_question.gif" alt=""><p>Rien pour « ${esc(recherche.trim())} ».<br>Essaie un autre nom, ou une partie seulement.</p></div>`
     : '<div class="r-vide"><img src="img/loc/loc_cherche.gif" alt=""><p>Un jeu (les tiens et ceux des membres), une collection, un membre, une session, une console : tape quelques lettres.</p></div>';
-  $('#section').innerHTML = `<div class="r">
+  $('#section').html = `<div class="r">
     <div class="r-gauche"><h1>Recherche</h1>
       <label class="r-champ">${icone(DOCK.recherche)}<input id="cherche" placeholder="Jeux, membres, sessions…" spellcheck="false" autocomplete="off" value="${esc(recherche)}"></label>
       <div class="clavier">${clavier}</div></div>

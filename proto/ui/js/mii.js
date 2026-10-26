@@ -161,7 +161,7 @@ function drawMii() {
     if (b.t === 'curseur') html += `<div class="mii-curseur" ${pos(0)}><i data-d="-1">‹</i><span><em></em></span><i data-d="1">›</i></div>`;
   });
   html += '</div>';
-  $('#section').innerHTML = `<div class="prof mii-edit">
+  $('#section').html = `<div class="prof mii-edit">
     <div class="mii-apercu"><img id="mii-img" alt=""><b id="mii-nom"></b><small>Ton Mii va sur la 3DS, la Wii, la Wii U et la Switch.</small></div>
     <div class="mii-panneau">
       <div class="mii-onglets">${glyphs.lb}${ONGLETS_MII.map(([nom], k) => `<button class="mii-onglet${k === e.onglet ? ' ici' : ''}" data-o="${k}">${esc(nom)}</button>`).join('')}${glyphs.rb}</div>

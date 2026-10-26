@@ -130,5 +130,8 @@ body.oled {
   --art-fondu: linear-gradient(90deg, #000 22%, rgba(0, 0, 0, .6) 60%, rgba(0, 0, 0, .25)), linear-gradient(0deg, #000, transparent 45%);
 }
 
+/* Appuis rapprochés (voir rythme() dans focus.js) : même mouvement, en plus rapide. */
+body.vite { --d-1: 90ms; --d-2: 140ms; --d-3: 220ms; --d-4: 300ms; --cascade: 15ms; }
+
 /* Réduire les animations : seulement le réglage d'En Local, pas celui de Windows. */
 body.reduit { --d-1: 1ms; --d-2: 1ms; --d-3: 1ms; --d-4: 1ms; --cascade: 0ms; --focus-echelle: 1; }

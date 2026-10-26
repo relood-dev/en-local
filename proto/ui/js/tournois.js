@@ -118,7 +118,7 @@ function drawTournois() {
       ${debut || ''}${boutons.length ? `<div class="trn-boutons">${boutons.map(([l, fn]) => `<button class="trn-el choix" data-n="${action(fn)}">${esc(l)}</button>`).join('')}</div>` : ''}
       ${match || ''}${tableau}</div>`;
   }
-  $('#section').innerHTML = html;
+  $('#section').html = html;
   $('#section').querySelectorAll('.trn-el').forEach((b) => (b.onclick = () => ((trnFocus = +b.dataset.n), trnActions[trnFocus]())));
   $('#titre').textContent = t ? t.nom : 'Tournois';
   focusTournoi(trnFocus);

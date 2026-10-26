@@ -16,7 +16,7 @@
 
 /* Boutons : l'action principale et le focus prennent l'accent. */
 .btn { border: 0; font: inherit; font-size: var(--t-corps); font-weight: 700; padding: 14px 18px; border-radius: var(--r-s); text-align: left; color: var(--texte); background: var(--bouton); cursor: pointer; outline: none; transition: background var(--d-1), color var(--d-1); }
-.btn:hover { background: var(--bouton-survol); }
+:where(body:not(.sans-souris)) .btn:hover:not(.focus) { background: var(--bouton-survol); }
 .btn.focus { background: var(--accent); color: var(--sur-accent); }
 .btn.volume { display: flex; justify-content: space-between; align-items: center; gap: 14px; }
 .btn.volume #menu-volume { display: flex; align-items: center; gap: 8px; font-weight: 600; opacity: .85; }

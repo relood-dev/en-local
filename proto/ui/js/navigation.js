@@ -18,24 +18,58 @@ const section = (id) => SECTIONS.find((s) => s.id === id);
 let dockOuvert = false;
 let dockFocus = 0;
 let dockApercu = null;
+let dockIci = 0; // section affichée (ou qui arrive)
 
+/*
+ * Le dock garde ses icônes d'un dessin à l'autre : seul le curseur glisse vers l'icône visée,
+ * et pendant une transition il suit la section qui arrive (L1/R1 enchaînés).
+ */
 function drawDock() {
-  const ici = SECTIONS.findIndex((s) => s.id === onglet);
+  const ici = (dockIci = SECTIONS.findIndex((s) => s.id === (ongletVise || onglet)));
   const vise = dockOuvert ? dockFocus : ici;
+  const d = $('#dock');
   const items = SECTIONS.map((s, n) => {
     const contenu = s.id === 'profil'
       ? (me ? `<img class="av" src="${esc(me.avatar || 'img/hang-coucou.png')}" alt="">` : icone(DOCK.profil))
       : icone(DOCK[s.id]);
-    return `${s.apres ? '<span class="sep"></span>' : ''}<button class="ic r${s.rang} ${n === ici ? 'ici' : ''} ${n === vise ? 'vise' : ''}" data-n="${n}" aria-label="${esc(s.id === 'profil' && me ? me.name : s.nom)}">${contenu}</button>`;
+    return `${s.apres ? '<span class="sep"></span>' : ''}<button class="ic r${s.rang}" data-n="${n}" aria-label="${esc(s.id === 'profil' && me ? me.name : s.nom)}">${contenu}</button>`;
   }).join('');
-  const s = SECTIONS[vise];
-  const d = $('#dock');
-  d.innerHTML = `<div class="dock-nom">${esc(s.id === 'profil' && me ? me.name : s.nom)}</div><div class="dock-barre">${glyphs.lb}${items}${glyphs.rb}</div>`;
-  d.querySelectorAll('.ic').forEach((el) => {
-    el.onclick = () => { fermerDock(); allerA(SECTIONS[+el.dataset.n].id); };
-    el.onmouseenter = () => { dockFocus = +el.dataset.n; d.querySelector('.dock-nom').textContent = el.getAttribute('aria-label'); d.querySelectorAll('.ic').forEach((b) => b.classList.toggle('vise', b === el)); };
-  });
+  const html = `<div class="dock-nom"></div><div class="dock-barre"><i class="dock-curseur"></i>${glyphs.lb}${items}${glyphs.rb}</div>`;
+  if (d._html !== html) {
+    d._html = html;
+    d.innerHTML = html;
+    d.querySelectorAll('.ic').forEach((el) => {
+      el.onclick = () => { fermerDock(); allerA(SECTIONS[+el.dataset.n].id); };
+      el.onmouseenter = () => viserDock(+el.dataset.n, dockIci);
+    });
+  }
+  viserDock(vise, ici);
   montrerDock(dockOuvert || dockApercu !== null || sourisEnBas);
+}
+function viserDock(vise, ici) {
+  const d = $('#dock');
+  const ics = [...d.querySelectorAll('.ic')];
+  dockFocus = vise;
+  ics.forEach((b, n) => (b.classList.toggle('vise', n === vise), b.classList.toggle('ici', n === ici)));
+  d.querySelector('.dock-nom').textContent = ics[vise]?.getAttribute('aria-label') || '';
+  placerCurseur();
+}
+/*
+ * Le curseur se cale sur la mise en page de l'icône visée (offsetLeft) : ni le zoom de l'écran,
+ * ni l'agrandissement de l'icône, ni une animation en cours ne la faussent.
+ * Replacé aussi quand la barre change de taille (police chargée, touches Q/E ↔ L1/R1, fenêtre).
+ */
+function placerCurseur() {
+  const d = $('#dock'), c = d.querySelector('.dock-curseur'), el = d.querySelector('.ic.vise');
+  if (!c || !el) return;
+  const barre = c.parentElement;
+  const x = el.offsetLeft + (el.offsetWidth - c.offsetWidth) / 2;
+  const y = (barre.clientHeight - c.offsetHeight) / 2 - 5;
+  // Première place : posé sans glisser depuis le bord.
+  if (!c.style.transform) (c.style.transition = 'none'), requestAnimationFrame(() => requestAnimationFrame(() => (c.style.transition = '')));
+  // Le déplacement d'abord, l'agrandissement ensuite : sinon il agrandit aussi le déplacement.
+  c.style.transform = `translate(${x}px, ${y}px) scale(1.06)`;
+  if (!barre._suivie) (barre._suivie = true), new ResizeObserver(placerCurseur).observe(barre);
 }
 function montrerDock(oui) {
   $('#dock').classList.toggle('ouvert', oui);
@@ -85,13 +119,15 @@ function navDock(k) {
 
 function sectionVoisine(d) {
   const vraies = SECTIONS.filter((s) => !s.action);
-  const n = vraies.findIndex((s) => s.id === onglet);
+  // Pendant une transition, on part de la section demandée : R1 R1 R1 avance de trois.
+  const n = vraies.findIndex((s) => s.id === (ongletVise || onglet));
   allerA(vraies[(n + d + vraies.length) % vraies.length].id);
   apercuDock();
 }
 
 /** Change de section avec son animation. */
-let enTransition = false;
+let enTransition = 0; // numéro de la dernière transition demandée
+let ongletVise = null; // section en train d'arriver
 /** Quitte En Local après confirmation. Le jeu en cours s'arrête proprement. */
 function quitterApp() {
   sheet('Quitter En Local ?', current ? 'Ton jeu s\'arrête : pense à sauvegarder avant.' : 'À bientôt sur le Local !', [
@@ -112,17 +148,27 @@ async function allerA(id, vu = null) {
   if (creation && id !== 'jeux') (creation = null), $('#accueil').classList.remove('mode-creation');
   // Membres et Sessions ouvrent le panneau du Local.
   if (id === 'membres' || id === 'sessions') return basculerMembres(true);
-  if (!section(id) || id === onglet || enTransition) return;
-  enTransition = true;
+  if (!section(id)) return;
   const part = onglet === 'jeux' ? [$('#carrousel')] : onglet === 'accueil' ? [$('#board'), $('#bulle')] : [$('#section')];
+  // Une autre section demandée pendant la transition la remplace : on peut enchaîner sans attendre.
+  const t = ++enTransition;
+  ongletVise = id === onglet ? null : id;
+  if (id === onglet) {
+    // Retour sur la section qu'on quittait : elle revient tout de suite.
+    part.forEach((el) => el.classList.remove('sort'));
+    $('#splash').classList.remove('pop');
+    return;
+  }
   part.forEach((el) => entree(el, 'sort'));
   const s = $('#splash');
   const av = id === 'profil' && (vu ? vu.m.avatar : me?.avatar);
   s.innerHTML = `<div class="splash-ic">${id === 'profil' && (vu || me) ? `<img class="av" src="${esc(av || 'img/hang-coucou.png')}" alt="">` : icone(DOCK[id])}</div><span>${esc(vu ? vu.m.name : section(id).nom)}</span>`;
   entree(s, 'pop');
-  await new Promise((r) => setTimeout(r, duree2()));
+  // La nouvelle section arrive quand l'icône commence à s'effacer (voir @keyframes splash) : on la voit bien.
+  await new Promise((r) => setTimeout(r, dureeSplash() * 0.55));
+  if (t !== enTransition) return;
+  ongletVise = null;
   part.forEach((el) => el.classList.remove('sort'));
-  enTransition = false;
   if (onglet === 'recherche') recherche = '', chercheFocus = 0, rechercheChargee = false; // la prochaine recherche repart de zéro
   if (onglet === 'reglages') regPage = null, regFocus = 0, regGroupe = 0, regVue = 'tuiles', regRecherche = '';
   onglet = id;
@@ -134,6 +180,7 @@ async function allerA(id, vu = null) {
   if (id === 'accueil') entree($('#bulle'));
 }
 const duree2 = () => parseFloat(getComputedStyle(document.body).getPropertyValue('--d-2')) || 0;
+const dureeSplash = () => (parseFloat(getComputedStyle(document.body).getPropertyValue('--d-4')) || 0) * 1.4;
 
 /* ---------- Menu d'actions ---------- */
 
@@ -238,7 +285,7 @@ function drawSection() {
   }[onglet] || [s.nom, '', 'hang-pensif'];
   sectionFocus = Math.max(0, Math.min(sectionFocus, lignes.length - 1));
   const tete = `<h1>${esc(info[0])}</h1>`;
-  $('#section').innerHTML = `<div class="sec-texte">${tete}<p>${esc(info[1])}</p>
+  $('#section').html = `<div class="sec-texte">${tete}<p>${esc(info[1])}</p>
       <div class="sec-lignes">${lignes.map((l, n) => `<button class="sec-ligne ${n === sectionFocus ? 'focus' : ''}" data-n="${n}">${l.html || esc(l.label)}</button>`).join('')}</div></div>
     <img class="sec-loc" src="img/${info[2]}.png" alt="">`;
   $('#section').querySelectorAll('.sec-ligne').forEach((b) => (b.onclick = () => lignes[+b.dataset.n].fn()));

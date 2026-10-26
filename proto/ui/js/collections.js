@@ -35,7 +35,7 @@ function drawCollections() {
     }).join('')}${colAjout ? '' : `<button class="col-el jeu-col ajouter" data-n="${ix.length}"><div class="icone">${icone('<path d="M12 5v14M5 12h14"/>')}</div><small>Ajouter des jeux</small></button>`}</div>
       ${!ix.length && !colAjout ? '<div class="col-vide"><img src="img/loc/loc_dossier.gif" alt=""><p>Ajoute des jeux depuis la bibliothèque, ou avec le menu d\'actions d\'un jeu.</p></div>' : ''}`;
   }
-  $('#section').innerHTML = `<div class="col">${tete}${corps}</div>`;
+  $('#section').html = `<div class="col">${tete}${corps}</div>`;
   $('#section').querySelectorAll('.col-el').forEach((b) => {
     b.onclick = () => ((colFocus = +b.dataset.n), colElements[colFocus]());
     b.oncontextmenu = (e) => (e.preventDefault(), (colFocus = +b.dataset.n), optionsCollection());

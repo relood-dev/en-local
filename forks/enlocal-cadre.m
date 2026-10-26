@@ -91,6 +91,17 @@ static void placer(const char *chemin)
       return;
    if (NSApp.activationPolicy != NSApplicationActivationPolicyAccessory)
       [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
+   /* Plein écran de l'émulateur (double-clic, raccourci) : il en ressort, une seule fois le temps de
+      l'animation. Toucher au style d'une fenêtre en plein écran lève une exception (RPCS3 plantait). */
+   static BOOL sortie;
+   if (fenetre.styleMask & NSWindowStyleMaskFullScreen)
+   {
+      if (!sortie)
+         [fenetre toggleFullScreen:nil];
+      sortie = YES;
+      return;
+   }
+   sortie = NO;
    if (fenetre.styleMask != NSWindowStyleMaskBorderless)
    {
       fenetre.styleMask = NSWindowStyleMaskBorderless;
@@ -125,7 +136,8 @@ __attribute__((constructor)) static void enlocal(void)
    dispatch_source_set_event_handler(t, ^{
       if (!NSApp)
          return;
-      placer(c);
+      /* Une exception ici ne doit jamais faire tomber l'émulateur : ce tour est seulement sauté. */
+      @try { placer(c); } @catch (NSException *e) {}
       if (s)
          lire_volume(s);
    });

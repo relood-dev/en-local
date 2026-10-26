@@ -253,7 +253,7 @@ function drawReglages() {
   regFocus = Math.max(0, Math.min(regFocus, regLignes.length - 1));
 
   const jeu = regPage?.jeu && games.find((x) => x.path === regPage.jeu);
-  $('#section').innerHTML = `<div class="reg regl">
+  $('#section').html = `<div class="reg regl">
     <div class="regl-tete"><small class="reg-chemin">${esc(chemin)}</small><h1${titre.length > 24 ? ' class="long"' : ''}>${!regPage && !regRecherche && ICONES_REG[titre] ? `<span class="regl-ic">${icone(ICONES_REG[titre])}</span>` : ''}${esc(titre)}</h1></div>
     <div class="reg-droite">${html}</div>
     <aside class="reg-panneau"><b id="reg-nom"></b><p id="reg-aide"></p><img class="reg-loc" src="img/loc/loc_reglages.gif" alt=""></aside></div>`;
@@ -284,7 +284,7 @@ function drawTouches() {
   const { jeu, c, ou, parent } = contexteTouches();
   regLignes = lignesTouches(c, ou, parent ? 'Comme la console' : 'Par défaut', parent).filter((l) => l.bouton);
   const n = regLignes.filter((l) => l.change).length;
-  $('#section').innerHTML = `<div class="reg regk">
+  $('#section').html = `<div class="reg regk">
     <div class="regl-tete"><small class="reg-chemin">Réglages · ${esc(jeu ? titreDe(jeu) : LONG[c])}</small><h1><span class="regl-ic">${icone(DOCK.jeux)}</span>Touches de la manette</h1></div>
     <div class="regk-schema">${schemaManette(c)}</div>
     <div class="regk-info"><b id="reg-nom"></b><p id="reg-aide"></p><span class="regk-etat">${n ? `${n} touche${n > 1 ? 's' : ''} modifiée${n > 1 ? 's' : ''}` : parent ? 'Comme la console' : 'Disposition d\'En Local'}</span></div></div>`;
@@ -362,7 +362,7 @@ function ligneReglage(l, k) {
 
 function drawTuilesReglages() {
   regLignes = [];
-  $('#section').innerHTML = `<div class="reg regt">
+  $('#section').html = `<div class="reg regt">
     <div class="regt-tete"><h1>Réglages</h1><button class="reg-chercher">${glyphs.y}<span>Rechercher un réglage</span></button></div>
     <div class="regt-grille">${regGroupes.map(([titre, lignes, resume], k) => `<button class="regt-tuile" data-g="${k}">
       <span class="regt-ic">${icone(ICONES_REG[titre] || DOCK.reglages)}</span>

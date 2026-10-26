@@ -42,9 +42,13 @@ function figer(img) {
 const GIF = 'img[src*=".gif"]';
 const figerTout = (el) => el.querySelectorAll?.(GIF).forEach(figer);
 const gifsAjoutes = new MutationObserver((l) => l.forEach((m) => m.addedNodes.forEach((n) => (n.matches?.(GIF) ? figer(n) : figerTout(n)))));
+/** Au repos, seules les animations en boucle s'arrêtent : celles d'apparition finissent (sinon l'écran reste vide). */
+const enBoucle = () => document.getAnimations().filter((a) => a.effect?.getTiming().iterations === Infinity);
 function repos() {
   const oui = current ? view() === 'jeu' : !document.hasFocus();
+  if (oui) enBoucle().forEach((a) => a.playState === 'running' && a.pause());
   if (oui === document.body.classList.contains('repos')) return;
+  if (!oui) enBoucle().forEach((a) => a.play());
   document.body.classList.toggle('repos', oui);
   if (oui) {
     figerTout(document.body);
@@ -862,12 +866,14 @@ const retenir = (k, v) => {
   jaquettes[k] = v;
   try { localStorage.jaquettes = JSON.stringify(jaquettes); } catch (e) { invoke('journal', { texte: `jaquettes non gardées : ${e}` }); }
 };
+// Numéro fixe par jeu : un écran redessiné à l'identique n'est pas reconstruit (voir html dans focus.js).
 let coverSeq = 0;
+const numerosJaquette = new Map();
 function coverImg(g, cls, loin = false) {
   const cle = g.path;
   // « Pas de jaquette » n'est retenu qu'un jour.
   if (jaquettes[cle]?.aucune > Date.now() - 864e5) return '';
-  const k = ++coverSeq;
+  const k = numerosJaquette.get(cle) ?? (numerosJaquette.set(cle, ++coverSeq), coverSeq);
   const j = jaquettes[cle];
   if (j?.fichier && g.console === 'Switch' && !j.crop && !j.eshopVu) {
     j.eshopVu = 1;
@@ -1941,11 +1947,12 @@ listen('pad-connected', (e) => {
   utiliser(typeManette);
 });
 invoke('pad_info').then((p) => p.kind && ((typeManette = p.kind), utiliser(p.kind))).catch(() => {});
-addEventListener('keydown', () => utiliser('clavier'), true);
+addEventListener('keydown', (e) => (utiliser('clavier'), view() !== 'jeu' && (sansSouris(true), e.repeat || rythme())), true);
 drawGlyphs();
 listen('pad', async (e) => {
   const k = e.payload;
   if (captureTouche) return;
+  if (view() !== 'jeu') sansSouris(true), rythme();
   if (!typeManette) typeManette = (await invoke('pad_info').catch(() => ({}))).kind || '';
   utiliser(typeManette);
   // Bouton de partage (micro, Partage, Capture) : photo ou clip, par-dessus la partie.
@@ -2058,14 +2065,19 @@ window.onkeydown = (e) => {
     return;
   }
   if (view() !== 'biblio') return;
-  if (onglet === 'recherche' && e.target.tagName !== 'INPUT' && !contexte && !dockOuvert && !panneauOuvert && !e.ctrlKey && !e.altKey) {
-    if (e.key.length === 1) return $('#cherche')?.focus();
+  const touche = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+  // Recherche : Q et E changent de section comme partout, les autres lettres s'écrivent dans le champ.
+  if (onglet === 'recherche' && e.target.tagName !== 'INPUT' && !contexte && !dockOuvert && !panneauOuvert && !e.ctrlKey && !e.altKey && !e.metaKey) {
+    if (e.key.length === 1 && e.key !== ' ' && touche !== 'q' && touche !== 'e') return $('#cherche')?.focus();
     if (e.key === 'Backspace') return (e.preventDefault(), effacer());
   }
-  if (e.target.tagName === 'INPUT' && !['Escape', 'ArrowUp', 'ArrowDown', 'Enter'].includes(e.key)) return;
-  const touche = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+  // Dans un champ : Échap et Tab en sortent (un second Échap revient à l'accueil).
+  if (e.target.tagName === 'INPUT' && (e.key === 'Escape' || e.key === 'Tab')) {
+    e.target.blur();
+    if (e.key === 'Escape') return e.preventDefault();
+  } else if (e.target.tagName === 'INPUT' && !['ArrowUp', 'ArrowDown', 'Enter'].includes(e.key)) return;
   const k = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', Enter: 'a', Escape: 'b', Backspace: 'b', r: 'x', t: 'y', q: 'lb', e: 'rb', f: 'lt', m: 'plus', Tab: 'plus', ' ': 'minus', ContextMenu: 'minus' }[touche];
-  if (!k || (e.target.tagName === 'INPUT' && k === 'b' && e.key === 'Backspace')) return;
+  if (!k || (document.activeElement?.tagName === 'INPUT' && k === 'b' && e.key === 'Backspace')) return;
   e.preventDefault();
   navigation(k);
 };

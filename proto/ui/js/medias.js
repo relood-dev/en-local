@@ -75,7 +75,7 @@ function drawMedias() {
     musique: ['Pas encore de musique', 'Mets ta musique dans ton dossier de musique, un dossier par album (avec cover.jpg pour la pochette), ou choisis-en un autre (Create).', 'musique'],
   }[cat];
   const detail = x ? detailMedia(cat, x) : `<h1>${vide[0]}</h1><p>${esc(vide[1])}</p>${vide[2] ? `<div class="med-actions"><span>${glyphs.a}Ouvrir le dossier</span></div>` : ''}`;
-  $('#section').innerHTML = `<div class="med">
+  $('#section').html = `<div class="med">
     <div class="med-rail">${rail}</div>
     <div class="med-reel">${tuiles || `<div class="med-tuile d0 vide${medZone === 'reel' ? ' focus' : ''}"><img src="img/loc/loc_${{ musique: 'musique', videos: 'popcorn' }[cat] || 'photo'}.gif" alt=""></div>`}</div>
     <div class="med-detail">${detail}</div>
