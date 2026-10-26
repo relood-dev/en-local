@@ -1858,6 +1858,9 @@ function libererJeu(suite) {
 
 /** Laisse l'image du jeu dans l'interface : Windows la remontre au prochain menu. */
 async function backToGame() {
+  // Menu HOME ouvert (texte du jeu, « Continuer à jouer » après la croix…) : le jeu reste caché
+  // derrière la bibliothèque, seul « Reprendre » y retourne (closeMenu).
+  if (enAccueil) return;
   ++menuSeq;
   await invoke('resume');
   $('#menu').style.display = 'none';

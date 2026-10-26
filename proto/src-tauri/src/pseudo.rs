@@ -47,7 +47,7 @@ pub fn eden(user: &str, nom: &str) {
 pub fn azahar(user: &str, nom: &str) {
     let f = chemin!("{user}\\nand\\data\\00000000000000000000000000000000\\sysdata\\00010017\\00000000\\config");
     let Ok(mut b) = std::fs::read(&f) else { return };
-    if b.len() < 4 {
+    if !crate::reglages::config_3ds_valide(&b) {
         return;
     }
     let n = u16::from_le_bytes([b[0], b[1]]) as usize;

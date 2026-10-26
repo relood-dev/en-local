@@ -215,10 +215,29 @@ pub fn azahar_langue(emu_dir: &str, o: &Opts) -> std::io::Result<()> {
     let Ok(mut b) = std::fs::read(&f) else {
         return Ok(()); // créé par Azahar au premier lancement
     };
+    // Config abîmée : Azahar plantait dès son ouverture. Mise de côté, il en recrée une neuve.
+    if !config_3ds_valide(&b) {
+        return std::fs::rename(&f, format!("{f}.abime"));
+    }
     if langue_3ds(&mut b, n as u8) {
         std::fs::write(&f, b)?;
     }
     Ok(())
+}
+/// Config console 3DS lisible : chaque bloc de données tient dans le fichier, après la table des blocs.
+pub fn config_3ds_valide(b: &[u8]) -> bool {
+    if b.len() < 4 {
+        return false;
+    }
+    let n = u16::from_le_bytes([b[0], b[1]]) as usize;
+    let table = 4 + 12 * n;
+    table <= b.len()
+        && (0..n).all(|i| {
+            let p = 4 + 12 * i;
+            let debut = u32::from_le_bytes(b[p + 4..p + 8].try_into().unwrap()) as usize;
+            let taille = u16::from_le_bytes([b[p + 8], b[p + 9]]) as usize;
+            taille <= 4 || (debut >= table && debut + taille <= b.len())
+        })
 }
 fn langue_3ds(b: &mut [u8], langue: u8) -> bool {
     if b.len() < 4 {
@@ -941,6 +960,17 @@ mod tests {
         assert!(langue_3ds(&mut b, 2));
         assert_eq!(b[20], 2);
         assert!(!langue_3ds(&mut b, 2));
+        // Bloc de 0x1C octets dans le fichier : valide ; qui en sort ou chevauche la table : abîmé.
+        assert!(config_3ds_valide(&b));
+        let mut c = vec![0u8; 0x100];
+        c[0] = 1;
+        c[8..12].copy_from_slice(&0x80u32.to_le_bytes());
+        c[12] = 0x1C;
+        assert!(config_3ds_valide(&c));
+        c[8..12].copy_from_slice(&0xF0u32.to_le_bytes());
+        assert!(!config_3ds_valide(&c));
+        c[8..12].copy_from_slice(&0u32.to_le_bytes());
+        assert!(!config_3ds_valide(&c));
     }
 
     #[test]
