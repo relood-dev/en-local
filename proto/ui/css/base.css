@@ -26,23 +26,23 @@ body.repos *, body.repos *::before, body.repos *::after { animation-play-state: 
 
 /* Transitions : l'écran qui part s'efface, celui qui arrive entre par morceaux (--i : rang). */
 .entree { animation: entree var(--d-3) var(--sortie) both; }
-@keyframes entree { from { opacity: 0; transform: translateY(16px); } }
+@keyframes entree { from { opacity: 0; transform: translateY(28px); } }
 .monte { animation: monte var(--d-2) var(--sortie) both; }
 .descend { animation: descend var(--d-2) var(--sortie) both; }
-@keyframes monte { from { opacity: 0; transform: translateY(18px); } }
-@keyframes descend { from { opacity: 0; transform: translateY(-18px); } }
+@keyframes monte { from { opacity: 0; transform: translateY(30px); } }
+@keyframes descend { from { opacity: 0; transform: translateY(-30px); } }
 .sort { animation: sort var(--d-2) ease-in both; }
 @keyframes sort { to { opacity: 0; transform: translateY(-10px) scale(.985); } }
 .apparait > *, .apparait .tile { animation: arrive var(--d-4) var(--sortie) both; animation-delay: calc(var(--i, 0) * var(--cascade)); }
-@keyframes arrive { from { opacity: 0; transform: translateY(22px) scale(.96); } }
+@keyframes arrive { from { opacity: 0; transform: translateY(36px) scale(.94); } }
 .apparait .consoles { animation-name: depuis-gauche; }
 .apparait .reel, .apparait .arrow { animation-name: depuis-gauche; --i: 1; }
 .apparait .info { animation-name: depuis-droite; --i: 2; }
 .apparait .media { animation-name: depuis-droite; --i: 4; }
 .apparait .actions { --i: 5; }
 .apparait-seul { animation: depuis-droite var(--d-3) var(--sortie) both; animation-delay: calc(var(--i, 0) * var(--cascade)); }
-@keyframes depuis-gauche { from { opacity: 0; transform: translateX(-36px); } }
-@keyframes depuis-droite { from { opacity: 0; transform: translateX(36px); } }
+@keyframes depuis-gauche { from { opacity: 0; transform: translateX(-56px); } }
+@keyframes depuis-droite { from { opacity: 0; transform: translateX(56px); } }
 #fond-art.nouveau { animation: fondu-art var(--d-4) ease-out both; }
 @keyframes fondu-art { from { opacity: 0; } }
 /* Thème clair : léger dégradé et trame de points. */

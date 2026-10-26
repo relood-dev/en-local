@@ -62,13 +62,14 @@
   --focus-echelle: 1.02;
 
   /* Mouvement */
-  --d-1: 120ms;
-  --d-2: 200ms;
-  --d-3: 320ms;
-  --d-4: 480ms;
-  --cascade: 35ms; /* décalage entre deux éléments qui entrent */
-  --sortie: cubic-bezier(.2, .8, .2, 1);
-  --rebond: cubic-bezier(.34, 1.56, .64, 1);
+  --d-1: 180ms;
+  --d-2: 340ms;
+  --d-3: 560ms;
+  --d-4: 800ms;
+  --cascade: 60ms; /* décalage entre deux éléments qui entrent */
+  /* Longue décélération : le mouvement part vite et se pose en douceur. */
+  --sortie: cubic-bezier(.16, 1, .3, 1);
+  --rebond: cubic-bezier(.34, 1.4, .64, 1);
 }
 
 /* Thème clair */

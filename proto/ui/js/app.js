@@ -1769,7 +1769,7 @@ async function closeMenu() {
   son('reprise', true);
   compterTemps();
   $('#menu').classList.add('sortie');
-  await new Promise((r) => setTimeout(r, 180));
+  await new Promise((r) => setTimeout(r, duree2()));
   await backToGame();
 }
 /*
