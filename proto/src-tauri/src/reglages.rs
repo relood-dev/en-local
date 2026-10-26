@@ -761,6 +761,10 @@ pub fn eden(ini: &str, o: &Opts, title_id: Option<&str>) -> String {
     // Session Switch (serveur du Local, sur un PC) : des invités à distance peuvent aussi se brancher.
     let invites = distance || get(o, "invites") == Some("oui");
     let mut c = vec![paire("vibration_enabled", vibrations(o)), paire("enable_udp_controller", invites)];
+    // Console en main (joueur 8 d'Eden) écrite ici : au démarrage du jeu, Eden recharge ses réglages et la
+    // remettait en manette Pro, que Let's Go débranchait (plus de manette).
+    c.push(paire("player_8_type", if portable { 4 } else { 0 }));
+    c.push(paire("player_8_connected", portable));
     if invites {
         let serveurs: Vec<String> = crate::distance::PORTS.iter().map(|p| format!("127.0.0.1:{p}")).collect();
         c.push(paire("udp_input_servers", format!("\"{}\"", serveurs.join(","))));
@@ -871,7 +875,8 @@ mod tests {
         let t = eden("[System]\nlanguage_index=1\n[DisabledAddOns]\nsize=0\n[Controls]\nx=1\n", &o, Some("010013C00E930000"));
         assert!(t.contains("language_index=2\n") && t.contains("region_index=2\n") && t.contains("use_docked_mode=0\n") && t.contains("resolution_setup=6\n"));
         let lg = eden("", &[("mode".to_string(), "1".to_string())].into_iter().collect(), Some("010003F003A34000"));
-        assert!(lg.contains("use_docked_mode=0\n"));
+        assert!(lg.contains("use_docked_mode=0\n") && lg.contains("player_8_type=4\n") && lg.contains("player_8_connected=true\n"));
+        assert!(t.contains("player_8_type=0\n") && t.contains("player_8_connected=false\n"));
         let mut d = o.clone();
         d.insert("distance".into(), "oui".into());
         let dt = eden("", &d, Some("010003F003A34000"));
