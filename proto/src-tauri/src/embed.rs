@@ -597,6 +597,13 @@ fn dolphin_config(dir: &str, game: &str, o: &crate::reglages::Opts) -> std::io::
     std::fs::write(chemin!("{dir}\\portable.txt"), "")?;
     let cfg = chemin!("{dir}\\User\\Config");
     std::fs::create_dir_all(&cfg)?;
+    // Journal de la partie (envoyé au Local) : démarrage, netplay, erreurs. Repart de zéro à chaque lancement.
+    let _ = std::fs::remove_file(chemin!("{dir}\\User\\Logs\\dolphin.log"));
+    std::fs::write(
+        chemin!("{cfg}\\Logger.ini"),
+        "[Options]\nWriteToFile = True\nWriteToConsole = False\nWriteToWindow = False\nVerbosity = 4\n\
+         [Logs]\nBOOT = True\nCORE = True\nNETPLAY = True\nVideo = True\n",
+    )?;
     std::fs::write(
         chemin!("{cfg}\\Dolphin.ini"),
         format!(
