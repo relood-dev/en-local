@@ -30,7 +30,7 @@ function maProgression() {
   }
   const jeux = {};
   for (const g of games) if (compteurs.jeux?.[g.path]) jeux[cleJeu(g)] = compteurs.jeux[g.path];
-  return { stats: s, compteurs: { ...compteurs, jeux }, defisFaits: JSON.parse(localStorage.defisFaits || '[]') };
+  return { stats: s, compteurs: { ...compteurs, jeux }, defisFaits: JSON.parse(localStorage.defisFaits || '[]'), defisDates: datesDefis() };
 }
 /** Mes jeux installés ici, pour le profil sur mes autres appareils. */
 const mesJeux = () => games.slice(0, 1000).map((g) => ({ k: cleJeu(g), t: titreDe(g).slice(0, 80), c: g.console, id: idGametdb(g) || undefined }));
@@ -186,6 +186,10 @@ async function synchroniser() {
     // Défis déjà réussis ailleurs : pas annoncés une deuxième fois ici.
     const faits = new Set([...JSON.parse(localStorage.defisFaits || '[]'), ...fusion.defisFaits]);
     localStorage.defisFaits = JSON.stringify([...faits]);
+    // Dates d'obtention : la plus ancienne, d'un appareil à l'autre.
+    const dates = datesDefis();
+    for (const d of autres) for (const [id, t] of Object.entries(d.defisDates || {})) if (Number(t) > 0 && !(dates[id] <= Number(t))) dates[id] = Number(t);
+    localStorage.defisDates = JSON.stringify(dates);
     verifierDefis();
     await api('PUT', '/progression', { appareil, remplace: appareilRemplace || undefined, systeme: /Mac OS X/.test(navigator.userAgent) ? 'mac' : 'windows', donnees: { ...maProgression(), profil: monProfil(), pokedex: pokedexCredit || {}, bibliotheque: mesJeux(), cartes: (pokedexDonnees?.jeux || []).slice(0, 20) } });
     appareilRemplace = null;

@@ -603,7 +603,8 @@ body.reduit .salle, body.reduit .salle * { animation: none !important; }
 .defi-ic { width: 54px; height: 54px; flex: none; display: grid; place-items: center; border-radius: 16px; background: var(--surface-3); overflow: hidden; }
 .defi-ic img { width: 120%; height: 120%; object-fit: contain; }
 .defi-ic span { font-size: 13px; font-weight: 800; color: var(--doux); }
-.defi.fait .defi-ic { background: var(--surface-2); box-shadow: inset 0 0 0 2px var(--accent); }
+.defi.fait .defi-ic { background: var(--surface-2); box-shadow: inset 0 0 0 2px var(--accent); color: var(--accent); }
+.defi.fait .defi-ic svg { width: 28px; height: 28px; }
 .defi-t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .defi-t b { font-size: 15px; }
 .defi-t small { color: var(--doux); font-size: 12px; font-weight: 600; }

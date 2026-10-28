@@ -172,6 +172,12 @@ function defis() {
   ].map(([id, titre, texte, but, v, loc]) => ({ id, titre, texte, but, v: Math.min(v, but), fait: v >= but, loc }));
 }
 
+/** Date de réussite de chaque défi (ms), sur tous mes appareils. */
+const datesDefis = () => JSON.parse(localStorage.defisDates || '{}');
+const dateDefi = (id) => {
+  const t = datesDefis()[id];
+  return t ? `Réussi le ${new Date(t).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}` : 'Réussi';
+};
 /** Annonce les nouveaux défis réussis, une seule fois. */
 function verifierDefis() {
   if (!jeuxCharges) return;
@@ -181,6 +187,12 @@ function verifierDefis() {
   if (!nouveaux.length && !premiere) return;
   nouveaux.forEach((d) => faits.add(d.id));
   localStorage.defisFaits = JSON.stringify([...faits]);
+  // Date d'obtention (inconnue pour ceux réussis avant qu'elle soit gardée).
+  if (!premiere) {
+    const dates = datesDefis();
+    nouveaux.forEach((d) => (dates[d.id] ||= Date.now()));
+    localStorage.defisDates = JSON.stringify(dates);
+  }
   if (!premiere && nouveaux.length) annoncerDefi(nouveaux[0], nouveaux.length - 1);
 }
 function annoncerDefi(d, autres) {
@@ -250,10 +262,10 @@ function modeleProfil() {
 
 function drawProfil() {
   if (miiEdition && !profilVu) return drawMii();
-  if (pokedexOuvert && !profilVu) {
+  if (pokedexOuvert && (!profilVu || profilVu.s?.pokedex)) {
     profActions = [];
     const actionPd = (fn) => (profActions.push(fn), profActions.length - 1);
-    $('#section').html = vuePokedex(actionPd);
+    $('#section').html = profilVu ? vuePokedex(actionPd, profilVu.s.pokedex, profilVu.m.name) : vuePokedex(actionPd);
     $('#section').querySelectorAll('.prof-el').forEach((b) => (b.onclick = () => ((profFocus = +b.dataset.n), profActions[profFocus]())));
     $('#titre').textContent = 'Pokédex';
     spritesPokedex();
@@ -288,9 +300,9 @@ function drawProfil() {
       <button class="prof-el prof-ra" data-n="${action(ra.token ? () => allerA('reglages') : connecterRa)}">${ra.token ? `${ra.avatar ? `<img class="av" src="${esc(ra.avatar)}" alt="">` : ''}<span><b>RetroAchievements</b><small>${esc(ra.user)} · ${resumeRa()}</small></span>` : '<span><b>Connecter RetroAchievements</b><small>Les vrais succès des jeux GameCube et Wii</small></span>'}</button></div>` : ''}
     ${p.vide ? '' : `<div class="titre-groupe">Défis <span>${p.faits} sur ${totalDefis}</span></div>
     ${p.defis ? `<div class="defis">${[...p.defis.filter((d) => !d.fait).sort((a, b) => b.v / b.but - a.v / a.but), ...p.defis.filter((d) => d.fait)].map((d) => `<button class="prof-el defi${d.fait ? ' fait' : ''}" data-n="${action(() => toast(`${d.titre} : ${d.texte}${d.fait ? ' (réussi)' : ` (${d.v}/${d.but})`}`))}">
-      <div class="defi-ic">${d.fait ? `<img src="img/loc/loc_${d.loc}.gif" alt="">` : `<span>${Math.round((d.v / d.but) * 100)}%</span>`}</div>
-      <div class="defi-t"><b>${esc(d.titre)}</b><small>${esc(d.texte)}</small>${d.fait ? '<small class="ok">Réussi</small>' : `<div class="barre"><i style="width:${(d.v / d.but) * 100}%"></i></div>`}</div></button>`).join('')}</div>` : '<p class="prof-vide">Le détail de ses défis arrive quand il aura la dernière version d\'En Local.</p>'}
-    ${p.moi ? blocPokedex(action) : ''}
+      <div class="defi-ic">${d.fait ? icone(DOCK.tournois) : `<span>${Math.round((d.v / d.but) * 100)}%</span>`}</div>
+      <div class="defi-t"><b>${esc(d.titre)}</b><small>${esc(d.texte)}</small>${d.fait ? `<small class="ok">${p.moi ? dateDefi(d.id) : 'Réussi'}</small>` : `<div class="barre"><i style="width:${(d.v / d.but) * 100}%"></i></div>`}</div></button>`).join('')}</div>` : '<p class="prof-vide">Le détail de ses défis arrive quand il aura la dernière version d\'En Local.</p>'}
+    ${p.moi ? blocPokedex(action) : profilVu?.s?.pokedex ? blocPokedex(action, profilVu.s.pokedex) : ''}
     <div class="prof-bas">
       <div><div class="titre-groupe">Les plus joués</div>${p.top.map((it, k) => `<button class="prof-el prof-jeu" data-n="${action(ouvrir(it))}"><span class="rang">${k + 1}</span><div class="icone micro">${vignette(it)}</div><span class="t"><b>${esc(it.titre)}</b><small>${LONG[it.c] || ''}</small></span><span class="temps">${heures(it.secs)}</span></button>`).join('') || `<p class="prof-vide">${p.moi ? 'Lance un jeu : ton temps de jeu s\'affichera ici.' : 'Pas encore de partie.'}</p>`}</div>
       <div><div class="titre-groupe">Par console</div>${p.parConsole.map(([c, x]) => `<div class="prof-console"><span class="r-ic">${iconeConsole(c)}</span><span class="t"><b>${LONG[c]}</b><div class="barre"><i style="width:${(x / max) * 100}%"></i></div></span><span class="temps">${heures(x)}</span></div>`).join('') || '<p class="prof-vide">Rien encore.</p>'}</div>

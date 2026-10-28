@@ -219,6 +219,7 @@ function envoyerStats() {
     defis: ds.filter((d) => d.fait).length, defisTotal: ds.length, serie: serie(), jours: (compteursTous().jours || []).length,
     sessions: (compteursTous().sessionsCreees || 0) + (compteursTous().sessionsRejointes || 0), captures: capturesListe.length,
     pseudo: pseudoConsoles(), mii: monMii() ? studioMii(monMii()) : '', defisV: Object.fromEntries(ds.map((d) => [d.id, d.v])),
+    pokedex: monPokedexPartage(),
   }).catch(() => {});
 }
 

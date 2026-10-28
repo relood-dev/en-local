@@ -30,13 +30,21 @@ const badgesDe = (j) => {
 /** Pokédex d'un jeu : [numéro, espèce], régional si connu. */
 const ordreJeu = (j) => (j.regional?.length ? j.regional.map(([n, r]) => [r, n]) : Array.from({ length: j.max || 0 }, (_, k) => [k + 1, k + 1]));
 
-function carteDresseur(j, k, action) {
-  const couleur = (VERSIONS[j.version] || [])[1] || '#3a3a44';
-  const ids = badgesDe(j);
+/** Pokédex du jeu d'une carte : total, attrapés et vus (déjà comptés pour la carte d'un membre). */
+function compteCarte(j) {
+  if (j.compte) return j.compte;
   const total = j.regional?.length || j.max || 0;
   const pris = new Set(j.pris || []);
   const prisDuDex = j.regional?.length ? j.regional.filter(([n]) => pris.has(n)).length : pris.size;
   const vus = prisDuDex + (j.regional?.length ? j.regional.filter(([n]) => (j.vus || []).includes(n)).length : (j.vus || []).length);
+  return { total, prisDuDex, vus };
+}
+/** Carte de dresseur partagée sur mon profil, avec ses Pokémon attrapés et vus. */
+const carteLegere = (j) => ({ jeu: j.jeu, version: j.version, dex: j.dex, dresseur: j.dresseur, id: j.id, argent: j.argent, heures: j.heures, minutes: j.minutes, badges: j.badges, generation: j.generation, compte: compteCarte(j), pris: j.pris || [], vus: j.vus || [], max: j.max || 0, regional: j.regional || [] });
+function carteDresseur(j, k, action) {
+  const couleur = (VERSIONS[j.version] || [])[1] || '#3a3a44';
+  const ids = badgesDe(j);
+  const { total, prisDuDex, vus } = compteCarte(j);
   const badges = j.badges >= 0 && ids.length ? `<div class="cd-badges">${ids.map((b, i) => `<span class="cd-badge${j.badges & (1 << i) ? ' obtenu' : ''}"><img data-badge="${b}" alt=""></span>`).join('')}</div>` : '';
   return `<button class="prof-el carte-dresseur${pokedexJeu === k ? ' choisie' : ''}" style="--cd:${couleur}" data-n="${action(() => ((pokedexJeu = pokedexJeu === k ? -1 : k), (pokedexFiltre = 'tous'), drawProfil()))}">
     <div class="cd-tete"><small>Carte de dresseur${j.ailleurs ? ' · sur ton autre appareil' : ''}</small><b>${esc(j.jeu)}</b></div>
@@ -197,7 +205,47 @@ function pokedexApresPartie(g) {
   if (g && estPokemon(g)) setTimeout(() => chargerPokedex(true), 1500);
 }
 
-function blocPokedex(action) {
+/** Ce que les autres membres voient de mon Pokédex (sur mon profil), sans rien si je n'en ai pas. */
+function monPokedexPartage() {
+  if (!pokedexDonnees && !cartesPokedex().length) return undefined;
+  const l = [...pokedexEspeces().values()];
+  return { p: l.filter((e) => e.pris).map((e) => e.n), c: l.filter((e) => e.chroma).map((e) => e.n), v: l.filter((e) => e.vu && !e.pris).map((e) => e.n), f: l.reduce((t, e) => t + e.formes.length, 0), j: cartesPokedex().map((j) => j.jeu).slice(0, 20), d: cartesPokedex().slice(0, 10).map(carteLegere) };
+}
+/** Pokédex d'un membre tel qu'il arrive de Loc, remis en forme : numéros 1 à 1025, nombres, textes. */
+function pokedexSur(pd) {
+  const nums = (l) => [...new Set((Array.isArray(l) ? l : []).map(Number).filter((n) => Number.isInteger(n) && n >= 1 && n <= 1025))];
+  const f = Math.floor(Number(pd?.f));
+  const nb = (x, max) => { const n = Math.floor(Number(x)); return Number.isFinite(n) && n > 0 ? Math.min(n, max) : 0; };
+  const txt = (x, n) => (typeof x === 'string' ? x.slice(0, n) : '');
+  const cartes = (Array.isArray(pd?.d) ? pd.d : []).filter((j) => j && typeof j === 'object' && typeof j.jeu === 'string').slice(0, 10).map((j) => ({
+    jeu: txt(j.jeu, 60), version: typeof j.version === 'number' ? nb(j.version, 99999) : txt(j.version, 20), dex: txt(j.dex, 40), dresseur: txt(j.dresseur, 20),
+    id: nb(j.id, 999999), argent: nb(j.argent, 9999999), heures: nb(j.heures, 9999), minutes: nb(j.minutes, 59), badges: Number.isInteger(j.badges) && j.badges >= 0 && j.badges < 65536 ? j.badges : -1,
+    generation: nb(j.generation, 9), compte: { total: nb(j.compte?.total, 2000), prisDuDex: nb(j.compte?.prisDuDex, 2000), vus: nb(j.compte?.vus, 2000) },
+    pris: nums(j.pris), vus: nums(j.vus), max: nb(j.max, 1025),
+    regional: (Array.isArray(j.regional) ? j.regional : []).filter((x) => Array.isArray(x) && x.length === 2 && x.every(Number.isInteger) && x[0] >= 1 && x[0] <= 1025).slice(0, 1025),
+  }));
+  return { p: nums(pd?.p), c: nums(pd?.c), v: nums(pd?.v), f: Number.isFinite(f) && f > 0 ? Math.min(f, 99999) : 0, j: (Array.isArray(pd?.j) ? pd.j : []).filter((x) => typeof x === 'string').slice(0, 20).map((x) => x.slice(0, 60)), d: cartes };
+}
+/** Pokédex d'un membre (reçu avec son profil), au même format que pokedexEspeces(). */
+function especesMembre(pd) {
+  const m = new Map();
+  for (const n of pd?.v || []) m.set(n, { n, vu: true, pris: false, chroma: false, formes: [], jeux: new Set() });
+  for (const n of pd?.p || []) m.set(n, { n, vu: true, pris: true, chroma: (pd.c || []).includes(n), formes: [], jeux: new Set() });
+  return m;
+}
+const chiffresMembre = (pd) => ({ pris: pd?.p?.length || 0, vus: (pd?.p?.length || 0) + (pd?.v?.length || 0), chroma: pd?.c?.length || 0, formes: pd?.f || 0, jeux: pd?.j?.length || 0 });
+
+function blocPokedex(action, pd = null) {
+  if (pd) {
+    pd = pokedexSur(pd);
+    const c = chiffresMembre(pd);
+    return `<div class="titre-groupe">Pokédex <span>${c.pris} sur 1025</span></div>
+    <button class="prof-el pokedex-bloc" data-n="${action(() => ((pokedexOuvert = true), (pokedexJeu = -1), (profFocus = 0), pokedexDonnees || chargerPokedex().then(() => pokedexOuvert && drawProfil()), drawProfil()))}">
+      <div class="pd-barre"><i style="width:${(c.pris / 1025) * 100}%"></i></div>
+      <span><b>${c.pris}</b> attrapés · <b>${c.vus}</b> vus · <b>${c.chroma}</b> chromatiques · <b>${c.formes}</b> formes</span>
+      <small>${c.jeux ? `D'après ${pd.j.map(esc).join(', ')}` : 'Pas encore de sauvegarde Pokémon'} · Ouvrir son Pokédex</small>
+    </button>`;
+  }
   if (!pokedexDonnees && !cartesPokedex().length) return '';
   const c = pokedexChiffres();
   return `<div class="titre-groupe">Pokédex <span>${c.pris} sur 1025</span></div>
@@ -217,11 +265,13 @@ const spritesVus = new IntersectionObserver((entrees) => {
   }
 }, { rootMargin: '300px' });
 
-function vuePokedex(action) {
-  const especes = pokedexEspeces();
+/** pd : le Pokédex d'un membre (son profil), sinon le mien. */
+function vuePokedex(action, pd = null, qui = '') {
+  if (pd) pd = pokedexSur(pd);
+  const especes = pd ? especesMembre(pd) : pokedexEspeces();
   const noms = pokedexDonnees?.noms || [];
-  const c = pokedexChiffres();
-  const jeux = cartesPokedex();
+  const c = pd ? chiffresMembre(pd) : pokedexChiffres();
+  const jeux = pd ? pd.d : cartesPokedex();
   const jeu = jeux[pokedexJeu];
   const dansJeu = jeu && { pris: new Set(jeu.pris || []), vus: new Set(jeu.vus || []) };
   const [de, a] = pokedexGen && !jeu ? GENS[pokedexGen - 1] : [1, 1025];
@@ -231,11 +281,11 @@ function vuePokedex(action) {
   const haut = `<div class="prof pokedex">
     <div class="prof-tete">
       <img class="av" src="img/loc/loc_nerd.gif" alt="">
-      <div><h1>Pokédex</h1><p>${c.pris} attrapés sur 1025 · ${c.vus} vus · ${c.chroma} chromatiques · ${c.formes} formes</p><p>${c.jeux ? `D'après ${jeux.map((j) => esc(j.jeu)).join(', ')}` : 'Aucune sauvegarde Pokémon lue pour l\'instant'}</p></div>
-      <button class="prof-el prof-bouton" data-n="${action(() => (toast('Lecture des sauvegardes…'), chargerPokedex(true).then(() => toast('Pokédex à jour'))))}">Relire les sauvegardes</button>
+      <div><h1>${pd ? `Pokédex de ${esc(qui)}` : 'Pokédex'}</h1><p>${c.pris} attrapés sur 1025 · ${c.vus} vus · ${c.chroma} chromatiques · ${c.formes} formes</p><p>${pd ? (pd.j?.length ? `D'après ${pd.j.map(esc).join(', ')}` : 'Pas encore de sauvegarde Pokémon') : c.jeux ? `D'après ${jeux.map((j) => esc(j.jeu)).join(', ')}` : 'Aucune sauvegarde Pokémon lue pour l\'instant'}</p></div>
+      ${pd ? '' : `<button class="prof-el prof-bouton" data-n="${action(() => (toast('Lecture des sauvegardes…'), chargerPokedex(true).then(() => toast('Pokédex à jour'))))}">Relire les sauvegardes</button>`}
     </div>
-    ${jeux.length ? `<div class="titre-groupe">Tes cartes de dresseur <span>${jeux.length}</span></div><div class="cd-liste">${jeux.map((j, k) => carteDresseur(j, k, action)).join('')}</div>` : ''}
-    <div class="titre-groupe">${jeu ? `${esc(jeu.dex)} · ${esc(jeu.jeu)}` : 'Pokédex d\'En Local · tous tes jeux'}</div>
+    ${jeux.length ? `<div class="titre-groupe">${pd ? 'Ses' : 'Tes'} cartes de dresseur <span>${jeux.length}</span></div><div class="cd-liste">${jeux.map((j, k) => carteDresseur(j, k, action)).join('')}</div>` : ''}
+    <div class="titre-groupe">${jeu ? `${esc(jeu.dex)} · ${esc(jeu.jeu)}` : pd ? `Pokédex d'En Local · tous ses jeux` : 'Pokédex d\'En Local · tous tes jeux'}</div>
     <div class="pd-filtres">
       ${Object.entries(filtres).map(([k, l]) => `<button class="prof-el pd-filtre${pokedexFiltre === k ? ' on' : ''}" data-n="${action(() => ((pokedexFiltre = k), drawProfil()))}">${l}</button>`).join('')}
       ${jeu ? `<button class="prof-el pd-filtre on" data-n="${action(() => ((pokedexJeu = -1), drawProfil()))}">Revenir au Pokédex d'En Local</button>` : `<button class="prof-el pd-filtre on" data-n="${action(() => ((pokedexGen = (pokedexGen + 1) % 10), drawProfil()))}">${pokedexGen ? `Génération ${pokedexGen}` : 'Toutes les générations'}</button>`}
