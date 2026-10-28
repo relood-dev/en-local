@@ -13,7 +13,8 @@ const MODES_ECRAN = [['plein', 'Plein écran', 'Tout l\'écran, sans barre ni bo
 /** F11 bascule entre plein écran et fenêtre. */
 function modeEcran(mode) {
   localStorage.ecran = mode;
-  invoke('mode_ecran', { mode }).catch(() => {});
+  // Plein écran sur un Mac à encoche : l'interface commence sous sa bande (hauteur rendue en points).
+  invoke('mode_ecran', { mode }).then((h) => (document.body.style.setProperty('--encoche', `${h || 0}px`), echelle())).catch(() => {});
 }
 
 /** Niveaux de volume : [valeur, titre, texte, général, musique]. */

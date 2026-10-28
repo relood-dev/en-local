@@ -1,6 +1,6 @@
 {
   "productName": "En Local",
-  "version": "0.1.72",
+  "version": "0.1.73",
   "identifier": "fr.lelocal.enlocal",
   "bundle": {
     "active": true,

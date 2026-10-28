@@ -1170,30 +1170,39 @@ async fn volume_jeux(v: f32) -> usize {
 
 /// Affichage : plein, sans-bordure ou fenetre.
 #[tauri::command]
-fn mode_ecran(app: AppHandle, mode: String) -> Result<(), String> {
+/// Rend la hauteur (en points) laissée libre en haut pour l'encoche du Mac, 0 sinon.
+fn mode_ecran(app: AppHandle, mode: String) -> Result<f64, String> {
     let w = app.get_webview_window("main").ok_or("fenêtre introuvable")?;
     let e = |r: tauri::Result<()>| r.map_err(|e| e.to_string());
     // macOS : plein écran « simple », sans Space à part ; sinon les fenêtres des émulateurs (filmées
-    // derrière En Local) s'ouvrent sur un autre Space et la capture ne les voit pas.
+    // derrière En Local) s'ouvrent sur un autre Space et la capture ne les voit pas. Il couvre aussi
+    // la bande de l'encoche : l'interface et le jeu commencent en dessous.
     #[cfg(target_os = "macos")]
     if mode == "plein" {
-        return e(w.set_simple_fullscreen(true));
+        e(w.set_simple_fullscreen(true))?;
+        embed::barres_masquees(true);
+        return Ok(embed::encoche(&w));
     }
     #[cfg(target_os = "macos")]
-    e(w.set_simple_fullscreen(false))?;
+    {
+        e(w.set_simple_fullscreen(false))?;
+        embed::barres_masquees(false);
+        embed::encoche_libre();
+    }
     match mode.as_str() {
-        "plein" => e(w.set_fullscreen(true)),
+        "plein" => e(w.set_fullscreen(true))?,
         "sans-bordure" => {
             e(w.set_fullscreen(false))?;
             e(w.set_decorations(false))?;
-            e(w.maximize())
+            e(w.maximize())?
         }
         _ => {
             e(w.set_fullscreen(false))?;
             e(w.set_decorations(true))?;
-            e(w.unmaximize())
+            e(w.unmaximize())?
         }
     }
+    Ok(0.0)
 }
 
 /// Matériel du Mac : puce, cœurs, mémoire (la mémoire graphique est partagée), écran.

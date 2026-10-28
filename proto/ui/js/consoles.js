@@ -173,7 +173,8 @@ const TOUCHES_CONSOLE = {
   DS: [...AB, ['l', 'L', 'lb'], ['r', 'R', 'rb'], ['start', 'Start', 'start'], ['select', 'Select', 'back']],
   '3DS': [...AB, ['l', 'L', 'lb'], ['r', 'R', 'rb'], ['zl', 'ZL', 'lt'], ['zr', 'ZR', 'rt'], ['start', 'Start', 'start'], ['select', 'Select', 'back']],
   GC: [['a', 'A', 'south'], ['b', 'B', 'west'], ['x', 'X', 'east'], ['y', 'Y', 'north'], ['z', 'Z', 'rb'], ['l', 'L', 'lt'], ['r', 'R', 'rt'], ['start', 'Start', 'start']],
-  Wii: [['a', 'A', 'south'], ['b', 'B', 'rt'], ['un', '1', 'west'], ['deux', '2', 'north'], ['moins', '−', 'back'], ['plus', '+', 'start'], ['c', 'C (Nunchuk)', 'lb'], ['nz', 'Z (Nunchuk)', 'lt'], ['secouer', 'Secouer', 'r3']],
+  // A et B : valider et retour de la manette (voir valider() plus bas : à droite sur Nintendo).
+  Wii: [['a', 'A', 'valider'], ['b', 'B', 'retour'], ['un', '1', 'west'], ['deux', '2', 'north'], ['moins', '−', 'back'], ['plus', '+', 'start'], ['c', 'C (Nunchuk)', 'lb'], ['nz', 'Z (Nunchuk)', 'lt'], ['secouer', 'Secouer', 'r3']],
   WiiU: [...AB, ['l', 'L', 'lb'], ['r', 'R', 'rb'], ['zl', 'ZL', 'lt'], ['zr', 'ZR', 'rt'], ['plus', '+', 'start'], ['moins', '−', 'back'], ['l3', 'Stick gauche (clic)', 'l3'], ['r3', 'Stick droit (clic)', 'r3']],
   Switch: [...AB, ['l', 'L', 'lb'], ['r', 'R', 'rb'], ['zl', 'ZL', 'lt'], ['zr', 'ZR', 'rt'], ['plus', '+', 'start'], ['moins', '−', 'back'], ['l3', 'Stick gauche (clic)', 'l3'], ['r3', 'Stick droit (clic)', 'r3']],
   // Mêmes ids que retro.rs : boutons de la console, place par défaut comme sur Switch (A à droite).
@@ -197,8 +198,11 @@ function glyphePhys(p) {
   const texte = { rt: ps ? 'R2' : n ? 'ZR' : 'RT', lt: ps ? 'L2' : n ? 'ZL' : 'LT', l3: ps ? 'L3' : 'LS', r3: ps ? 'R3' : 'RS', up: '↑', down: '↓', left: '←', right: '→' }[p];
   return `<span class="k sq">${texte || p}</span>`;
 }
+/** Bouton « valider » ou « retour » de la manette tenue : à droite et en bas sur Nintendo, l'inverse ailleurs. */
+const positionManette = (d) => (d === 'valider' ? (typeManette === 'nintendo' ? 'east' : 'south') : d === 'retour' ? (typeManette === 'nintendo' ? 'south' : 'east') : d);
 function lignesTouches(c, ou, defaut, parent) {
-  const lignes = TOUCHES_CONSOLE[c].map(([id, nom, d]) => {
+  const lignes = TOUCHES_CONSOLE[c].map(([id, nom, d0]) => {
+    const d = positionManette(d0);
     const cle = `touche_${id}`;
     const actuelle = ou[cle] || '';
     const herite = parent?.[cle] || d;
@@ -285,7 +289,7 @@ const dispositionWii = (g) => (fiche(g)?.manettes?.includes('classiccontroller')
 function ligneTouchesJeu(g, ou, c) {
   const d = g.console === 'Wii' && dispositionWii(g);
   if (d === 'classique') return { label: 'Touches de la manette', valeur: 'Manette classique', aide: 'Ce jeu reconnaît la manette classique de la Wii : ta manette s\'utilise comme sur Switch, sticks et gâchettes compris.' };
-  if (d === 'horizontale') return { label: 'Touches de la manette', valeur: 'Wiimote à l\'horizontale', aide: 'Stick gauche ou croix : se déplacer et incliner. 2 et 1 sont à la place de A et B sur Switch.' };
+  if (d === 'horizontale') return { label: 'Touches de la manette', valeur: 'Wiimote à l\'horizontale', aide: 'Stick gauche ou croix : se déplacer. Stick droit : incliner la Wiimote. Ton bouton pour valider fait A et 2, celui pour revenir fait B et 1, comme dans En Local.' };
   return ligneTouches(g.console, ou, c);
 }
 

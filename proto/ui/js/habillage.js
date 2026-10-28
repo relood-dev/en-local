@@ -11,19 +11,19 @@ let d = null;
 let vus = null;
 const R = 22;
 
-/** Zone du jeu, même calcul que embed.rs (rect_jeu). */
+/** Zone du jeu, même calcul que embed.rs (rect_jeu) : sous l'encoche du Mac, s'il y en a une. */
 function trou() {
-  const f = d?.format || 0;
+  const f = d?.format || 0, e = d?.encoche || 0, H = innerHeight - e;
   // Même format que l'écran : le jeu prend tout.
-  if (!f || Math.abs(innerWidth / innerHeight / f - 1) <= 0.04) return { x: 0, y: 0, w: innerWidth, h: innerHeight };
-  const m = Math.min(40, Math.max(12, Math.trunc(innerHeight / 30)));
-  const w = innerWidth - 2 * m, h = innerHeight - 2 * m;
+  if (!f || Math.abs(innerWidth / H / f - 1) <= 0.04) return { x: 0, y: e, w: innerWidth, h: H };
+  const m = Math.min(40, Math.max(12, Math.trunc(H / 30)));
+  const w = innerWidth - 2 * m, h = H - 2 * m;
   if (w / h > f) {
     const gw = Math.round(h * f);
-    return { x: m + Math.trunc((w - gw) / 2), y: m, w: gw, h };
+    return { x: m + Math.trunc((w - gw) / 2), y: e + m, w: gw, h };
   }
   const gh = Math.round(w / f);
-  return { x: m, y: m + Math.trunc((h - gh) / 2), w, h: gh };
+  return { x: m, y: e + m + Math.trunc((h - gh) / 2), w, h: gh };
 }
 
 /** Rectangles des écrans en pixels. */

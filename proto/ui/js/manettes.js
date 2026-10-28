@@ -101,7 +101,7 @@ function etiqueterSchema(c, ou, parent) {
     const b = el.getBBox();
     const cx = b.x + b.width / 2 + CADRE.x, cy = b.y + b.height / 2 + CADRE.y;
     const gauche = b.x + b.width / 2 < 200;
-    points.push({ id, nom: { l3: 'Stick G', r3: 'Stick D' }[id] || nom.replace(/ \(.*\)/, ''), gauche, cy, bx: gauche ? b.x + CADRE.x : b.x + b.width + CADRE.x, p: ou[`touche_${id}`] || parent?.[`touche_${id}`] || d, perso: Boolean(ou[`touche_${id}`]) });
+    points.push({ id, nom: { l3: 'Stick G', r3: 'Stick D' }[id] || nom.replace(/ \(.*\)/, ''), gauche, cy, bx: gauche ? b.x + CADRE.x : b.x + b.width + CADRE.x, p: ou[`touche_${id}`] || parent?.[`touche_${id}`] || positionManette(d), perso: Boolean(ou[`touche_${id}`]) });
   }
   const ESPACE = 25, HAUT = 14, BAS = CADRE.h - 14;
   for (const cote of [true, false]) {
@@ -124,7 +124,7 @@ function allumerSchema(c, ou, parent, phys) {
   if (!cadre) return;
   const cibles = [...cadre.querySelectorAll(`[data-p="${phys}"]`)];
   for (const [id, , d] of TOUCHES_CONSOLE[c] || []) {
-    if ((ou[`touche_${id}`] || parent?.[`touche_${id}`] || d) === phys) cibles.push(...cadre.querySelectorAll(`[data-b="${id}"]`));
+    if ((ou[`touche_${id}`] || parent?.[`touche_${id}`] || positionManette(d)) === phys) cibles.push(...cadre.querySelectorAll(`[data-b="${id}"]`));
   }
   for (const el of cibles) {
     el.classList.remove('appuye');

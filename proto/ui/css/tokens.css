@@ -135,3 +135,249 @@ body.vite { --d-1: 90ms; --d-2: 140ms; --d-3: 220ms; --d-4: 300ms; --cascade: 15
 
 /* Réduire les animations : seulement le réglage d'En Local, pas celui de Windows. */
 body.reduit { --d-1: 1ms; --d-2: 1ms; --d-3: 1ms; --d-4: 1ms; --cascade: 0ms; --focus-echelle: 1; }
+
+/*
+ * Thèmes. Chacun s'applique à l'app (body) et à sa carte d'aperçu dans Réglages (.ap) : les couleurs
+ * y sont redonnées. Les thèmes clairs ont aussi la classe « clair » sur l'app (fond à points).
+ */
+
+/* Les trois de base, pour leurs cartes d'aperçu (l'app les tient de :root, .clair et .oled). */
+.ap[data-theme="sombre"] { --fond: #0a0a0b; --surface-1: #121214; --surface-2: #1a1a1d; --surface-3: #242428; --trait: rgba(255, 255, 255, .08); --texte: #f5f5f7; --doux: #a1a1a8; --accent: #f5f5f7; --sur-accent: #0a0a0b; --verre: linear-gradient(180deg, rgba(255, 255, 255, .085), rgba(255, 255, 255, .025)); --verre-bord: rgba(255, 255, 255, .13); }
+.ap[data-theme="oled"] { --fond: #000; --surface-1: #000; --surface-2: #0c0c0d; --surface-3: #161618; --trait: rgba(255, 255, 255, .12); --texte: #f5f5f7; --doux: #a1a1a8; --accent: #f5f5f7; --sur-accent: #000; --verre: #000; --verre-bord: rgba(255, 255, 255, .16); }
+.ap[data-theme="clair"] { --fond: #f4f4f5; --surface-1: #fafafa; --surface-2: #fff; --surface-3: #ececee; --trait: rgba(10, 10, 11, .08); --texte: #0b0b0c; --doux: #55555c; --accent: #0b0b0c; --sur-accent: #fff; --verre: linear-gradient(180deg, rgba(255, 255, 255, .92), rgba(255, 255, 255, .74)); --verre-bord: rgba(255, 255, 255, .9); }
+
+/* ---------- Consoles : la matière et les couleurs d'une machine que les joueurs reconnaissent ---------- */
+
+/* Virtual Boy : rouge pur sur noir, comme ses écrans à LED. Les images aussi (filtre #vb, index.html). */
+body[data-theme="vb"], .ap[data-theme="vb"] {
+  --fond: #000; --surface-1: #0d0000; --surface-2: #160000; --surface-3: #240000;
+  --trait: rgba(255, 0, 0, .14); --trait-fort: rgba(255, 0, 0, .28);
+  --texte: #ff1a0d; --doux: #b80f06; --discret: #6e0803;
+  --accent: #ff1a0d; --sur-accent: #000; --halo: rgba(255, 0, 0, .32);
+  --bouton: rgba(255, 0, 0, .07); --bouton-survol: rgba(255, 0, 0, .15); --pastille: rgba(255, 0, 0, .09);
+  --champ: rgba(0, 0, 0, .5); --reflet: rgba(255, 0, 0, .2);
+  --av-fond: #160000; --av-bord: #0d0000; --cadre-icone: #160000;
+  --verre: linear-gradient(180deg, rgba(255, 0, 0, .08), rgba(255, 0, 0, .02)); --verre-bord: rgba(255, 0, 0, .3);
+  --verre-ombre: inset 0 1px 0 rgba(255, 30, 20, .25), 0 20px 50px rgba(0, 0, 0, .6);
+  --sur-image: #ff1a0d; --sur-image-doux: rgba(255, 26, 13, .75); --image-chip: rgba(255, 0, 0, .16);
+  --art-fondu: linear-gradient(90deg, #000 22%, rgba(0, 0, 0, .6) 60%, rgba(0, 0, 0, .25)), linear-gradient(0deg, #000, transparent 45%);
+}
+body[data-theme="vb"] img, .ap[data-theme="vb"] img { filter: url(#vb); }
+/* Les cartes des autres thèmes gardent leurs vraies couleurs, même quand l'app est en Virtual Boy. */
+.ap:not([data-theme="vb"]) img { filter: none; }
+body[data-theme="vb"] #stage #fond-art { filter: url(#vb) blur(30px); }
+/* Lignes de balayage par-dessus tout (le motif commun, plus bas, est derrière : celui-ci passe devant). */
+html body[data-theme="vb"] #stage::after, html .ap[data-theme="vb"]::after { content: ''; position: absolute; z-index: 1; inset: 0; pointer-events: none; animation: none; background: repeating-linear-gradient(0deg, rgba(0, 0, 0, .3) 0 1px, transparent 1px 3px); }
+
+/* Game Boy (DMG) : gris de la coque, encre bleu nuit, boutons A et B bordeaux ; le titre est l'écran vert. */
+body[data-theme="dmg"], .ap[data-theme="dmg"] {
+  --fond: #cdcac1; --surface-1: #d8d5cc; --surface-2: #e4e1d9; --surface-3: #c0bcb2;
+  --trait: rgba(35, 34, 74, .1); --trait-fort: rgba(35, 34, 74, .2);
+  --texte: #23224a; --doux: #55537a; --discret: #8a8799;
+  --accent: #8c1d50; --sur-accent: #f6eef1; --halo: rgba(140, 29, 80, .18);
+  --av-fond: #c0bcb2; --av-bord: #e4e1d9; --cadre-icone: #e4e1d9;
+  --verre: linear-gradient(180deg, rgba(232, 229, 221, .95), rgba(214, 211, 202, .85)); --verre-bord: rgba(255, 255, 255, .55);
+  --verre-ombre: 0 1px 0 rgba(255, 255, 255, .6) inset, 0 0 0 1px rgba(35, 34, 74, .08), 0 14px 30px rgba(60, 55, 40, .16);
+  --art-fondu: linear-gradient(90deg, var(--fond) 24%, rgba(205, 202, 193, .75) 58%, rgba(205, 202, 193, .35)), linear-gradient(0deg, var(--fond), transparent 45%);
+}
+body[data-theme="dmg"] #titre, .ap[data-theme="dmg"] .ap-titre { background: #9bbc0f; color: #0f380f; box-shadow: inset 0 0 0 3px #8bac0f, inset 0 3px 8px rgba(15, 56, 15, .35); border-color: #5d6e3a; }
+
+/* Game Boy Color Atomic Purple : plastique violet translucide, on voit à travers. */
+body[data-theme="atomic"], .ap[data-theme="atomic"] {
+  --fond: #1a0f2e; --surface-1: #23163d; --surface-2: #2d1d4e; --surface-3: #3a2762;
+  --trait: rgba(200, 170, 255, .12); --trait-fort: rgba(200, 170, 255, .22);
+  --texte: #f3edff; --doux: #b9a8dc; --discret: #7f6da6;
+  --accent: #d6c2ff; --sur-accent: #1a0f2e; --halo: rgba(214, 194, 255, .22);
+  --bouton: rgba(200, 170, 255, .08); --bouton-survol: rgba(200, 170, 255, .16); --pastille: rgba(200, 170, 255, .1);
+  --av-fond: #2d1d4e; --av-bord: #23163d; --cadre-icone: #2d1d4e;
+  --verre: linear-gradient(160deg, rgba(190, 150, 255, .2), rgba(120, 80, 200, .06) 60%, rgba(190, 150, 255, .12)); --verre-bord: rgba(214, 194, 255, .3);
+  --verre-ombre: inset 0 1px 0 rgba(235, 220, 255, .35), 0 20px 50px rgba(10, 4, 25, .55);
+  --art-fondu: linear-gradient(90deg, #1a0f2e 22%, rgba(26, 15, 46, .6) 60%, rgba(26, 15, 46, .25)), linear-gradient(0deg, #1a0f2e, transparent 45%);
+  --deco: radial-gradient(60% 50% at 18% 12%, rgba(170, 120, 255, .22), transparent 70%), radial-gradient(50% 45% at 85% 90%, rgba(120, 70, 220, .2), transparent 70%);
+}
+
+/* GameCube Indigo : le violet de la coque, le vert du gros bouton A. */
+body[data-theme="indigo"], .ap[data-theme="indigo"] {
+  --fond: #1c1938; --surface-1: #25214a; --surface-2: #2e295c; --surface-3: #3a3470;
+  --trait: rgba(190, 185, 255, .11); --trait-fort: rgba(190, 185, 255, .2);
+  --texte: #efeefb; --doux: #aaa6d6; --discret: #75709f;
+  --accent: #19b56a; --sur-accent: #06210f; --halo: rgba(25, 181, 106, .28);
+  --bouton: rgba(190, 185, 255, .07); --bouton-survol: rgba(190, 185, 255, .14); --pastille: rgba(190, 185, 255, .09);
+  --av-fond: #2e295c; --av-bord: #25214a; --cadre-icone: #2e295c;
+  --verre: linear-gradient(180deg, rgba(120, 112, 210, .22), rgba(80, 72, 170, .08)); --verre-bord: rgba(190, 185, 255, .18);
+  --art-fondu: linear-gradient(90deg, #1c1938 22%, rgba(28, 25, 56, .6) 60%, rgba(28, 25, 56, .25)), linear-gradient(0deg, #1c1938, transparent 45%);
+}
+
+/* Super Nintendo : le gris lavande de la console, ses boutons violets. */
+body[data-theme="snes"], .ap[data-theme="snes"] {
+  --fond: #d8d5e2; --surface-1: #e2dfeb; --surface-2: #eeecf4; --surface-3: #c8c4d8;
+  --trait: rgba(45, 39, 65, .09); --trait-fort: rgba(45, 39, 65, .18);
+  --texte: #2d2741; --doux: #5e5779; --discret: #8e88a6;
+  --accent: #55399a; --sur-accent: #f4f0ff; --halo: rgba(85, 57, 154, .18);
+  --av-fond: #c8c4d8; --av-bord: #eeecf4; --cadre-icone: #eeecf4;
+  --verre: linear-gradient(180deg, rgba(240, 238, 246, .94), rgba(226, 223, 235, .8)); --verre-bord: rgba(255, 255, 255, .7);
+  --art-fondu: linear-gradient(90deg, var(--fond) 24%, rgba(216, 213, 226, .75) 58%, rgba(216, 213, 226, .35)), linear-gradient(0deg, var(--fond), transparent 45%);
+}
+
+/* Wii : le blanc du menu des chaînes, ses fines rayures et son bleu. */
+body[data-theme="wii"], .ap[data-theme="wii"] {
+  --fond: #eef2f4; --surface-1: #f6f8f9; --surface-2: #ffffff; --surface-3: #dfe6ea;
+  --trait: rgba(40, 60, 70, .09); --trait-fort: rgba(40, 60, 70, .17);
+  --texte: #2f3a40; --doux: #6b7a82; --discret: #9aa7ad;
+  --accent: #23b0d8; --sur-accent: #ffffff; --halo: rgba(35, 176, 216, .22);
+  --av-fond: #dfe6ea; --av-bord: #ffffff; --cadre-icone: #ffffff;
+  --verre: linear-gradient(180deg, rgba(255, 255, 255, .94), rgba(246, 248, 249, .8)); --verre-bord: rgba(255, 255, 255, .9);
+  --art-fondu: linear-gradient(90deg, var(--fond) 24%, rgba(238, 242, 244, .75) 58%, rgba(238, 242, 244, .35)), linear-gradient(0deg, var(--fond), transparent 45%);
+  --deco: repeating-linear-gradient(0deg, rgba(35, 176, 216, .07) 0 1px, transparent 1px 4px);
+}
+
+/* PS2 : le bleu profond de son démarrage, la brume claire au loin. */
+body[data-theme="ps2"], .ap[data-theme="ps2"] {
+  --fond: #030a1c; --surface-1: #07122b; --surface-2: #0c1a3b; --surface-3: #14274f;
+  --trait: rgba(150, 185, 255, .11); --trait-fort: rgba(150, 185, 255, .2);
+  --texte: #e9f0ff; --doux: #8fa4d0; --discret: #586c97;
+  --accent: #c4d8ff; --sur-accent: #030a1c; --halo: rgba(170, 200, 255, .25);
+  --bouton: rgba(150, 185, 255, .07); --bouton-survol: rgba(150, 185, 255, .14); --pastille: rgba(150, 185, 255, .09);
+  --av-fond: #0c1a3b; --av-bord: #07122b; --cadre-icone: #0c1a3b;
+  --verre: linear-gradient(180deg, rgba(120, 160, 255, .14), rgba(60, 100, 200, .04)); --verre-bord: rgba(150, 185, 255, .18);
+  --art-fondu: linear-gradient(90deg, #030a1c 22%, rgba(3, 10, 28, .6) 60%, rgba(3, 10, 28, .25)), linear-gradient(0deg, #030a1c, transparent 45%);
+  --deco: radial-gradient(70% 45% at 50% 105%, rgba(110, 150, 255, .28), transparent 70%), radial-gradient(40% 30% at 50% 100%, rgba(220, 235, 255, .16), transparent 70%);
+}
+
+/* ---------- Ambiances ---------- */
+
+/* Sakura : une branche de cerisier en fleurs dans le coin, des pétales qui tombent, rose framboise. */
+body[data-theme="sakura"], .ap[data-theme="sakura"] {
+  --fond: #fbeef2; --surface-1: #fdf4f7; --surface-2: #fffafc; --surface-3: #f4dbe4;
+  --trait: rgba(120, 45, 80, .09); --trait-fort: rgba(120, 45, 80, .18);
+  --texte: #47202f; --doux: #8c5a6d; --discret: #b994a5;
+  --accent: #d23f74; --sur-accent: #fff; --halo: rgba(210, 63, 116, .2);
+  --av-fond: #f4dbe4; --av-bord: #fffafc; --cadre-icone: #fffafc;
+  --verre: linear-gradient(180deg, rgba(255, 250, 252, .9), rgba(252, 236, 242, .74)); --verre-bord: rgba(255, 255, 255, .85);
+  --verre-ombre: 0 1px 0 #fff inset, 0 0 0 1px rgba(120, 45, 80, .06), 0 14px 34px rgba(180, 70, 115, .14);
+  --ombre-1: 0 8px 20px rgba(150, 60, 100, .12);
+  --art-fondu: linear-gradient(90deg, var(--fond) 24%, rgba(251, 238, 242, .75) 58%, rgba(251, 238, 242, .35)), linear-gradient(0deg, var(--fond), transparent 45%);
+  --motif: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='420'%20height='420'%3E%3Cpath%20transform='translate(40%2060)%20rotate(20)%20scale(1)'%20d='M0%200%20C-6%20-5%20-7%20-14%20-2%20-18%20L0%20-15%20L2%20-18%20C7%20-14%206%20-5%200%200Z'%20fill='%23f2a9c1'%20opacity='0.7'/%3E%3Cpath%20transform='translate(180%2030)%20rotate(-40)%20scale(0.8)'%20d='M0%200%20C-6%20-5%20-7%20-14%20-2%20-18%20L0%20-15%20L2%20-18%20C7%20-14%206%20-5%200%200Z'%20fill='%23f2a9c1'%20opacity='0.55'/%3E%3Cpath%20transform='translate(320%20110)%20rotate(70)%20scale(1.1)'%20d='M0%200%20C-6%20-5%20-7%20-14%20-2%20-18%20L0%20-15%20L2%20-18%20C7%20-14%206%20-5%200%200Z'%20fill='%23f2a9c1'%20opacity='0.6'/%3E%3Cpath%20transform='translate(90%20220)%20rotate(140)%20scale(0.9)'%20d='M0%200%20C-6%20-5%20-7%20-14%20-2%20-18%20L0%20-15%20L2%20-18%20C7%20-14%206%20-5%200%200Z'%20fill='%23f2a9c1'%20opacity='0.5'/%3E%3Cpath%20transform='translate(250%20260)%20rotate(-10)%20scale(1.2)'%20d='M0%200%20C-6%20-5%20-7%20-14%20-2%20-18%20L0%20-15%20L2%20-18%20C7%20-14%206%20-5%200%200Z'%20fill='%23f2a9c1'%20opacity='0.65'/%3E%3Cpath%20transform='translate(380%20330)%20rotate(45)%20scale(0.8)'%20d='M0%200%20C-6%20-5%20-7%20-14%20-2%20-18%20L0%20-15%20L2%20-18%20C7%20-14%206%20-5%200%200Z'%20fill='%23f2a9c1'%20opacity='0.5'/%3E%3Cpath%20transform='translate(150%20370)%20rotate(100)%20scale(1)'%20d='M0%200%20C-6%20-5%20-7%20-14%20-2%20-18%20L0%20-15%20L2%20-18%20C7%20-14%206%20-5%200%200Z'%20fill='%23f2a9c1'%20opacity='0.6'/%3E%3Cpath%20transform='translate(30%20330)%20rotate(-60)%20scale(0.7)'%20d='M0%200%20C-6%20-5%20-7%20-14%20-2%20-18%20L0%20-15%20L2%20-18%20C7%20-14%206%20-5%200%200Z'%20fill='%23f2a9c1'%20opacity='0.45'/%3E%3C/svg%3E"); --motif-t: 420px; --motif-dx: 420px; --motif-dy: 420px; --motif-duree: 40s;
+  --deco: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20640%20260'%3E%3Cpath%20d='M640%20-10%20C560%2040%20470%2060%20400%20120%20C350%20162%20300%20170%20240%20196'%20fill='none'%20stroke='%235a3442'%20stroke-width='9'%20stroke-linecap='round'/%3E%3Cpath%20d='M470%2072%20C450%2030%20420%2018%20392%2014'%20fill='none'%20stroke='%235a3442'%20stroke-width='5'%20stroke-linecap='round'/%3E%3Cpath%20d='M330%20158%20C320%20200%20300%20220%20276%20238'%20fill='none'%20stroke='%235a3442'%20stroke-width='4'%20stroke-linecap='round'/%3E%3Cellipse%20cx='520'%20cy='30'%20rx='4'%20ry='6'%20transform='rotate(30%20520%2030)'%20fill='%23ec9db6'/%3E%3Cellipse%20cx='402'%20cy='70'%20rx='4'%20ry='6'%20transform='rotate(-20%20402%2070)'%20fill='%23ec9db6'/%3E%3Cellipse%20cx='220'%20cy='206'%20rx='4'%20ry='6'%20transform='rotate(60%20220%20206)'%20fill='%23ec9db6'/%3E%3Cellipse%20cx='348'%20cy='190'%20rx='4'%20ry='6'%20transform='rotate(10%20348%20190)'%20fill='%23ec9db6'/%3E%3Cg%20transform='translate(560%2046)%20rotate(10)%20scale(1.25)'%3E%3Cpath%20transform='rotate(0)'%20d='M0%200%20C-7%20-6%20-8%20-17%20-3%20-22%20L0%20-19%20L3%20-22%20C8%20-17%207%20-6%200%200Z'%20fill='%23f7c6d6'%20stroke='%23e9a3ba'%20stroke-width='.6'/%3E%3Cpath%20transform='rotate(72)'%20d='M0%200%20C-7%20-6%20-8%20-17%20-3%20-22%20L0%20-19%20L3%20-22%20C8%20-17%207%20-6%200%200Z'%20fill='%23f7c6d6'%20stroke='%23e9a3ba'%20stroke-width='.6'/%3E%3Cpath%20transform='rotate(144)'%20d='M0%200%20C-7%20-6%20-8%20-17%20-3%20-22%20L0%20-19%20L3%20-22%20C8%20-17%207%20-6%200%200Z'%20fill='%23f7c6d6'%20stroke='%23e9a3ba'%20stroke-width='.6'/%3E%3Cpath%20transform='rotate(216)'%20d='M0%200%20C-7%20-6%20-8%20-17%20-3%20-22%20L0%20-19%20L3%20-22%20C8%20-17%207%20-6%200%200Z'%20fill='%23f7c6d6'%20stroke='%23e9a3ba'%20stroke-width='.6'/%3E%3Cpath%20transform='rotate(288)'%20d='M0%200%20C-7%20-6%20-8%20-17%20-3%20-22%20L0%20-19%20L3%20-22%20C8%20-17%207%20-6%200%200Z'%20fill='%23f7c6d6'%20stroke='%23e9a3ba'%20stroke-width='.6'/%3E%3Ccircle%20r='3.2'%20fill='%23d6457a'/%3E%3Ccircle%20r='1.4'%20fill='%23ffe3a8'/%3E%3C/g%3E%3Cg%20transform='translate(505%2070)%20rotate(40)%20scale(1)'%3E%3Cpath%20transform='rotate(0)'%20d='M0%200%20C-7%20-6%20-8%20-17%20-3%20-22%20L0%20-19%20L3%20-22%20C8%20-17%207%20-6%200%200Z'%20fill='%23f7c6d6'%20stroke='%23e9a3ba'%20stroke-width='.6'/%3E%3Cpath%20transform='rotate(72)'%20d='M0%200%20C-7%20-6%20-8%20-17%20-3%20-22%20L0%20-19%20L3%20-22%20C8%20-17%207%20-6%200%200Z'%20fill='%23f7c6d6'%20stroke='%23e9a3ba'%20stroke-width='.6'/%3E%3Cpath%20transform='rotate(144)'%20d='M0%200%20C-7%20-6%20-8%20-17%20-3%20-22%20L0%20-19%20L3%20-22%20C8%20-17%207%20-6%200%200Z'%20fill='%23f7c6d6'%20stroke='%23e9a3ba'%20stroke-width='.6'/%3E%3Cpath%20transform='rotate(216)'%20d='M0%200%20C-7%20-6%20-8%20-17%20-3%20-22%20L0%20-19%20L3%20-22%20C8%20-17%207%20-6%200%200Z'%20fill='%23f7c6d6'%20stroke='%23e9a3ba'%20stroke-width='.6'/%3E%3Cpath%20transform='rotate(288)'%20d='M0%200%20C-7%20-6%20-8%20-17%20-3%20-22%20L0%20-19%20L3%20-22%20C8%20-17%207%20-6%200%200Z'%20fill='%23f7c6d6'%20stroke='%23e9a3ba'%20stroke-width='.6'/%3E%3Ccircle%20r='3.2'%20fill='%23d6457a'/%3E%3Ccircle%20r='1.4'%20fill='%23ffe3a8'/%3E%3C/g%3E%3Cg%20transform='translate(430%2092)%20rotate(-15)%20scale(1.35)'%3E%3Cpath%20transform='rotate(0)'%20d='M0%200%20C-7%20-6%20-8%20-17%20-3%20-22%20L0%20-19%20L3%20-22%20C8%20-17%207%20-6%200%200Z'%20fill='%23f7c6d6'%20stroke='%23e9a3ba'%20stroke-width='.6'/%3E%3Cpath%20transform='rotate(72)'%20d='M0%200%20C-7%20-6%20-8%20-17%20-3%20-22%20L0%20-19%20L3%20-22%20C8%20-17%207%20-6%200%200Z'%20fill='%23f7c6d6'%20stroke='%23e9a3ba'%20stroke-width='.6'/%3E%3Cpath%20transform='rotate(144)'%20d='M0%200%20C-7%20-6%20-8%20-17%20-3%20-22%20L0%20-19%20L3%20-22%20C8%20-17%207%20-6%200%200Z'%20fill='%23f7c6d6'%20stroke='%23e9a3ba'%20stroke-width='.6'/%3E%3Cpath%20transform='rotate(216)'%20d='M0%200%20C-7%20-6%20-8%20-17%20-3%20-22%20L0%20-19%20L3%20-22%20C8%20-17%207%20-6%200%200Z'%20fill='%23f7c6d6'%20stroke='%23e9a3ba'%20stroke-width='.6'/%3E%3Cpath%20transform='rotate(288)'%20d='M0%200%20C-7%20-6%20-8%20-17%20-3%20-22%20L0%20-19%20L3%20-22%20C8%20-17%207%20-6%200%200Z'%20fill='%23f7c6d6'%20stroke='%23e9a3ba'%20stroke-width='.6'/%3E%3Ccircle%20r='3.2'%20fill='%23d6457a'/%3E%3Ccircle%20r='1.4'%20fill='%23ffe3a8'/%3E%3C/g%3E%3Cg%20transform='translate(392%2016)%20rotate(25)%20scale(1.05)'%3E%3Cpath%20transform='rotate(0)'%20d='M0%200%20C-7%20-6%20-8%20-17%20-3%20-22%20L0%20-19%20L3%20-22%20C8%20-17%207%20-6%200%200Z'%20fill='%23f7c6d6'%20stroke='%23e9a3ba'%20stroke-width='.6'/%3E%3Cpath%20transform='rotate(72)'%20d='M0%200%20C-7%20-6%20-8%20-17%20-3%20-22%20L0%20-19%20L3%20-22%20C8%20-17%207%20-6%200%200Z'%20fill='%23f7c6d6'%20stroke='%23e9a3ba'%20stroke-width='.6'/%3E%3Cpath%20transform='rotate(144)'%20d='M0%200%20C-7%20-6%20-8%20-17%20-3%20-22%20L0%20-19%20L3%20-22%20C8%20-17%207%20-6%200%200Z'%20fill='%23f7c6d6'%20stroke='%23e9a3ba'%20stroke-width='.6'/%3E%3Cpath%20transform='rotate(216)'%20d='M0%200%20C-7%20-6%20-8%20-17%20-3%20-22%20L0%20-19%20L3%20-22%20C8%20-17%207%20-6%200%200Z'%20fill='%23f7c6d6'%20stroke='%23e9a3ba'%20stroke-width='.6'/%3E%3Cpath%20transform='rotate(288)'%20d='M0%200%20C-7%20-6%20-8%20-17%20-3%20-22%20L0%20-19%20L3%20-22%20C8%20-17%207%20-6%200%200Z'%20fill='%23f7c6d6'%20stroke='%23e9a3ba'%20stroke-width='.6'/%3E%3Ccircle%20r='3.2'%20fill='%23d6457a'/%3E%3Ccircle%20r='1.4'%20fill='%23ffe3a8'/%3E%3C/g%3E%3Cg%20transform='translate(360%20140)%20rotate(5)%20scale(1.15)'%3E%3Cpath%20transform='rotate(0)'%20d='M0%200%20C-7%20-6%20-8%20-17%20-3%20-22%20L0%20-19%20L3%20-22%20C8%20-17%207%20-6%200%200Z'%20fill='%23f7c6d6'%20stroke='%23e9a3ba'%20stroke-width='.6'/%3E%3Cpath%20transform='rotate(72)'%20d='M0%200%20C-7%20-6%20-8%20-17%20-3%20-22%20L0%20-19%20L3%20-22%20C8%20-17%207%20-6%200%200Z'%20fill='%23f7c6d6'%20stroke='%23e9a3ba'%20stroke-width='.6'/%3E%3Cpath%20transform='rotate(144)'%20d='M0%200%20C-7%20-6%20-8%20-17%20-3%20-22%20L0%20-19%20L3%20-22%20C8%20-17%207%20-6%200%200Z'%20fill='%23f7c6d6'%20stroke='%23e9a3ba'%20stroke-width='.6'/%3E%3Cpath%20transform='rotate(216)'%20d='M0%200%20C-7%20-6%20-8%20-17%20-3%20-22%20L0%20-19%20L3%20-22%20C8%20-17%207%20-6%200%200Z'%20fill='%23f7c6d6'%20stroke='%23e9a3ba'%20stroke-width='.6'/%3E%3Cpath%20transform='rotate(288)'%20d='M0%200%20C-7%20-6%20-8%20-17%20-3%20-22%20L0%20-19%20L3%20-22%20C8%20-17%207%20-6%200%200Z'%20fill='%23f7c6d6'%20stroke='%23e9a3ba'%20stroke-width='.6'/%3E%3Ccircle%20r='3.2'%20fill='%23d6457a'/%3E%3Ccircle%20r='1.4'%20fill='%23ffe3a8'/%3E%3C/g%3E%3Cg%20transform='translate(300%20176)%20rotate(30)%20scale(0.95)'%3E%3Cpath%20transform='rotate(0)'%20d='M0%200%20C-7%20-6%20-8%20-17%20-3%20-22%20L0%20-19%20L3%20-22%20C8%20-17%207%20-6%200%200Z'%20fill='%23f7c6d6'%20stroke='%23e9a3ba'%20stroke-width='.6'/%3E%3Cpath%20transform='rotate(72)'%20d='M0%200%20C-7%20-6%20-8%20-17%20-3%20-22%20L0%20-19%20L3%20-22%20C8%20-17%207%20-6%200%200Z'%20fill='%23f7c6d6'%20stroke='%23e9a3ba'%20stroke-width='.6'/%3E%3Cpath%20transform='rotate(144)'%20d='M0%200%20C-7%20-6%20-8%20-17%20-3%20-22%20L0%20-19%20L3%20-22%20C8%20-17%207%20-6%200%200Z'%20fill='%23f7c6d6'%20stroke='%23e9a3ba'%20stroke-width='.6'/%3E%3Cpath%20transform='rotate(216)'%20d='M0%200%20C-7%20-6%20-8%20-17%20-3%20-22%20L0%20-19%20L3%20-22%20C8%20-17%207%20-6%200%200Z'%20fill='%23f7c6d6'%20stroke='%23e9a3ba'%20stroke-width='.6'/%3E%3Cpath%20transform='rotate(288)'%20d='M0%200%20C-7%20-6%20-8%20-17%20-3%20-22%20L0%20-19%20L3%20-22%20C8%20-17%207%20-6%200%200Z'%20fill='%23f7c6d6'%20stroke='%23e9a3ba'%20stroke-width='.6'/%3E%3Ccircle%20r='3.2'%20fill='%23d6457a'/%3E%3Ccircle%20r='1.4'%20fill='%23ffe3a8'/%3E%3C/g%3E%3Cg%20transform='translate(246%20194)%20rotate(-20)%20scale(1.2)'%3E%3Cpath%20transform='rotate(0)'%20d='M0%200%20C-7%20-6%20-8%20-17%20-3%20-22%20L0%20-19%20L3%20-22%20C8%20-17%207%20-6%200%200Z'%20fill='%23f7c6d6'%20stroke='%23e9a3ba'%20stroke-width='.6'/%3E%3Cpath%20transform='rotate(72)'%20d='M0%200%20C-7%20-6%20-8%20-17%20-3%20-22%20L0%20-19%20L3%20-22%20C8%20-17%207%20-6%200%200Z'%20fill='%23f7c6d6'%20stroke='%23e9a3ba'%20stroke-width='.6'/%3E%3Cpath%20transform='rotate(144)'%20d='M0%200%20C-7%20-6%20-8%20-17%20-3%20-22%20L0%20-19%20L3%20-22%20C8%20-17%207%20-6%200%200Z'%20fill='%23f7c6d6'%20stroke='%23e9a3ba'%20stroke-width='.6'/%3E%3Cpath%20transform='rotate(216)'%20d='M0%200%20C-7%20-6%20-8%20-17%20-3%20-22%20L0%20-19%20L3%20-22%20C8%20-17%207%20-6%200%200Z'%20fill='%23f7c6d6'%20stroke='%23e9a3ba'%20stroke-width='.6'/%3E%3Cpath%20transform='rotate(288)'%20d='M0%200%20C-7%20-6%20-8%20-17%20-3%20-22%20L0%20-19%20L3%20-22%20C8%20-17%207%20-6%200%200Z'%20fill='%23f7c6d6'%20stroke='%23e9a3ba'%20stroke-width='.6'/%3E%3Ccircle%20r='3.2'%20fill='%23d6457a'/%3E%3Ccircle%20r='1.4'%20fill='%23ffe3a8'/%3E%3C/g%3E%3Cg%20transform='translate(276%20236)%20rotate(12)%20scale(0.9)'%3E%3Cpath%20transform='rotate(0)'%20d='M0%200%20C-7%20-6%20-8%20-17%20-3%20-22%20L0%20-19%20L3%20-22%20C8%20-17%207%20-6%200%200Z'%20fill='%23f7c6d6'%20stroke='%23e9a3ba'%20stroke-width='.6'/%3E%3Cpath%20transform='rotate(72)'%20d='M0%200%20C-7%20-6%20-8%20-17%20-3%20-22%20L0%20-19%20L3%20-22%20C8%20-17%207%20-6%200%200Z'%20fill='%23f7c6d6'%20stroke='%23e9a3ba'%20stroke-width='.6'/%3E%3Cpath%20transform='rotate(144)'%20d='M0%200%20C-7%20-6%20-8%20-17%20-3%20-22%20L0%20-19%20L3%20-22%20C8%20-17%207%20-6%200%200Z'%20fill='%23f7c6d6'%20stroke='%23e9a3ba'%20stroke-width='.6'/%3E%3Cpath%20transform='rotate(216)'%20d='M0%200%20C-7%20-6%20-8%20-17%20-3%20-22%20L0%20-19%20L3%20-22%20C8%20-17%207%20-6%200%200Z'%20fill='%23f7c6d6'%20stroke='%23e9a3ba'%20stroke-width='.6'/%3E%3Cpath%20transform='rotate(288)'%20d='M0%200%20C-7%20-6%20-8%20-17%20-3%20-22%20L0%20-19%20L3%20-22%20C8%20-17%207%20-6%200%200Z'%20fill='%23f7c6d6'%20stroke='%23e9a3ba'%20stroke-width='.6'/%3E%3Ccircle%20r='3.2'%20fill='%23d6457a'/%3E%3Ccircle%20r='1.4'%20fill='%23ffe3a8'/%3E%3C/g%3E%3Cg%20transform='translate(468%2040)%20rotate(55)%20scale(0.8)'%3E%3Cpath%20transform='rotate(0)'%20d='M0%200%20C-7%20-6%20-8%20-17%20-3%20-22%20L0%20-19%20L3%20-22%20C8%20-17%207%20-6%200%200Z'%20fill='%23f7c6d6'%20stroke='%23e9a3ba'%20stroke-width='.6'/%3E%3Cpath%20transform='rotate(72)'%20d='M0%200%20C-7%20-6%20-8%20-17%20-3%20-22%20L0%20-19%20L3%20-22%20C8%20-17%207%20-6%200%200Z'%20fill='%23f7c6d6'%20stroke='%23e9a3ba'%20stroke-width='.6'/%3E%3Cpath%20transform='rotate(144)'%20d='M0%200%20C-7%20-6%20-8%20-17%20-3%20-22%20L0%20-19%20L3%20-22%20C8%20-17%207%20-6%200%200Z'%20fill='%23f7c6d6'%20stroke='%23e9a3ba'%20stroke-width='.6'/%3E%3Cpath%20transform='rotate(216)'%20d='M0%200%20C-7%20-6%20-8%20-17%20-3%20-22%20L0%20-19%20L3%20-22%20C8%20-17%207%20-6%200%200Z'%20fill='%23f7c6d6'%20stroke='%23e9a3ba'%20stroke-width='.6'/%3E%3Cpath%20transform='rotate(288)'%20d='M0%200%20C-7%20-6%20-8%20-17%20-3%20-22%20L0%20-19%20L3%20-22%20C8%20-17%207%20-6%200%200Z'%20fill='%23f7c6d6'%20stroke='%23e9a3ba'%20stroke-width='.6'/%3E%3Ccircle%20r='3.2'%20fill='%23d6457a'/%3E%3Ccircle%20r='1.4'%20fill='%23ffe3a8'/%3E%3C/g%3E%3Cg%20transform='translate(330%20120)%20rotate(-35)%20scale(0.75)'%3E%3Cpath%20transform='rotate(0)'%20d='M0%200%20C-7%20-6%20-8%20-17%20-3%20-22%20L0%20-19%20L3%20-22%20C8%20-17%207%20-6%200%200Z'%20fill='%23f7c6d6'%20stroke='%23e9a3ba'%20stroke-width='.6'/%3E%3Cpath%20transform='rotate(72)'%20d='M0%200%20C-7%20-6%20-8%20-17%20-3%20-22%20L0%20-19%20L3%20-22%20C8%20-17%207%20-6%200%200Z'%20fill='%23f7c6d6'%20stroke='%23e9a3ba'%20stroke-width='.6'/%3E%3Cpath%20transform='rotate(144)'%20d='M0%200%20C-7%20-6%20-8%20-17%20-3%20-22%20L0%20-19%20L3%20-22%20C8%20-17%207%20-6%200%200Z'%20fill='%23f7c6d6'%20stroke='%23e9a3ba'%20stroke-width='.6'/%3E%3Cpath%20transform='rotate(216)'%20d='M0%200%20C-7%20-6%20-8%20-17%20-3%20-22%20L0%20-19%20L3%20-22%20C8%20-17%207%20-6%200%200Z'%20fill='%23f7c6d6'%20stroke='%23e9a3ba'%20stroke-width='.6'/%3E%3Cpath%20transform='rotate(288)'%20d='M0%200%20C-7%20-6%20-8%20-17%20-3%20-22%20L0%20-19%20L3%20-22%20C8%20-17%207%20-6%200%200Z'%20fill='%23f7c6d6'%20stroke='%23e9a3ba'%20stroke-width='.6'/%3E%3Ccircle%20r='3.2'%20fill='%23d6457a'/%3E%3Ccircle%20r='1.4'%20fill='%23ffe3a8'/%3E%3C/g%3E%3C/svg%3E") right -2% top -2% / min(48%, 560px) auto no-repeat, radial-gradient(70% 60% at 100% 0%, rgba(255, 196, 216, .7), transparent 70%), radial-gradient(60% 50% at 0% 100%, rgba(255, 214, 228, .55), transparent 70%);
+}
+
+/* Matcha : thé vert fouetté, papier de riz, vert profond. */
+body[data-theme="matcha"], .ap[data-theme="matcha"] {
+  --fond: #e3e8d4; --surface-1: #eaeedf; --surface-2: #f5f7ee; --surface-3: #d3dabf;
+  --trait: rgba(44, 53, 34, .09); --trait-fort: rgba(44, 53, 34, .18);
+  --texte: #2c3522; --doux: #5d6a4d; --discret: #8d987c;
+  --accent: #4d7a2a; --sur-accent: #f3f7ec; --halo: rgba(77, 122, 42, .18);
+  --av-fond: #d3dabf; --av-bord: #f5f7ee; --cadre-icone: #f5f7ee;
+  --verre: linear-gradient(180deg, rgba(245, 247, 238, .94), rgba(232, 237, 220, .8)); --verre-bord: rgba(255, 255, 255, .7);
+  --art-fondu: linear-gradient(90deg, var(--fond) 24%, rgba(227, 232, 212, .75) 58%, rgba(227, 232, 212, .35)), linear-gradient(0deg, var(--fond), transparent 45%);
+}
+
+/* Abysses : bleu-vert des grands fonds, lumière qui tombe de la surface, turquoise. */
+body[data-theme="abysses"], .ap[data-theme="abysses"] {
+  --fond: #021216; --surface-1: #051f28; --surface-2: #082a35; --surface-3: #0d3845;
+  --trait: rgba(110, 230, 215, .1); --trait-fort: rgba(110, 230, 215, .2);
+  --texte: #e0faf6; --doux: #7fb2ae; --discret: #4a7a79;
+  --accent: #3fe3c6; --sur-accent: #021216; --halo: rgba(63, 227, 198, .25);
+  --bouton: rgba(110, 230, 215, .07); --bouton-survol: rgba(110, 230, 215, .14); --pastille: rgba(110, 230, 215, .09);
+  --av-fond: #082a35; --av-bord: #051f28; --cadre-icone: #082a35;
+  --verre: linear-gradient(180deg, rgba(80, 200, 200, .12), rgba(20, 90, 100, .04)); --verre-bord: rgba(110, 230, 215, .16);
+  --art-fondu: linear-gradient(90deg, #021216 22%, rgba(2, 18, 22, .6) 60%, rgba(2, 18, 22, .25)), linear-gradient(0deg, #021216, transparent 45%);
+  --deco: radial-gradient(30% 60% at 25% -10%, rgba(120, 240, 230, .16), transparent 70%), radial-gradient(20% 50% at 60% -10%, rgba(120, 240, 230, .12), transparent 70%), radial-gradient(25% 55% at 85% -10%, rgba(120, 240, 230, .1), transparent 70%);
+}
+
+/* Moka : café serré, crème, caramel. */
+body[data-theme="moka"], .ap[data-theme="moka"] {
+  --fond: #16100c; --surface-1: #201712; --surface-2: #2a1f18; --surface-3: #372920;
+  --trait: rgba(240, 210, 180, .09); --trait-fort: rgba(240, 210, 180, .18);
+  --texte: #f3e6d6; --doux: #bda58c; --discret: #85705c;
+  --accent: #e6b27c; --sur-accent: #1b120c; --halo: rgba(230, 178, 124, .22);
+  --bouton: rgba(240, 210, 180, .07); --bouton-survol: rgba(240, 210, 180, .13); --pastille: rgba(240, 210, 180, .08);
+  --av-fond: #2a1f18; --av-bord: #201712; --cadre-icone: #2a1f18;
+  --verre: linear-gradient(180deg, rgba(240, 210, 180, .08), rgba(240, 210, 180, .02)); --verre-bord: rgba(240, 210, 180, .14);
+  --art-fondu: linear-gradient(90deg, #16100c 22%, rgba(22, 16, 12, .6) 60%, rgba(22, 16, 12, .25)), linear-gradient(0deg, #16100c, transparent 45%);
+}
+
+/* Minuit : ciel de nuit étoilé, or. */
+body[data-theme="minuit"], .ap[data-theme="minuit"] {
+  --fond: #0a0b14; --surface-1: #11121e; --surface-2: #181a29; --surface-3: #212336;
+  --trait: rgba(230, 215, 170, .09); --trait-fort: rgba(230, 215, 170, .18);
+  --texte: #f2ecdc; --doux: #aaa38e; --discret: #6f6a5b;
+  --accent: #d9b66a; --sur-accent: #15110a; --halo: rgba(217, 182, 106, .22);
+  --bouton: rgba(230, 215, 170, .06); --bouton-survol: rgba(230, 215, 170, .12); --pastille: rgba(230, 215, 170, .08);
+  --av-fond: #181a29; --av-bord: #11121e; --cadre-icone: #181a29;
+  --verre: linear-gradient(180deg, rgba(230, 215, 170, .07), rgba(230, 215, 170, .015)); --verre-bord: rgba(230, 215, 170, .14);
+  --art-fondu: linear-gradient(90deg, #0a0b14 22%, rgba(10, 11, 20, .6) 60%, rgba(10, 11, 20, .25)), linear-gradient(0deg, #0a0b14, transparent 45%);
+  --deco: radial-gradient(1.5px 1.5px at 8% 14%, #f2ecdc, transparent), radial-gradient(1px 1px at 23% 61%, #f2ecdc, transparent), radial-gradient(1.5px 1.5px at 41% 27%, #e8d8a8, transparent), radial-gradient(1px 1px at 57% 82%, #f2ecdc, transparent), radial-gradient(1.5px 1.5px at 71% 18%, #f2ecdc, transparent), radial-gradient(1px 1px at 86% 47%, #e8d8a8, transparent), radial-gradient(1px 1px at 94% 88%, #f2ecdc, transparent), radial-gradient(1px 1px at 33% 93%, #f2ecdc, transparent), radial-gradient(70% 50% at 50% 0%, rgba(60, 70, 140, .25), transparent 70%);
+}
+
+
+/* ---------- Thèmes animés : un motif qui défile derrière l'interface (--motif), voir plus bas ---------- */
+
+/* Neige : collines enneigées en bas, flocons qui tombent, bleu glacier. */
+body[data-theme="neige"], .ap[data-theme="neige"] {
+  --fond: #e9f0f7; --surface-1: #f2f6fa; --surface-2: #ffffff; --surface-3: #dbe5ef;
+  --trait: rgba(30, 50, 75, .09); --trait-fort: rgba(30, 50, 75, .18);
+  --texte: #1c2a3a; --doux: #55677c; --discret: #8b9bae;
+  --accent: #2f78d6; --sur-accent: #fff; --halo: rgba(47, 120, 214, .2);
+  --av-fond: #dbe5ef; --av-bord: #fff; --cadre-icone: #fff;
+  --verre: linear-gradient(180deg, rgba(255, 255, 255, .9), rgba(240, 245, 250, .74)); --verre-bord: rgba(255, 255, 255, .9);
+  --art-fondu: linear-gradient(90deg, var(--fond) 24%, rgba(233, 240, 247, .75) 58%, rgba(233, 240, 247, .35)), linear-gradient(0deg, var(--fond), transparent 45%);
+  --deco: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='1200'%20height='300'%20viewBox='0%200%201200%20300'%3E%3Cpath%20d='M0%20180%20C150%20120%20260%20150%20380%20110%20C520%2060%20640%20140%20780%20120%20C920%20100%201040%2060%201200%2090%20V300%20H0Z'%20fill='%23dce8f3'/%3E%3Cpath%20d='M0%20230%20C180%20190%20300%20220%20460%20200%20C640%20175%20760%20230%20940%20210%20C1060%20196%201140%20180%201200%20186%20V300%20H0Z'%20fill='%23fff'/%3E%3C/svg%3E") center bottom / 100% auto no-repeat, linear-gradient(180deg, #c9d9ea, transparent 60%);
+  --motif: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='420'%20height='420'%20viewBox='0%200%20420%20420'%3E%3Ccircle%20cx='165'%20cy='77'%20r='3'%20fill='%23fff'%20opacity='0.9'/%3E%3Ccircle%20cx='24'%20cy='37'%20r='3.5'%20fill='%23fff'%20opacity='0.6'/%3E%3Ccircle%20cx='187'%20cy='298'%20r='1.5'%20fill='%23fff'%20opacity='0.9'/%3E%3Ccircle%20cx='109'%20cy='19'%20r='1.5'%20fill='%23fff'%20opacity='0.75'/%3E%3Ccircle%20cx='214'%20cy='35'%20r='2'%20fill='%23fff'%20opacity='0.6'/%3E%3Ccircle%20cx='282'%20cy='217'%20r='1.5'%20fill='%23fff'%20opacity='0.9'/%3E%3Ccircle%20cx='63'%20cy='114'%20r='3.5'%20fill='%23fff'%20opacity='0.6'/%3E%3Ccircle%20cx='295'%20cy='299'%20r='3'%20fill='%23fff'%20opacity='0.6'/%3E%3Ccircle%20cx='113'%20cy='23'%20r='3.5'%20fill='%23fff'%20opacity='0.6'/%3E%3Ccircle%20cx='148'%20cy='214'%20r='2'%20fill='%23fff'%20opacity='0.9'/%3E%3Ccircle%20cx='60'%20cy='292'%20r='2.5'%20fill='%23fff'%20opacity='0.9'/%3E%3Ccircle%20cx='417'%20cy='349'%20r='2'%20fill='%23fff'%20opacity='0.6'/%3E%3Ccircle%20cx='297'%20cy='292'%20r='2'%20fill='%23fff'%20opacity='0.75'/%3E%3Ccircle%20cx='49'%20cy='280'%20r='1.5'%20fill='%23fff'%20opacity='0.9'/%3E%3Ccircle%20cx='30'%20cy='316'%20r='2'%20fill='%23fff'%20opacity='0.75'/%3E%3Ccircle%20cx='348'%20cy='272'%20r='3'%20fill='%23fff'%20opacity='0.75'/%3E%3Ccircle%20cx='238'%20cy='299'%20r='3'%20fill='%23fff'%20opacity='0.75'/%3E%3Ccircle%20cx='153'%20cy='127'%20r='2'%20fill='%23fff'%20opacity='0.9'/%3E%3Ccircle%20cx='399'%20cy='124'%20r='1.5'%20fill='%23fff'%20opacity='0.9'/%3E%3Ccircle%20cx='153'%20cy='268'%20r='3'%20fill='%23fff'%20opacity='0.75'/%3E%3Ccircle%20cx='373'%20cy='229'%20r='2.5'%20fill='%23fff'%20opacity='0.9'/%3E%3Ccircle%20cx='37'%20cy='60'%20r='3.5'%20fill='%23fff'%20opacity='0.75'/%3E%3Ccircle%20cx='84'%20cy='387'%20r='2.5'%20fill='%23fff'%20opacity='0.6'/%3E%3Ccircle%20cx='250'%20cy='215'%20r='1.5'%20fill='%23fff'%20opacity='0.9'/%3E%3Ccircle%20cx='39'%20cy='391'%20r='3.5'%20fill='%23fff'%20opacity='0.9'/%3E%3Ccircle%20cx='404'%20cy='418'%20r='2.5'%20fill='%23fff'%20opacity='0.75'/%3E%3Ccircle%20cx='355'%20cy='179'%20r='3.5'%20fill='%23fff'%20opacity='0.75'/%3E%3Ccircle%20cx='296'%20cy='408'%20r='3'%20fill='%23fff'%20opacity='0.6'/%3E%3C/svg%3E"); --motif-t: 420px; --motif-dx: 0px; --motif-dy: 420px; --motif-duree: 26s;
+}
+body[data-theme="neige"] #stage::before { display: none; }
+
+/* Automne : bordeaux profond, feuilles rousses qui tombent en tournoyant, ambre. */
+body[data-theme="automne"], .ap[data-theme="automne"] {
+  --fond: #1a0e0f; --surface-1: #241415; --surface-2: #2f1a1b; --surface-3: #3c2223;
+  --trait: rgba(255, 200, 160, .09); --trait-fort: rgba(255, 200, 160, .18);
+  --texte: #f6e9de; --doux: #c4a493; --discret: #8a6b5e;
+  --accent: #f0a33c; --sur-accent: #1f1006; --halo: rgba(240, 163, 60, .24);
+  --bouton: rgba(255, 200, 160, .07); --bouton-survol: rgba(255, 200, 160, .13); --pastille: rgba(255, 200, 160, .08);
+  --av-fond: #2f1a1b; --av-bord: #241415; --cadre-icone: #2f1a1b;
+  --verre: linear-gradient(180deg, rgba(255, 190, 140, .08), rgba(255, 190, 140, .02)); --verre-bord: rgba(255, 200, 160, .15);
+  --art-fondu: linear-gradient(90deg, #1a0e0f 22%, rgba(26, 14, 15, .6) 60%, rgba(26, 14, 15, .25)), linear-gradient(0deg, #1a0e0f, transparent 45%);
+  --deco: radial-gradient(70% 55% at 85% 0%, rgba(232, 130, 46, .18), transparent 70%), radial-gradient(60% 50% at 0% 100%, rgba(194, 54, 31, .16), transparent 70%);
+  --motif: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='460'%20height='460'%20viewBox='0%200%20460%20460'%3E%3Cg%20transform='translate(50%2060)%20rotate(30)%20scale(1)'%3E%3Cpath%20d='M0%20-14%20C9%20-9%2010%205%200%2014%20C-10%205%20-9%20-9%200%20-14Z'%20fill='%23c2361f'/%3E%3Cpath%20d='M0%20-12%20V18'%20stroke='%235a2a14'%20stroke-width='1'%20opacity='.5'/%3E%3C/g%3E%3Cg%20transform='translate(200%2030)%20rotate(-40)%20scale(0.8)'%3E%3Cpath%20d='M0%20-14%20C9%20-9%2010%205%200%2014%20C-10%205%20-9%20-9%200%20-14Z'%20fill='%23e8822e'/%3E%3Cpath%20d='M0%20-12%20V18'%20stroke='%235a2a14'%20stroke-width='1'%20opacity='.5'/%3E%3C/g%3E%3Cg%20transform='translate(350%20110)%20rotate(80)%20scale(1.1)'%3E%3Cpath%20d='M0%20-14%20C9%20-9%2010%205%200%2014%20C-10%205%20-9%20-9%200%20-14Z'%20fill='%23e7b53c'/%3E%3Cpath%20d='M0%20-12%20V18'%20stroke='%235a2a14'%20stroke-width='1'%20opacity='.5'/%3E%3C/g%3E%3Cg%20transform='translate(110%20220)%20rotate(150)%20scale(0.9)'%3E%3Cpath%20d='M0%20-14%20C9%20-9%2010%205%200%2014%20C-10%205%20-9%20-9%200%20-14Z'%20fill='%23d65a24'/%3E%3Cpath%20d='M0%20-12%20V18'%20stroke='%235a2a14'%20stroke-width='1'%20opacity='.5'/%3E%3C/g%3E%3Cg%20transform='translate(290%20260)%20rotate(-20)%20scale(1.2)'%3E%3Cpath%20d='M0%20-14%20C9%20-9%2010%205%200%2014%20C-10%205%20-9%20-9%200%20-14Z'%20fill='%23c2361f'/%3E%3Cpath%20d='M0%20-12%20V18'%20stroke='%235a2a14'%20stroke-width='1'%20opacity='.5'/%3E%3C/g%3E%3Cg%20transform='translate(420%20350)%20rotate(50)%20scale(0.8)'%3E%3Cpath%20d='M0%20-14%20C9%20-9%2010%205%200%2014%20C-10%205%20-9%20-9%200%20-14Z'%20fill='%23e7b53c'/%3E%3Cpath%20d='M0%20-12%20V18'%20stroke='%235a2a14'%20stroke-width='1'%20opacity='.5'/%3E%3C/g%3E%3Cg%20transform='translate(170%20400)%20rotate(110)%20scale(1)'%3E%3Cpath%20d='M0%20-14%20C9%20-9%2010%205%200%2014%20C-10%205%20-9%20-9%200%20-14Z'%20fill='%23e8822e'/%3E%3Cpath%20d='M0%20-12%20V18'%20stroke='%235a2a14'%20stroke-width='1'%20opacity='.5'/%3E%3C/g%3E%3Cg%20transform='translate(30%20340)%20rotate(-70)%20scale(0.75)'%3E%3Cpath%20d='M0%20-14%20C9%20-9%2010%205%200%2014%20C-10%205%20-9%20-9%200%20-14Z'%20fill='%23d65a24'/%3E%3Cpath%20d='M0%20-12%20V18'%20stroke='%235a2a14'%20stroke-width='1'%20opacity='.5'/%3E%3C/g%3E%3C/svg%3E"); --motif-t: 460px; --motif-dx: -460px; --motif-dy: 460px; --motif-duree: 48s;
+}
+
+/* Lucioles : nuit dans les hautes herbes, des lucioles qui flottent et s'allument, jaune doux. */
+body[data-theme="lucioles"], .ap[data-theme="lucioles"] {
+  --fond: #06100a; --surface-1: #0b1810; --surface-2: #102016; --surface-3: #172c1f;
+  --trait: rgba(220, 240, 200, .09); --trait-fort: rgba(220, 240, 200, .17);
+  --texte: #eef4e4; --doux: #9fb394; --discret: #657a5c;
+  --accent: #ffd86b; --sur-accent: #191203; --halo: rgba(255, 216, 107, .25);
+  --bouton: rgba(220, 240, 200, .06); --bouton-survol: rgba(220, 240, 200, .12); --pastille: rgba(220, 240, 200, .08);
+  --av-fond: #102016; --av-bord: #0b1810; --cadre-icone: #102016;
+  --verre: linear-gradient(180deg, rgba(200, 230, 180, .07), rgba(200, 230, 180, .015)); --verre-bord: rgba(220, 240, 200, .13);
+  --art-fondu: linear-gradient(90deg, #06100a 22%, rgba(6, 16, 10, .6) 60%, rgba(6, 16, 10, .25)), linear-gradient(0deg, #06100a, transparent 45%);
+  --deco: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='1200'%20height='220'%20viewBox='0%200%201200%20220'%3E%3Cpath%20d='M0%20220%20V150%20L10%2070%20L18%20145%20L26%2079%20L34%20147%20L42%2089%20L50%20140%20L58%20122%20L66%20166%20L74%20135%20L82%20145%20L90%2093%20L98%20149%20L106%2060%20L114%20144%20L122%20113%20L130%20157%20L138%20107%20L146%20159%20L154%20132%20L162%20150%20L170%2076%20L178%20162%20L186%20125%20L194%20170%20L202%20139%20L210%20160%20L218%2066%20L226%20154%20L234%20131%20L242%20152%20L250%20110%20L258%20152%20L266%20110%20L274%20143%20L282%20121%20L290%20160%20L298%20111%20L306%20141%20L314%2084%20L322%20142%20L330%2086%20L338%20154%20L346%2080%20L354%20143%20L362%20103%20L370%20159%20L378%2066%20L386%20143%20L394%2060%20L402%20158%20L410%2079%20L418%20157%20L426%2072%20L434%20170%20L442%20106%20L450%20159%20L458%2063%20L466%20142%20L474%2086%20L482%20159%20L490%20108%20L498%20144%20L506%2092%20L514%20170%20L522%20104%20L530%20159%20L538%20106%20L546%20155%20L554%2075%20L562%20143%20L570%20122%20L578%20154%20L586%20121%20L594%20155%20L602%2099%20L610%20142%20L618%2078%20L626%20143%20L634%20103%20L642%20163%20L650%2093%20L658%20155%20L666%2080%20L674%20156%20L682%2062%20L690%20146%20L698%20127%20L706%20151%20L714%2078%20L722%20162%20L730%20129%20L738%20169%20L746%2063%20L754%20164%20L762%20127%20L770%20149%20L778%2071%20L786%20162%20L794%2093%20L802%20156%20L810%20106%20L818%20169%20L826%2081%20L834%20151%20L842%2088%20L850%20157%20L858%20129%20L866%20164%20L874%20124%20L882%20150%20L890%2088%20L898%20159%20L906%2084%20L914%20165%20L922%2090%20L930%20166%20L938%20111%20L946%20163%20L954%2089%20L962%20146%20L970%20126%20L978%20155%20L986%20105%20L994%20163%20L1002%2063%20L1010%20140%20L1018%2095%20L1026%20155%20L1034%2093%20L1042%20146%20L1050%20137%20L1058%20170%20L1066%20104%20L1074%20154%20L1082%20104%20L1090%20170%20L1098%20106%20L1106%20142%20L1114%2088%20L1122%20143%20L1130%2089%20L1138%20155%20L1146%2085%20L1154%20150%20L1162%2086%20L1170%20155%20L1178%20139%20L1186%20168%20L1194%20138%20L1202%20166%20L1200%20150%20V220Z'%20fill='%23030803'/%3E%3C/svg%3E") center bottom / 100% auto no-repeat, radial-gradient(80% 50% at 50% 100%, rgba(80, 120, 60, .2), transparent 70%);
+  --motif: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='380'%20height='380'%20viewBox='0%200%20380%20380'%3E%3Cdefs%3E%3CradialGradient%20id='g'%3E%3Cstop%20offset='0'%20stop-color='%23ffd86b'%20stop-opacity='.8'/%3E%3Cstop%20offset='1'%20stop-color='%23ffd86b'%20stop-opacity='0'/%3E%3C/radialGradient%3E%3C/defs%3E%3Ccircle%20cx='57'%20cy='148'%20r='8'%20fill='url(%23g)'/%3E%3Ccircle%20cx='57'%20cy='148'%20r='2'%20fill='%23fff6c8'/%3E%3Ccircle%20cx='366'%20cy='350'%20r='6.0'%20fill='url(%23g)'/%3E%3Ccircle%20cx='366'%20cy='350'%20r='1.5'%20fill='%23fff6c8'/%3E%3Ccircle%20cx='41'%20cy='369'%20r='8'%20fill='url(%23g)'/%3E%3Ccircle%20cx='41'%20cy='369'%20r='2'%20fill='%23fff6c8'/%3E%3Ccircle%20cx='341'%20cy='305'%20r='10.0'%20fill='url(%23g)'/%3E%3Ccircle%20cx='341'%20cy='305'%20r='2.5'%20fill='%23fff6c8'/%3E%3Ccircle%20cx='238'%20cy='155'%20r='10.0'%20fill='url(%23g)'/%3E%3Ccircle%20cx='238'%20cy='155'%20r='2.5'%20fill='%23fff6c8'/%3E%3Ccircle%20cx='207'%20cy='352'%20r='8'%20fill='url(%23g)'/%3E%3Ccircle%20cx='207'%20cy='352'%20r='2'%20fill='%23fff6c8'/%3E%3Ccircle%20cx='21'%20cy='246'%20r='8'%20fill='url(%23g)'/%3E%3Ccircle%20cx='21'%20cy='246'%20r='2'%20fill='%23fff6c8'/%3E%3Ccircle%20cx='96'%20cy='322'%20r='6.0'%20fill='url(%23g)'/%3E%3Ccircle%20cx='96'%20cy='322'%20r='1.5'%20fill='%23fff6c8'/%3E%3Ccircle%20cx='262'%20cy='40'%20r='6.0'%20fill='url(%23g)'/%3E%3Ccircle%20cx='262'%20cy='40'%20r='1.5'%20fill='%23fff6c8'/%3E%3C/svg%3E"); --motif-t: 380px; --motif-dx: 380px; --motif-dy: -380px; --motif-duree: 70s;
+}
+/* Deuxième nuée, plus petite, qui clignote à son rythme. */
+body[data-theme="lucioles"] #stage::before { content: ''; position: absolute; z-index: -1; inset: -300px; pointer-events: none; background: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='300'%20height='300'%20viewBox='0%200%20300%20300'%3E%3Cdefs%3E%3CradialGradient%20id='g'%3E%3Cstop%20offset='0'%20stop-color='%23ffd86b'%20stop-opacity='.8'/%3E%3Cstop%20offset='1'%20stop-color='%23ffd86b'%20stop-opacity='0'/%3E%3C/radialGradient%3E%3C/defs%3E%3Ccircle%20cx='157'%20cy='76'%20r='8'%20fill='url(%23g)'/%3E%3Ccircle%20cx='157'%20cy='76'%20r='2'%20fill='%23fff6c8'/%3E%3Ccircle%20cx='136'%20cy='213'%20r='6.4'%20fill='url(%23g)'/%3E%3Ccircle%20cx='136'%20cy='213'%20r='1.6'%20fill='%23fff6c8'/%3E%3Ccircle%20cx='264'%20cy='51'%20r='4.8'%20fill='url(%23g)'/%3E%3Ccircle%20cx='264'%20cy='51'%20r='1.2'%20fill='%23fff6c8'/%3E%3Ccircle%20cx='239'%20cy='215'%20r='8'%20fill='url(%23g)'/%3E%3Ccircle%20cx='239'%20cy='215'%20r='2'%20fill='%23fff6c8'/%3E%3Ccircle%20cx='152'%20cy='80'%20r='6.4'%20fill='url(%23g)'/%3E%3Ccircle%20cx='152'%20cy='80'%20r='1.6'%20fill='%23fff6c8'/%3E%3Ccircle%20cx='152'%20cy='222'%20r='6.4'%20fill='url(%23g)'/%3E%3Ccircle%20cx='152'%20cy='222'%20r='1.6'%20fill='%23fff6c8'/%3E%3Ccircle%20cx='204'%20cy='128'%20r='4.8'%20fill='url(%23g)'/%3E%3Ccircle%20cx='204'%20cy='128'%20r='1.2'%20fill='%23fff6c8'/%3E%3C/svg%3E"); animation: motif 50s linear infinite reverse, clignote 3.2s ease-in-out infinite alternate; --motif-dx: 300px; --motif-dy: -300px; }
+body[data-theme="lucioles"] #stage::after { animation: motif var(--motif-duree) linear infinite, clignote 4.5s ease-in-out infinite alternate-reverse; }
+@keyframes clignote { from { opacity: .25; } to { opacity: 1; } }
+
+/* Minuit (en plus des étoiles fixes) : des étoiles qui scintillent, et de temps en temps une étoile filante. */
+body[data-theme="minuit"], .ap[data-theme="minuit"] { --motif: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='360'%20height='360'%20viewBox='0%200%20360%20360'%3E%3Ccircle%20cx='0'%20cy='245'%20r='1.2'%20fill='%23ffffff'/%3E%3Ccircle%20cx='43'%20cy='338'%20r='0.8'%20fill='%23e8d8a8'/%3E%3Ccircle%20cx='102'%20cy='244'%20r='1'%20fill='%23e8d8a8'/%3E%3Ccircle%20cx='325'%20cy='170'%20r='0.8'%20fill='%23ffffff'/%3E%3Ccircle%20cx='202'%20cy='237'%20r='1.6'%20fill='%23ffffff'/%3E%3Ccircle%20cx='43'%20cy='81'%20r='1'%20fill='%23f2ecdc'/%3E%3Ccircle%20cx='14'%20cy='77'%20r='1.6'%20fill='%23ffffff'/%3E%3Ccircle%20cx='74'%20cy='313'%20r='1.6'%20fill='%23ffffff'/%3E%3Ccircle%20cx='179'%20cy='79'%20r='1'%20fill='%23f2ecdc'/%3E%3Ccircle%20cx='7'%20cy='332'%20r='0.8'%20fill='%23ffffff'/%3E%3Ccircle%20cx='71'%20cy='222'%20r='1'%20fill='%23f2ecdc'/%3E%3Ccircle%20cx='14'%20cy='128'%20r='1'%20fill='%23e8d8a8'/%3E%3Ccircle%20cx='256'%20cy='123'%20r='1.2'%20fill='%23e8d8a8'/%3E%3Ccircle%20cx='278'%20cy='214'%20r='1'%20fill='%23f2ecdc'/%3E%3C/svg%3E"); --motif-t: 360px; }
+body[data-theme="minuit"] #stage::after { animation: clignote 3.5s ease-in-out infinite alternate; }
+body[data-theme="minuit"] #stage::before { content: ''; position: absolute; z-index: -1; top: 12%; left: 70%; width: 160px; height: 2px; border-radius: 2px; pointer-events: none; background: linear-gradient(90deg, transparent, #f2ecdc); rotate: -28deg; opacity: 0; animation: filante 11s ease-in infinite; }
+@keyframes filante { 0%, 88% { opacity: 0; translate: 0 0; } 90% { opacity: 1; } 100% { opacity: 0; translate: -420px 220px; } }
+
+/* Abysses (en plus des rayons) : des bulles qui remontent. */
+body[data-theme="abysses"], .ap[data-theme="abysses"] { --motif: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='400'%20height='400'%20viewBox='0%200%20400%20400'%3E%3Ccircle%20cx='378'%20cy='181'%20r='5'%20fill='none'%20stroke='%23a8fff0'%20stroke-width='1'%20opacity='0.45'/%3E%3Ccircle%20cx='298'%20cy='264'%20r='5'%20fill='none'%20stroke='%23a8fff0'%20stroke-width='1'%20opacity='0.45'/%3E%3Ccircle%20cx='66'%20cy='272'%20r='3'%20fill='none'%20stroke='%23a8fff0'%20stroke-width='1'%20opacity='0.45'/%3E%3Ccircle%20cx='261'%20cy='9'%20r='5'%20fill='none'%20stroke='%23a8fff0'%20stroke-width='1'%20opacity='0.25'/%3E%3Ccircle%20cx='311'%20cy='2'%20r='3'%20fill='none'%20stroke='%23a8fff0'%20stroke-width='1'%20opacity='0.25'/%3E%3Ccircle%20cx='72'%20cy='242'%20r='6'%20fill='none'%20stroke='%23a8fff0'%20stroke-width='1'%20opacity='0.45'/%3E%3Ccircle%20cx='61'%20cy='284'%20r='2'%20fill='none'%20stroke='%23a8fff0'%20stroke-width='1'%20opacity='0.35'/%3E%3Ccircle%20cx='349'%20cy='265'%20r='6'%20fill='none'%20stroke='%23a8fff0'%20stroke-width='1'%20opacity='0.45'/%3E%3Ccircle%20cx='247'%20cy='397'%20r='2'%20fill='none'%20stroke='%23a8fff0'%20stroke-width='1'%20opacity='0.45'/%3E%3Ccircle%20cx='29'%20cy='127'%20r='3'%20fill='none'%20stroke='%23a8fff0'%20stroke-width='1'%20opacity='0.35'/%3E%3Ccircle%20cx='21'%20cy='395'%20r='2'%20fill='none'%20stroke='%23a8fff0'%20stroke-width='1'%20opacity='0.45'/%3E%3Ccircle%20cx='231'%20cy='287'%20r='2'%20fill='none'%20stroke='%23a8fff0'%20stroke-width='1'%20opacity='0.25'/%3E%3Ccircle%20cx='226'%20cy='166'%20r='6'%20fill='none'%20stroke='%23a8fff0'%20stroke-width='1'%20opacity='0.45'/%3E%3Ccircle%20cx='310'%20cy='262'%20r='3'%20fill='none'%20stroke='%23a8fff0'%20stroke-width='1'%20opacity='0.45'/%3E%3Ccircle%20cx='141'%20cy='231'%20r='6'%20fill='none'%20stroke='%23a8fff0'%20stroke-width='1'%20opacity='0.45'/%3E%3Ccircle%20cx='244'%20cy='259'%20r='3'%20fill='none'%20stroke='%23a8fff0'%20stroke-width='1'%20opacity='0.45'/%3E%3C/svg%3E"); --motif-t: 400px; --motif-dx: 0px; --motif-dy: -400px; --motif-duree: 30s; }
+
+/* Motif du thème : derrière l'interface, il défile d'une case de motif puis recommence (sans saut).
+   Arrêté au repos (repos() dans app.js) et quand les animations sont réduites. Fixe sur les aperçus. */
+body[data-theme] #stage::after { content: ''; position: absolute; z-index: -1; inset: calc(-1 * var(--motif-t, 0px)); pointer-events: none; background: var(--motif, none); animation: motif var(--motif-duree, 0s) linear infinite; }
+.ap { isolation: isolate; }
+.ap::after { content: ''; position: absolute; z-index: -1; inset: 0; pointer-events: none; background: var(--motif, none); background-size: calc(var(--motif-t, 400px) * .45); }
+@keyframes motif { to { transform: translate(var(--motif-dx, 0px), var(--motif-dy, 0px)); } }
+body.reduit #stage::after, body.reduit #stage::before { animation: none !important; }
+
+/* Décor propre au thème (--deco) : derrière tout, sur l'app comme sur l'aperçu. */
+body[data-theme] #stage { background: var(--deco, none), var(--fond); }
+.clair[data-theme] #stage { background: var(--deco, none), radial-gradient(90% 70% at 70% 0%, #fff, transparent 70%), var(--fond); }
+/* Chaque carte n'a que son décor : pas celui du thème de l'app (hérité sinon). */
+.ap { --deco: none; --motif: none; background: var(--deco), var(--fond); }

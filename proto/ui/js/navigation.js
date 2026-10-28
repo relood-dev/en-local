@@ -19,6 +19,7 @@ let dockOuvert = false;
 let dockFocus = 0;
 let dockApercu = null;
 let dockIci = 0; // section affichée (ou qui arrive)
+let dockSurvol = null; // icône sous la souris : gardée visée quand le dock se redessine
 
 /*
  * Le dock garde ses icônes d'un dessin à l'autre : seul le curseur glisse vers l'icône visée,
@@ -26,7 +27,7 @@ let dockIci = 0; // section affichée (ou qui arrive)
  */
 function drawDock() {
   const ici = (dockIci = SECTIONS.findIndex((s) => s.id === (ongletVise || onglet)));
-  const vise = dockOuvert ? dockFocus : ici;
+  const vise = dockOuvert ? dockFocus : dockSurvol ?? ici;
   const d = $('#dock');
   const items = SECTIONS.map((s, n) => {
     const contenu = s.id === 'profil'
@@ -40,7 +41,7 @@ function drawDock() {
     d.innerHTML = html;
     d.querySelectorAll('.ic').forEach((el) => {
       el.onclick = () => { fermerDock(); allerA(SECTIONS[+el.dataset.n].id); };
-      el.onmouseenter = () => viserDock(+el.dataset.n, dockIci);
+      el.onmouseenter = () => viserDock((dockSurvol = +el.dataset.n), dockIci);
     });
   }
   viserDock(vise, ici);
@@ -83,7 +84,7 @@ function suivreSouris() {
     const bas = e.clientY > innerHeight - 90 * (parseFloat($('#accueil').style.getPropertyValue('--s')) || 1);
     if (bas === sourisEnBas || view() !== 'biblio') return;
     sourisEnBas = bas;
-    if (!bas) dockFocus = Math.max(0, SECTIONS.findIndex((s) => s.id === onglet));
+    if (!bas) (dockSurvol = null), (dockFocus = Math.max(0, SECTIONS.findIndex((s) => s.id === onglet)));
     drawDock();
   });
 }
@@ -101,6 +102,7 @@ function fermerDock() {
 }
 /** Après L1/R1, le dock s'affiche un instant. */
 function apercuDock() {
+  dockSurvol = null;
   clearTimeout(dockApercu);
   dockApercu = setTimeout(() => ((dockApercu = null), drawDock()), 1400);
   drawDock();
@@ -137,6 +139,8 @@ function quitterApp() {
 }
 /** vu : le profil d'un autre membre (Profil seulement). */
 async function allerA(id, vu = null) {
+  // Thème en essai (page des thèmes) quitté sans le choisir : l'ancien revient.
+  if (themeGarde) (theme(themeGarde), (themeGarde = null));
   if (id === 'quitter') return quitterApp();
   if (id === 'profil') {
     profilVu = vu;

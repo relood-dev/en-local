@@ -107,12 +107,52 @@ fn attendre_image() {
         }
     });
 }
+/// Plein écran : hauteur de la bande de l'encoche (points), laissée vide en haut par l'interface et le jeu.
+static ENCOCHE: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0);
+#[repr(C)]
+struct Marges {
+    haut: f64,
+    gauche: f64,
+    bas: f64,
+    droite: f64,
+}
+unsafe impl objc2::Encode for Marges {
+    const ENCODING: objc2::Encoding = objc2::Encoding::Struct("NSEdgeInsets", &[f64::ENCODING, f64::ENCODING, f64::ENCODING, f64::ENCODING]);
+}
+/// Lue sur l'écran de la fenêtre (safeAreaInsets, macOS 12+ ; 0 sans encoche). Fil principal.
+pub fn encoche(w: &tauri::WebviewWindow) -> f64 {
+    let haut: f64 = w.ns_window().ok().filter(|p| !p.is_null()).map_or(0.0, |p| {
+        let f: &objc2::runtime::AnyObject = unsafe { &*(p as *const objc2::runtime::AnyObject) };
+        let ecran: Option<&objc2::runtime::AnyObject> = unsafe { objc2::msg_send![f, screen] };
+        let repond = |e: &objc2::runtime::AnyObject| -> bool { unsafe { objc2::msg_send![e, respondsToSelector: objc2::sel!(safeAreaInsets)] } };
+        ecran.filter(|e| repond(e)).map_or(0.0, |e| {
+            let m: Marges = unsafe { objc2::msg_send![e, safeAreaInsets] };
+            m.haut
+        })
+    });
+    ENCOCHE.store(haut.round() as i32, std::sync::atomic::Ordering::Relaxed);
+    haut
+}
+/// Plein écran : Dock et barre des menus masqués tant qu'En Local est au premier plan (pas seulement
+/// cachés jusqu'à ce que la souris touche le bord). Fil principal.
+pub fn barres_masquees(oui: bool) {
+    // NSApplicationPresentationHideDock | NSApplicationPresentationHideMenuBar.
+    let options: usize = if oui { (1 << 1) | (1 << 3) } else { 0 };
+    unsafe {
+        let app: &objc2::runtime::AnyObject = objc2::msg_send![objc2::class!(NSApplication), sharedApplication];
+        let _: () = objc2::msg_send![app, setPresentationOptions: options];
+    }
+}
+pub fn encoche_libre() {
+    ENCOCHE.store(0, std::sync::atomic::Ordering::Relaxed);
+}
 /// Zone du jeu dans la fenêtre principale, en points de l'écran (même calcul que sur Windows).
 pub fn rect_jeu(_parent: isize) -> (i32, i32, i32, i32) {
     use tauri::Manager;
     let Some(main) = APP.get().and_then(|a| a.get_webview_window("main")) else { return (0, 0, 0, 0) };
     let (Ok(p), Ok(t), Ok(f)) = (main.inner_position(), main.inner_size(), main.scale_factor()) else { return (0, 0, 0, 0) };
-    let (x, y, w, h) = ((p.x as f64 / f) as i32, (p.y as f64 / f) as i32, (t.width as f64 / f) as i32, (t.height as f64 / f) as i32);
+    let enc = ENCOCHE.load(std::sync::atomic::Ordering::Relaxed);
+    let (x, y, w, h) = ((p.x as f64 / f) as i32, (p.y as f64 / f) as i32 + enc, (t.width as f64 / f) as i32, (t.height as f64 / f) as i32 - enc);
     let format = *FORMAT.lock().unwrap();
     if !habille(w, h) {
         return (x, y, w, h);
@@ -226,6 +266,7 @@ fn placer_habillage(_parent: isize, visible: bool) {
         let _ = h.hide();
         return;
     }
+    // Toute la fenêtre, bande de l'encoche comprise : le décor y passe, le jeu reste dessous (trou()).
     if let (Ok(p), Ok(t)) = (main.inner_position(), main.inner_size()) {
         let _ = h.set_position(p);
         let _ = h.set_size(t);

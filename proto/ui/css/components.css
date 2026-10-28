@@ -28,7 +28,9 @@
 .av { width: 30px; height: 30px; border-radius: 50%; object-fit: cover; background: var(--av-fond); flex: none; }
 .stack { display: flex; }
 .stack .av { border: 2px solid var(--av-bord); margin-right: -9px; }
-.me { width: 38px; height: 38px; border-radius: 50%; object-fit: cover; background: var(--av-fond); box-shadow: 0 0 0 2px var(--accent); }
+/* En bloc : posée sur la ligne de texte, elle descendait de quelques pixels dans sa pilule. */
+.me { display: block; width: 38px; height: 38px; border-radius: 50%; object-fit: cover; background: var(--av-fond); box-shadow: 0 0 0 2px var(--accent); }
+#moi { display: flex; }
 
 /* Étiquettes : claires sur fond sombre quand elles sont sur une image. */
 .tag { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; font-size: var(--t-legende); font-weight: 700; padding: 5px 10px; border-radius: var(--r-rond); background: var(--image-tag); backdrop-filter: blur(10px); color: var(--sur-image); }

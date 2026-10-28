@@ -111,8 +111,8 @@ fn find(text: &str, id: &str) -> Option<Info> {
     let wifi = g.find("<wi-fi").map(|s| &g[s..s + g[s..].find('>').unwrap_or(0)]).unwrap_or("");
     Some(Info {
         id: tag(g, "id").unwrap_or_default(),
-        title: pick("title"),
-        title_en: locale("EN").and_then(|l| tag(l, "title")).filter(|s| !s.is_empty()).unwrap_or_else(|| pick("title")),
+        title: sans_maj(&pick("title")),
+        title_en: sans_maj(&locale("EN").and_then(|l| tag(l, "title")).filter(|s| !s.is_empty()).unwrap_or_else(|| pick("title"))),
         synopsis: pick("synopsis"),
         developer: tag(g, "developer").unwrap_or_default(),
         publisher: tag(g, "publisher").unwrap_or_default(),
@@ -163,6 +163,21 @@ fn find_by_title(text: &str, name: &str) -> Option<Info> {
         rest = &rest[end..];
     }
     find(text, &proche?.1)
+}
+
+/// Titre sans « : Mise à jour » ni « Update Ver. 1.1 » : GameTDB en colle parfois au jeu lui-même
+/// (« Pokémon Ultra-Soleil: Mise à jour »).
+fn sans_maj(t: &str) -> String {
+    let bas = t.to_lowercase();
+    // Après le mot : rien, ou seulement « ver. 1.2 ».
+    let fin_ok = |r: &str| r.trim().trim_start_matches("ver").trim_start_matches('.').trim().chars().all(|c| c.is_ascii_digit() || c == '.');
+    let coupe = ["mise à jour", "update"].iter().filter_map(|m| bas.rfind(m).filter(|&i| i > 0 && fin_ok(&bas[i + m.len()..]))).min();
+    // Position trouvée dans le titre en minuscules : seulement si elle tombe juste dans l'original
+    // (une minuscule peut changer de taille, « İ »).
+    match coupe.filter(|_| bas.len() == t.len()).and_then(|i| t.get(..i)) {
+        Some(debut) => debut.trim_end_matches(|c: char| c.is_whitespace() || c == ':' || c == '-').to_string(),
+        None => t.to_string(),
+    }
 }
 
 fn mots(s: &str) -> Vec<String> {
@@ -226,6 +241,17 @@ mod tests {
 		<wi-fi players="0"/><input players="4"><control type="gamecube"/></input></game>
 </datafile>"#;
 
+    #[test]
+    fn titre_sans_mise_a_jour() {
+        assert_eq!(super::sans_maj("Pokémon Ultra-Soleil: Mise à jour"), "Pokémon Ultra-Soleil");
+        assert_eq!(super::sans_maj("Pokémon Ultra Sun: Update"), "Pokémon Ultra Sun");
+        assert_eq!(super::sans_maj("Pokémon X"), "Pokémon X");
+        assert_eq!(super::sans_maj("Update"), "Update");
+        assert_eq!(super::sans_maj("Fragrant Story Update Ver. 1.1"), "Fragrant Story");
+        assert_eq!(super::sans_maj("Mario & Luigi: Bowser’s Inside Story Mise à jour Ver. 1.2"), "Mario & Luigi: Bowser’s Inside Story");
+        assert_eq!(super::sans_maj("Update Fighter 2"), "Update Fighter 2");
+        assert_eq!(super::sans_maj("İİİ Update"), "İİİ Update");
+    }
     #[test]
     fn fiche_d_une_autre_region_si_la_copie_n_a_qu_une_mise_a_jour() {
         let i = find(XML, "EKJA").unwrap();

@@ -25,12 +25,18 @@ let captureSeule = false;
 // Au repos (partie en cours sans menu, ou En Local sans le focus hors partie) : animations en boucle
 // arrêtées et GIF figés sur leur image du moment, la page ne se redessine plus.
 const geles = new Map();
+/** Change l'image une fois la nouvelle chargée et décodée : pas de blanc entre les deux (avatars). */
+function remplacer(img, src) {
+  const p = new Image();
+  p.src = src;
+  p.decode().then(() => img.isConnected && (img.src = src), () => (img.src = src));
+}
 function figer(img) {
   if (geles.has(img)) return;
   if (!img.complete) return img.addEventListener('load', () => document.body.classList.contains('repos') && figer(img), { once: true });
   const vrai = img.src;
   // Avatars Discord animés : le .png de la même adresse est leur première image.
-  if (vrai.includes('cdn.discordapp.com')) img.src = vrai.replace('.gif', '.png');
+  if (vrai.includes('cdn.discordapp.com')) remplacer(img, vrai.replace('.gif', '.png'));
   else {
     const c = Object.assign(document.createElement('canvas'), { width: img.naturalWidth, height: img.naturalHeight });
     if (!c.width) return;
@@ -55,7 +61,7 @@ function repos() {
     gifsAjoutes.observe(document.body, { childList: true, subtree: true });
   } else {
     gifsAjoutes.disconnect();
-    geles.forEach((src, img) => (img.src = src));
+    geles.forEach((src, img) => remplacer(img, src));
     geles.clear();
   }
 }
@@ -641,6 +647,7 @@ function envoyerHabillage() {
     widgets: localStorage.widgetsJeu !== 'non',
     chasse: chasseActive(g) ? +localStorage[`resets:${g.path}`] || 0 : null,
     theme: document.body.classList.contains('oled') ? 'oled' : '',
+    encoche: parseFloat(document.body.style.getPropertyValue('--encoche')) || 0,
   }).catch((e) => invoke('journal', { texte: `habillage : envoi impossible ${e}` }));
   if (ds) {
     $('#jeu').classList.toggle('habille', format > 0 && !shown('#menu'));
@@ -843,15 +850,17 @@ function modeleEshop(fichier) {
 /** Identifiant GameTDB d'un jeu. */
 const idGametdb = (g) => g.gametdb || (parNom(g) ? fiche(g)?.id : g.console === 'GC' || g.console === 'Wii' ? g.disc_id : g.product_code);
 /** Jeu d'un membre que je n'ai pas : de quoi afficher sa jaquette. */
-const jeuDeMembre = (c, t, id) => ({ path: `membre:${c}:${id}`, console: c, name: t, gametdb: id });
+const jeuDeMembre = (c, t, id) => ({ path: `membre:${c}:${id || t}`, console: c, name: t, gametdb: id });
 function covers(g) {
   const j = JAQUETTES[g.console];
   if (j?.libretro) {
     // Comme libretro : ces caractères deviennent « _ » dans les noms de fichiers.
-    const nom = (g.product_code || g.name).replace(/[&*/:`<>?\\|"]/g, '_');
+    // Jeu d'un membre : son nom No-Intro partagé (gametdb), pas le titre affiché.
+    const nom = (g.product_code || g.gametdb || g.name).replace(/[&*/:`<>?\\|"]/g, '_');
     const enc = (x) => encodeURIComponent(x).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
-    const pal = /\((Europe|E|Germany|France|Italy|Spain|Australia)[,)]/.test(g.product_code || '');
-    return [{ url: `https://thumbnails.libretro.com/${enc(j.libretro)}/Named_Boxarts/${enc(nom)}.png`, crop: (pal && j.rognePal) || '' }];
+    // Sans nom No-Intro (jeu d'un membre, ancienne version) : le titre avec les régions les plus courantes.
+    const noms = g.product_code || g.gametdb ? [nom] : [nom, ...['USA', 'Europe', 'USA, Europe', 'World', 'Japan'].map((r) => `${nom} (${r})`)];
+    return noms.map((n) => ({ url: `https://thumbnails.libretro.com/${enc(j.libretro)}/Named_Boxarts/${enc(n)}.png`, crop: (/\((Europe|E|Germany|France|Italy|Spain|Australia)[,)]/.test(n) && j.rognePal) || '' }));
   }
   const id = idGametdb(g);
   if (!id || !j) return [];
@@ -883,7 +892,7 @@ function coverImg(g, cls, loin = false) {
     });
   }
   // Jaquette déjà sur le PC : affichée tout de suite. Anciennes Nintendo : le cadrage suit la règle du moment.
-  if (j?.fichier && JAQUETTES[g.console]?.libretro) j.crop = covers(g)[0]?.crop || '';
+  if (j?.fichier && JAQUETTES[g.console]?.libretro && (g.product_code || g.gametdb)) j.crop = covers(g)[0]?.crop || '';
   if (j?.fichier) return `<img class="${cls} jaquette${j.crop === CADRE_ESHOP ? ' eshop" data-cadre="attente' : ''}" src="${esc(asset(j.fichier))}" style="object-view-box:${esc(j.crop || 'none')}" data-crop="${esc(j.crop || '')}" data-k="${k}" alt=""${loin ? ' loading="lazy" decoding="async"' : ''}>`;
   chercherJaquette(g, k);
   return `<img class="${cls} jaquette" data-k="${k}" alt="">`;
@@ -895,6 +904,12 @@ if (!localStorage.jaquettesV2) {
   for (const [k, v] of Object.entries(jaquettes)) if (v?.aucune) delete jaquettes[k];
   try { localStorage.jaquettes = JSON.stringify(jaquettes); } catch {}
   localStorage.jaquettesV2 = 1;
+}
+// Jeux rétro des membres : cherchés par le titre affiché, sans résultat. Recherchés une fois avec le bon nom.
+if (!localStorage.jaquettesV3) {
+  for (const k of Object.keys(jaquettes)) if (k.startsWith('membre:') && jaquettes[k]?.aucune) delete jaquettes[k];
+  try { localStorage.jaquettes = JSON.stringify(jaquettes); } catch {}
+  localStorage.jaquettesV3 = 1;
 }
 function chercherJaquette(g, k) {
   // Pas encore d'adresse (fiche Switch pas chargée) : on attend.
@@ -1140,8 +1155,8 @@ const parNom = (g) => g.console === 'Switch' || (g.console === 'WiiU' && !g.prod
 const idFiche = (g) => (parNom(g) ? g.name : g.console === 'GC' || g.console === 'Wii' ? g.disc_id : g.product_code);
 const fiche = (g) => fiches[`${g.console}:${idFiche(g)}`];
 async function chargerFiches() {
-  // Anciennes fiches sans eshop, title_en ou manettes : redemandées une fois.
-  const manque = games.filter((g) => idFiche(g) && (!fiche(g) || fiche(g).title_en === undefined || (g.console === 'Switch' && fiche(g).eshop === undefined) || (g.console === 'Wii' && fiche(g).manettes === undefined))).map((g) => [g.console, idFiche(g)]);
+  // Anciennes fiches sans eshop, title_en ou manettes, ou au titre en « Mise à jour » : redemandées une fois.
+  const manque = games.filter((g) => idFiche(g) && (!fiche(g) || fiche(g).title_en === undefined || /(mise à jour|update)\b/i.test(fiche(g).title) || (g.console === 'Switch' && fiche(g).eshop === undefined) || (g.console === 'Wii' && fiche(g).manettes === undefined))).map((g) => [g.console, idFiche(g)]);
   if (!manque.length) return;
   const r = await invoke('game_infos', { wanted: manque }).catch(() => ({}));
   for (const [c, id] of manque) if (r[id]) fiches[`${c}:${id}`] = r[id];
@@ -1387,12 +1402,35 @@ function animations(actives) {
   localStorage.animations = actives ? 'oui' : 'non';
 }
 animations(localStorage.animations !== 'non');
-/** Thème : sombre, oled (noir pur) ou clair. */
-function theme(nom) {
+/** Thèmes : [nom, clair ?, famille, description]. Leurs couleurs sont dans tokens.css (data-theme). */
+const THEMES = {
+  sombre: ['Sombre', false, 'Classiques', 'Noir et blanc : la couleur vient des jeux et des avatars.'],
+  oled: ['OLED', false, 'Classiques', 'Noir pur : les pixels s\'éteignent sur un écran OLED.'],
+  clair: ['Clair', true, 'Classiques', 'Blanc, gris doux et trame de points.'],
+  dmg: ['Game Boy', true, 'Consoles', 'Le gris de la coque, les boutons A et B bordeaux, et l\'écran vert pour le titre.'],
+  atomic: ['Atomic Purple', false, 'Consoles', 'Le violet translucide de la Game Boy Color : on voit à travers.'],
+  indigo: ['GameCube Indigo', false, 'Consoles', 'Le violet de la GameCube et le vert de son gros bouton A.'],
+  snes: ['Super Nintendo', true, 'Consoles', 'Le gris lavande de la console et ses boutons violets.'],
+  wii: ['Wii', true, 'Consoles', 'Le blanc du menu des chaînes, ses fines rayures et son bleu.'],
+  ps2: ['PS2', false, 'Consoles', 'Le bleu profond du démarrage de la PS2, la brume au loin.'],
+  vb: ['Virtual Boy', false, 'Consoles', 'Rouge pur sur noir, comme ses écrans à LED. Les jaquettes aussi.'],
+  sakura: ['Sakura', true, 'Ambiances', 'Une branche de cerisier en fleurs et des pétales qui tombent.'],
+  neige: ['Neige', true, 'Ambiances', 'Collines enneigées, flocons qui tombent, bleu glacier.'],
+  automne: ['Automne', false, 'Ambiances', 'Bordeaux profond et feuilles rousses qui tombent.'],
+  lucioles: ['Lucioles', false, 'Ambiances', 'La nuit dans les hautes herbes, des lucioles qui flottent et s\'allument.'],
+  matcha: ['Matcha', true, 'Ambiances', 'Thé vert fouetté et papier de riz.'],
+  abysses: ['Abysses', false, 'Ambiances', 'Les grands fonds, la lumière qui tombe de la surface, des bulles qui remontent.'],
+  moka: ['Moka', false, 'Ambiances', 'Café serré, crème et caramel.'],
+  minuit: ['Minuit', false, 'Ambiances', 'Ciel étoilé qui scintille, une étoile filante de temps en temps, et de l\'or.'],
+};
+/** garder : false pour l'essayer seulement (page des thèmes). */
+function theme(nom, garder = true) {
   if (nom === true || nom === false) nom = nom ? 'clair' : 'sombre';
-  document.body.classList.toggle('clair', nom === 'clair');
+  if (!THEMES[nom]) nom = 'sombre';
+  document.body.classList.toggle('clair', THEMES[nom][1]);
   document.body.classList.toggle('oled', nom === 'oled');
-  localStorage.theme = nom;
+  document.body.dataset.theme = nom;
+  if (garder) localStorage.theme = nom;
 }
 theme(localStorage.theme || (matchMedia('(prefers-color-scheme: light)').matches ? 'clair' : 'sombre'));
 async function logout() {
@@ -1422,11 +1460,12 @@ setInterval(rafraichirSessions, 15000);
  * S'adapte du 4:3 au 16:9 sans bandes noires.
  */
 function echelle() {
-  const s = Math.min(innerWidth / 1280, innerHeight / 800);
+  const haut = innerHeight - (parseFloat(document.body.style.getPropertyValue('--encoche')) || 0);
+  const s = Math.min(innerWidth / 1280, haut / 800);
   const ecran = $('#accueil').style;
   ecran.setProperty('--s', s);
   ecran.setProperty('--w', `${Math.min(innerWidth / s, 1422)}px`);
-  ecran.setProperty('--h', `${Math.min(innerHeight / s, 960)}px`);
+  ecran.setProperty('--h', `${Math.min(haut / s, 960)}px`);
 }
 addEventListener('resize', echelle);
 echelle();
@@ -1593,7 +1632,18 @@ async function netplayRetro(g) {
   throw new Error('L\'hôte n\'a pas lancé la partie : réessaie quand il est en jeu.');
 }
 
+/** Un lancement à la fois : un deuxième clic pendant la préparation (journaux, sauvegardes) lançait un second émulateur. */
+let enLancement = false;
 async function play(i, room = null) {
+  if (enLancement) return;
+  enLancement = true;
+  try {
+    return await lancer(i, room);
+  } finally {
+    enLancement = false;
+  }
+}
+async function lancer(i, room) {
   if (current && enAccueil) return games[i] === current ? closeMenu() : libererJeu(() => play(i, room));
   const g = games[i];
   dernierLancement = { i, room };

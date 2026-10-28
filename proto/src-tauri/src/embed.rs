@@ -663,16 +663,18 @@ fn dolphin_config(dir: &str, game: &str, o: &crate::reglages::Opts) -> std::io::
                 ini += &format!("{k} = {v}\n");
             }
         }
-        // À l'horizontale, sans Nunchuk : le stick gauche fait la croix et l'inclinaison. Dolphin tourne la
-        // croix pour la Wiimote couchée (Sideways), pas l'inclinaison, comptée dans le repère de la Wiimote :
-        // couchée, pencher à gauche abaisse son bout (avant), pencher vers le haut la fait rouler à droite.
+        // À l'horizontale, sans Nunchuk : stick gauche et croix pour les directions seulement, stick droit
+        // pour l'inclinaison, comptée dans le repère de la Wiimote : couchée, pencher à gauche abaisse son
+        // bout (avant), vers le haut la fait rouler à droite. Pas de pointeur : un jeu tenu couché ne vise pas.
+        // Dolphin (Sideways) tourne la croix d'un quart de tour : bas partait sur le côté dans Mario Party 9.
+        // On la retourne d'autant : D-Pad/Left de Dolphin devient le haut, Right le bas, Down la gauche, Up la droite.
         "horizontale" => {
             ini += "Extension = None\nOptions/Sideways Wiimote = True\n";
-            for (k, incl, pad, stick) in [("Up", "Right", "Pad N", "Left Y+"), ("Down", "Left", "Pad S", "Left Y-"), ("Left", "Forward", "Pad W", "Left X-"), ("Right", "Backward", "Pad E", "Left X+")] {
-                ini += &format!("D-Pad/{k} = {}|{}\nTilt/{incl} = {}\n", b(pad), b(stick), b(stick));
+            for (k, pad, stick) in [("Left", "Pad N", "Left Y+"), ("Right", "Pad S", "Left Y-"), ("Down", "Pad W", "Left X-"), ("Up", "Pad E", "Left X+")] {
+                ini += &format!("D-Pad/{k} = {}|{}\n", b(pad), b(stick));
             }
-            for (k, v) in wii.iter().filter(|(k, _)| !k.starts_with("D-Pad")) {
-                ini += &format!("{k} = {}\n", b(v));
+            for (incl, droit) in [("Right", "Right Y+"), ("Left", "Right Y-"), ("Forward", "Right X-"), ("Backward", "Right X+")] {
+                ini += &format!("Tilt/{incl} = {}\n", b(droit));
             }
             for (k, v) in crate::reglages::dolphin_wii(o, true) {
                 ini += &format!("{k} = {v}\n");
@@ -733,7 +735,9 @@ pub fn start_dolphin(dir: &str, game: &str, parent: isize, o: &crate::reglages::
         .env("DOLPHIN_EMU_USERPATH", chemin!("{dir}\\User"))
         .env("SDL_GAMECONTROLLERCONFIG", crate::pad::mappings())
         .env("ENLOCAL_SKYLANDERS", crate::figurines::fichier("skylanders"))
-        .args(["-b", "--parent", &parent.to_string()])
+        // Sur Mac, pas de fenêtre parente (0) : notre Dolphin pose sa fenêtre dans le cadre seulement avec un
+        // --parent non nul, sinon il montre sa fenêtre principale et un rendu à part.
+        .args(["-b", "--parent", &parent.max(1).to_string()])
         .args(reglages)
         .args(["-e", game])
         .sans_fenetre()
@@ -1231,7 +1235,7 @@ pub fn start_netplay(dir: &str, game: &str, host_code: &str, name: &str, parent:
     for ext in ["", ".start", ".stop", ".msg"] {
         let _ = std::fs::remove_file(format!("{}{ext}", netplay_status()));
     }
-    let mut args = vec!["--parent".to_string(), parent.to_string(), "--netplay-name".into(), name.into(), "--netplay-status".into(), netplay_status()];
+    let mut args = vec!["--parent".to_string(), parent.max(1).to_string(), "--netplay-name".into(), name.into(), "--netplay-status".into(), netplay_status()];
     let reglages = dolphin_reglages(dir, game, o);
     gfx_ini(dir, &reglages).map_err(|e| e.to_string())?;
     args.extend(reglages);

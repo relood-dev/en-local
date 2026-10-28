@@ -804,8 +804,9 @@ body.reduit .bienvenue * { animation: none !important; }
 .med-tuile.d-2, .med-tuile.d2 { transform: translate(-50%, calc(-50% + var(--d) * 186px)) scale(.4); opacity: .3; }
 .med-tuile.focus { box-shadow: 0 0 0 3px var(--fond), 0 0 0 7px var(--accent), var(--ombre-2); }
 .med-tuile img, .med-tuile video { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; }
-.med-tuile.vide { display: grid; place-items: center; }
-.med-tuile.vide img { width: 60%; height: auto; object-fit: contain; }
+/* Hauteur fixe : sinon l'image (taille en %) l'étire en hauteur et se colle en haut. */
+.med-tuile.vide { display: grid; place-items: center; height: 270px; }
+.med-tuile.vide img { width: 60%; height: 60%; object-fit: contain; }
 .med-film { position: absolute; left: 12px; bottom: 12px; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; background: rgba(0, 0, 0, .6); color: #fff; }
 .med-film svg { width: 20px; height: 20px; }
 .med-sans { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 20px; text-align: center; color: var(--doux); }
@@ -1075,3 +1076,27 @@ body.depot::after { content: 'Dépose tes jeux ou archives : ils se rangent tout
 .fig-el.focus { background: var(--accent); color: var(--sur-accent); transform: scale(1.05); }
 .fig-el.focus small, .fig-el.focus b { color: var(--sur-accent); }
 .fig-rien { color: var(--doux); text-align: center; margin: auto; max-width: 520px; line-height: 1.6; }
+
+/* Thèmes : grille de cartes, chacune un petit En Local à ses couleurs. */
+/* Colonnes fixées : la liste à gauche, le nom et la description du thème visé à droite. */
+.regth { grid-template-columns: minmax(0, 1fr) 300px; }
+.regth .reg-droite { grid-column: 1; grid-row: 2; min-height: 0; }
+.regth .reg-panneau { grid-column: 2; grid-row: 2; }
+.regth .reg-droite > * { flex: none; }
+.regth-grille { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; padding: 6px 6px 14px; }
+.regth-carte { all: unset; display: flex; flex-direction: column; gap: 10px; cursor: pointer; border-radius: var(--r-m); padding: 8px; transition: transform var(--d-2) var(--rebond), background var(--d-2); }
+.regth-carte > b { font-size: 14px; font-weight: 700; padding: 0 4px; display: flex; align-items: center; gap: 8px; }
+.regth-carte.garde > b::after { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+.regth-carte.focus { transform: scale(1.03); }
+.regth-carte.focus .ap { box-shadow: 0 0 0 3px var(--fond), 0 0 0 6px var(--accent), var(--ombre-2); }
+.ap { position: relative; display: flex; flex-direction: column; gap: 7%; aspect-ratio: 16 / 10; border-radius: 14px; overflow: hidden; padding: 6% 6% 0; color: var(--texte); box-shadow: 0 0 0 1px var(--trait), var(--ombre-1); transition: box-shadow var(--d-2); }
+.ap-haut { display: flex; gap: 4%; height: 9%; }
+.ap-haut i { flex: 1; border-radius: 99px; background: var(--verre); box-shadow: inset 0 0 0 1px var(--verre-bord); }
+.ap-haut .ap-titre { flex: 3; }
+.ap-tuiles { display: flex; gap: 5%; flex: 1; align-items: flex-start; }
+.ap-t { flex: 1; aspect-ratio: 1; border-radius: 10px; overflow: hidden; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--trait); }
+.ap-t:first-child { box-shadow: 0 0 0 2px var(--fond), 0 0 0 4px var(--accent); }
+.ap-t img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.ap-dock { align-self: center; display: flex; gap: 6px; padding: 5px 9px; margin-bottom: 5%; border-radius: 99px; background: var(--verre); box-shadow: inset 0 0 0 1px var(--verre-bord); }
+.ap-dock i { width: 12px; height: 12px; border-radius: 4px; background: var(--doux); opacity: .55; }
+.ap-dock .ici { background: var(--accent); opacity: 1; }

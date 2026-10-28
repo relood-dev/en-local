@@ -43,9 +43,11 @@ function drawPilule() {
     const autresMembres = membres.filter((m) => !m.me);
     const tries = [...autresMembres.filter(enLigne), ...autresMembres.filter((m) => !enLigne(m))];
     const montres = tries.slice(0, 4);
-    p.innerHTML = montres.length
+    const html = montres.length
       ? `${tries.length > montres.length ? `<span class="plus">+${tries.length - montres.length}</span>` : ''}<div class="stack">${montres.map((m) => avatar(m)).join('')}</div>${glyphs.lt}`
       : `<span class="n">Le Local</span>${glyphs.lt}`;
+    // Redessinée à chaque nouvelle des membres : seulement si elle change, sinon les avatars clignotent.
+    if (p._html !== html) (p._html = html), (p.innerHTML = html);
   }
   p.onclick = () => basculerMembres();
 }
@@ -61,7 +63,7 @@ function drawMembres() {
   const favs = (favoris.size ? autresMembres.filter((m) => favoris.has(m.id)) : autresMembres.filter(enLigne)).slice(0, 5);
   const sess = autres();
   const f = (attrs, html, cls = '') => `<button class="pf ${cls}" ${attrs}>${html}</button>`;
-  $('#membres').innerHTML = `
+  const html = `
     <header><span class="tag">${favoris.size ? 'Favoris' : 'Le Local'}</span><span class="compte">${autresMembres.filter(enLigne).length}/${autresMembres.length} sur En Local</span></header>
     <div class="favs">${favs.map((m) => {
       const a = activiteDe(m);
@@ -81,7 +83,10 @@ function drawMembres() {
         + g.map((m) => f(`data-m="${esc(m.id)}"`, `${avatar(m)}<span class="t"><b>${esc(m.name)}${favoris.has(m.id) ? ' <i class="etoile">★</i>' : ''}</b><small>${esc(ligneDe(m))}</small></span><span class="chev">›</span>`, `ligne-m g-${cle}`)).join('');
     }).join('')
       || `<div class="vide"><img src="img/loc/loc_${q ? 'cherche' : me ? 'attente' : 'enligne'}.gif" alt=""><p>${q ? 'Aucun membre ne porte ce nom.' : me ? 'Chargement des membres…' : 'Connecte-toi avec Discord pour voir les membres du Local.'}</p></div>`}`;
-  const pfs = [...$('#membres').querySelectorAll('.pf')];
+  // Reconstruit seulement s'il a changé : sinon chaque nouvelle des membres refait clignoter les avatars.
+  const panneau = $('#membres');
+  if (panneau._html !== html) (panneau._html = html), (panneau.innerHTML = html);
+  const pfs = [...panneau.querySelectorAll('.pf')];
   pfs.forEach((el, n) => (el.onclick = () => ((panneauFocus = n), activerPanneau(el))));
   const input = $('#filtre-membres');
   input.oninput = () => {

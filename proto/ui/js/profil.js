@@ -265,7 +265,7 @@ function drawProfil() {
   const action = (fn) => (profActions.push(fn), profActions.length - 1);
   const ouvrir = (it) => () => (it.g ? voirJeu(games.indexOf(it.g)) : toast(`${it.titre} : ${it.ailleurs ? `installé sur ${it.ailleurs}` : 'tu n\'as pas ce jeu'}.`));
   // Jeu que je n'ai pas : sa jaquette, sinon l'icône de la console.
-  const vignette = (it) => (it.g ? iconeHtml(it.g, true) : it.id ? coverImg(jeuDeMembre(it.c, it.titre, it.id), 'icone-img', true) || `<span class="r-ic">${iconeConsole(it.c)}</span>` : `<span class="r-ic">${iconeConsole(it.c)}</span>`);
+  const vignette = (it) => (it.g ? iconeHtml(it.g, true) : it.id || JAQUETTES[it.c]?.libretro ? coverImg(jeuDeMembre(it.c, it.titre, it.id), 'icone-img', true) || `<span class="r-ic">${iconeConsole(it.c)}</span>` : `<span class="r-ic">${iconeConsole(it.c)}</span>`);
   const totalDefis = p.defis ? p.defis.length : p.defisTotal;
   const chiffres = [[heures(p.total), 'de jeu'], [p.joues, `jeu${p.joues > 1 ? 'x' : ''} lancé${p.joues > 1 ? 's' : ''}`], [p.consoles, 'consoles'], [p.captures, 'captures'], [`${p.faits}/${totalDefis}`, 'défis']];
   // Les actions suivent l'ordre de l'écran : le Mii avant le bouton.

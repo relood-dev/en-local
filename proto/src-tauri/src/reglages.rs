@@ -275,7 +275,9 @@ pub fn dolphin_args(o: &Opts, wii: bool) -> Vec<String> {
             c.push(format!("Dolphin.Core.SelectedLanguage={n}"));
         }
     }
-    if let Some(api) = get(o, "api").filter(|a| ["Vulkan", "OGL", "Metal"].contains(a) || (cfg!(windows) && ["D3D", "D3D12"].contains(a))) {
+    // Mac : Metal, natif, plutôt que Vulkan traduit par MoltenVK (bien plus lent dans Dolphin).
+    let api = get(o, "api").map(|a| if cfg!(target_os = "macos") && a == "Vulkan" { "Metal" } else { a });
+    if let Some(api) = api.filter(|a| ["Vulkan", "OGL", "Metal"].contains(a) || (cfg!(windows) && ["D3D", "D3D12"].contains(a))) {
         c.push(format!("Dolphin.Core.GFXBackend={api}"));
     }
     if let Some(n) = nombre(o, "resolution", 1, 8) {
@@ -367,10 +369,16 @@ pub fn disposition_wii(id: &str, manettes: &[String]) -> &'static str {
         "nunchuk"
     }
 }
-/// Manette classique, boutons à la même place que sur Switch.
+/// Boutons « valider », « retour », du haut et de gauche de la manette du joueur, comme dans l'app :
+/// valider à droite sur une manette Nintendo, en bas sur Xbox et PlayStation.
+fn positions_manette() -> (&'static str, &'static str, &'static str, &'static str) {
+    if *crate::pad::KIND.lock().unwrap() == "nintendo" { ("east", "south", "north", "west") } else { ("south", "east", "north", "west") }
+}
+/// Manette classique : A valide et B revient, sur les boutons valider et retour de la manette du joueur.
 pub fn dolphin_classique() -> Vec<(String, String)> {
+    let (ok, retour, haut, gauche) = positions_manette();
     let mut out: Vec<(String, String)> = [
-        ("Buttons/A", "east"), ("Buttons/B", "south"), ("Buttons/X", "north"), ("Buttons/Y", "west"), ("Buttons/ZL", "lt"), ("Buttons/ZR", "rt"),
+        ("Buttons/A", ok), ("Buttons/B", retour), ("Buttons/X", haut), ("Buttons/Y", gauche), ("Buttons/ZL", "lt"), ("Buttons/ZR", "rt"),
         ("Buttons/-", "back"), ("Buttons/+", "start"), ("Triggers/L", "lb"), ("Triggers/L-Analog", "lb"), ("Triggers/R", "rb"), ("Triggers/R-Analog", "rb"),
         ("D-Pad/Up", "up"), ("D-Pad/Down", "down"), ("D-Pad/Left", "left"), ("D-Pad/Right", "right"),
     ]
@@ -384,20 +392,15 @@ pub fn dolphin_classique() -> Vec<(String, String)> {
     }
     out
 }
-/// Wiimote + Nunchuk : touches choisies, sinon disposition d'En Local.
-/// À l'horizontale (cote), 2 (valider) et 1 (retour) prennent la place des boutons « valider » et
-/// « retour » de la manette du joueur : A et B à droite et en bas sur une manette Nintendo, mais A en
-/// bas et B à droite sur Xbox et PlayStation (sinon tout est inversé pour eux).
+/// Wiimote (et Nunchuk) : touches choisies, sinon celles de l'app. A sur le bouton valider de la manette
+/// du joueur, B sur retour (et sur la gâchette, comme sur une vraie Wiimote). À l'horizontale (cote),
+/// le jeu valide avec 2 et revient avec 1 : ils sont aussi sur valider et retour, avec A et B.
 pub fn dolphin_wii(o: &Opts, cote: bool) -> Vec<(String, String)> {
+    let (ok, retour, haut, gauche) = positions_manette();
+    let (un, deux) = if cote { (retour, ok) } else { (gauche, haut) };
     let mut out = Vec::new();
-    let nintendo = *crate::pad::KIND.lock().unwrap() == "nintendo";
-    let (a, un, deux) = match (cote, nintendo) {
-        (true, true) => ("north", "south", "east"),
-        (true, false) => ("north", "east", "south"),
-        _ => ("south", "west", "north"),
-    };
     for (cles, bouton, defaut) in [
-        (&["Buttons/A"][..], "a", a), (&["Buttons/B"], "b", "rt"), (&["Buttons/1"], "un", un), (&["Buttons/2"], "deux", deux),
+        (&["Buttons/A"][..], "a", ok), (&["Buttons/1"], "un", un), (&["Buttons/2"], "deux", deux),
         (&["Buttons/-"], "moins", "back"), (&["Buttons/+"], "plus", "start"), (&["Nunchuk/Buttons/C"], "c", "lb"), (&["Nunchuk/Buttons/Z"], "nz", "lt"),
         (&["Shake/X", "Shake/Y", "Shake/Z"], "secouer", "r3"),
     ] {
@@ -406,6 +409,11 @@ pub fn dolphin_wii(o: &Opts, cote: bool) -> Vec<(String, String)> {
             out.push((k.to_string(), v.to_string()));
         }
     }
+    let b = match touche(o, "b") {
+        Some(p) => dolphin_entree(p).to_string(),
+        None => format!("{}|{}", dolphin_entree(retour), dolphin_entree("rt")),
+    };
+    out.insert(1, ("Buttons/B".into(), b));
     out
 }
 
@@ -500,6 +508,12 @@ pub fn rpcs3(o: &Opts) -> String {
     let mut coeur = String::new();
     if let Some(v) = choix("spu_bloc", &[("safe", "Safe"), ("mega", "Mega"), ("giga", "Giga")]) {
         coeur += &format!("  SPU Block Size: {v}\n");
+    }
+    // Mac (Apple Silicon) : la vérification rapide du code SPU recompilé confond deux tâches presque
+    // identiques, le code de l'une tourne à la place de l'autre (Skate 3, MGS V : « Unknown STOP code: 0x0 »,
+    // RPCS3 #19790). La vérification précise évite ça.
+    if cfg!(target_os = "macos") {
+        coeur += "  Precise SPU Verification: true\n";
     }
     format!(
         "{}Video:\n{video}Audio:\n  Master Volume: {volume}\nSystem:\n  Language: {langue}\n\
@@ -863,30 +877,35 @@ mod tests {
         assert!(c.contains("Resolution Scale: 200") && c.contains("Master Volume: 40") && c.contains("Language: English (US)"));
         assert!(rpcs3(&opts(&[])).contains("Language: French"));
         let g = rpcs3(&opts(&[("api", "opengl"), ("fps", "30"), ("aa", "0"), ("spu_bloc", "mega"), ("rsx_mt", "oui"), ("vsync", "pirate")]));
-        assert!(g.starts_with("Core:\n  SPU Block Size: Mega\nVideo:\n"));
+        assert!(g.starts_with("Core:\n  SPU Block Size: Mega\n"));
+        assert_eq!(g.contains("  Precise SPU Verification: true\n"), cfg!(target_os = "macos"));
         assert!(g.contains("  Renderer: OpenGL\n") && g.contains("  Frame limit: 30\n") && g.contains("  MSAA: Disabled\n") && g.contains("  Multithreaded RSX: true\n"));
-        assert!(!g.contains("VSync") && !rpcs3(&opts(&[])).contains("Core:"));
+        assert!(!g.contains("VSync") && rpcs3(&opts(&[])).contains("Core:") == cfg!(target_os = "macos"));
     }
     #[test]
     fn wii_a_l_horizontale() {
         let v = |cote, k: &str| dolphin_wii(&opts(&[]), cote).into_iter().find(|(c, _)| c == k).unwrap().1;
-        // Manette Nintendo : 2 et 1 à la place de A et B (droite, bas).
-        *crate::pad::KIND.lock().unwrap() = "nintendo";
-        assert_eq!(v(true, "Buttons/2"), "`Button E`");
-        assert_eq!(v(true, "Buttons/1"), "`Button S`");
-        // Xbox, PlayStation : valider en bas, retour à droite.
-        *crate::pad::KIND.lock().unwrap() = "xbox";
+        // PlayStation, Xbox : A et 2 sur valider (en bas), B et 1 sur retour (à droite).
+        *crate::pad::KIND.lock().unwrap() = "playstation";
+        assert_eq!(v(true, "Buttons/A"), "`Button S`");
         assert_eq!(v(true, "Buttons/2"), "`Button S`");
         assert_eq!(v(true, "Buttons/1"), "`Button E`");
+        assert_eq!(v(true, "Buttons/B"), "`Button E`|`Trigger R`");
         assert_eq!(v(false, "Buttons/A"), "`Button S`");
+        assert_eq!(v(false, "Buttons/2"), "`Button N`");
+        // Nintendo : valider à droite, retour en bas.
+        *crate::pad::KIND.lock().unwrap() = "nintendo";
+        assert_eq!(v(false, "Buttons/A"), "`Button E`");
+        assert_eq!(v(true, "Buttons/1"), "`Button S`");
+        assert!(dolphin_classique().contains(&("Classic/Buttons/A".into(), "`Button E`".into())));
+        *crate::pad::KIND.lock().unwrap() = "xbox";
+        assert!(dolphin_classique().contains(&("Classic/Buttons/A".into(), "`Button S`".into())));
         let m = |l: &[&str]| l.iter().map(|s| s.to_string()).collect::<Vec<_>>();
         assert_eq!(disposition_wii("RMCP01", &m(&["wiimote", "nunchuk", "classiccontroller"])), "classique");
         assert_eq!(disposition_wii("SSQP01", &m(&["wiimote"])), "horizontale");
         assert_eq!(disposition_wii("SUPP01", &m(&["wiimote", "mii"])), "nunchuk");
         assert_eq!(disposition_wii("SUPP01", &[]), "nunchuk");
-        let c = dolphin_classique();
-        assert!(c.contains(&("Classic/Buttons/A".into(), "`Button E`".into())));
-        assert!(c.contains(&("Classic/Right Stick/Up".into(), "`Right Y+`".into())));
+        assert!(dolphin_classique().contains(&("Classic/Right Stick/Up".into(), "`Right Y+`".into())));
     }
     #[test]
     fn eden_langue_et_mods() {

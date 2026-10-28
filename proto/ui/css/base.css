@@ -24,7 +24,8 @@ input, textarea { -webkit-user-select: text; user-select: text; }
  * Écran dessiné pour 1280×800, agrandi par zoom (voir echelle()).
  * overflow: clip empêche tout défilement de l'écran entier.
  */
-#stage { position: fixed; inset: 0; display: grid; place-items: center; overflow: clip; }
+/* Plein écran sur un Mac à encoche : le fond va jusqu'en haut, l'écran commence sous l'encoche. */
+#stage { position: fixed; inset: 0; padding-top: var(--encoche, 0px); display: grid; place-items: center; overflow: clip; }
 .screen { width: var(--w, 1280px); height: var(--h, 800px); position: relative; flex: none; zoom: var(--s, 1); overflow: clip; }
 
 

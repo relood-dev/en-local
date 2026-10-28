@@ -9,6 +9,8 @@
 <link rel="stylesheet" href="css/ecrans.css">
 </head>
 <body>
+<!-- Thème Virtual Boy : la luminosité de chaque pixel devient du rouge pur, le reste s'éteint. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><filter id="vb" color-interpolation-filters="sRGB"><feColorMatrix type="matrix" values=".2126 .7152 .0722 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0"/></filter></svg>
 <div id="stage">
   <img id="fond-art" alt="">
   <div id="fond-fade"></div>

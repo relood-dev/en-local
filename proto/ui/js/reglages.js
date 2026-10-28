@@ -66,7 +66,7 @@ function lignesReglages() {
   return [
     ['Général', 'Affichage, thème, langue, pseudo', [
       { label: 'Affichage', aide: 'Plein écran (comme une console), fenêtré sans bordure, ou fenêtré. F11 bascule aussi le plein écran.', ...choix('ecran', Object.fromEntries(MODES_ECRAN.map(([v, x]) => [v, x])), localStorage.ecran || 'plein', modeEcran, 'plein') },
-      { label: 'Thème', aide: 'Sombre, OLED (noir pur : les pixels s\'éteignent sur un écran OLED) ou clair. Les jeux, les avatars et Loc gardent leurs couleurs.', ...choix('theme', { sombre: 'Sombre', oled: 'OLED', clair: 'Clair' }, localStorage.theme || (clair ? 'clair' : 'sombre'), theme, 'sombre') },
+      { label: 'Thème', valeur: THEMES[localStorage.theme || (clair ? 'clair' : 'sombre')]?.[0] || 'Sombre', aide: `${Object.keys(THEMES).length} thèmes : les classiques, les couleurs des consoles (Game Boy, GameCube, Wii…) et des ambiances (Sakura, Abysses, Minuit…). Chacun s'essaie avant d'être choisi.`, fn: () => ouvrirPage({ themes: true }) },
       { label: 'Langue des jeux', aide: 'La langue des consoles émulées, pour toutes. Chaque console (et chaque jeu) peut avoir la sienne.', ...choix('langue', Object.fromEntries(LANGUES), emu.langue, (v) => ((emu.langue = v), garderEmu()), 'fr') },
       { label: 'Pseudo sur les consoles', valeur: pseudoConsoles() || '…', aide: 'Ton nom de joueur sur DS, 3DS et Switch, celui que les autres voient en local sans fil. Ton pseudo Discord par défaut. 10 caractères au plus, sans emoji.', change: Boolean(localStorage.pseudo), reset: () => delete localStorage.pseudo, fn: () => changerPseudo(() => setTimeout(drawSection, 0)) },
       { label: 'Animations', aide: 'Réduites : moins de mouvements, des fondus courts.', ...choix('anim', { normales: 'Normales', reduites: 'Réduites' }, reduit ? 'reduites' : 'normales', (v) => animations(v === 'normales'), 'normales') },
@@ -227,6 +227,7 @@ function drawReglages() {
   invoke('pad_info').then((p) => { if ((p.name || '') !== manetteNom) (manetteNom = p.name || ''), onglet === 'reglages' && drawReglages(); }).catch(() => {});
   if (regVue === 'tuiles') return drawTuilesReglages();
   if (regPage?.touches) return drawTouches();
+  if (regPage?.themes) return drawThemes();
 
   const [titre, chemin, groupes] = listeReglages();
   const cle = regPage ? JSON.stringify(regPage) : titre;
@@ -304,7 +305,7 @@ function focusTouches(n) {
   viserSchema(l?.bouton);
   const { c, ou, parent } = contexteTouches();
   const [, , d] = TOUCHES_CONSOLE[c].find(([id]) => id === l?.bouton) || [];
-  $('#reg-nom').innerHTML = l ? `${esc(l.label)} <span class="regk-fleche">→</span> ${glyphePhys(ou[`touche_${l.bouton}`] || parent?.[`touche_${l.bouton}`] || d)}` : '';
+  $('#reg-nom').innerHTML = l ? `${esc(l.label)} <span class="regk-fleche">→</span> ${glyphePhys(ou[`touche_${l.bouton}`] || parent?.[`touche_${l.bouton}`] || positionManette(d))}` : '';
   $('#reg-aide').textContent = 'Appuie sur ✕ (ou clique sur le bouton), puis sur la touche de ta manette à utiliser. Tes appuis s\'allument sur le schéma.';
   $('#aide-g').innerHTML = `<div>${glyphs.b}Retour</div>`;
   $('#aide-d').innerHTML = `${l?.change ? `<div>${glyphs.x}Par défaut</div>` : ''}${regLignes.some((x) => x.change) ? `<div>${glyphs.y}Tout par défaut</div>` : ''}<div>${glyphs.a}Choisir la touche</div>`;
@@ -378,6 +379,7 @@ const LOC_GROUPES = { 'Général': 'reglages', Manettes: 'manette', Son: 'musiqu
 const locReglage = (l) => l?.loc || LOC_GROUPES[l?.groupe] || LOC_GROUPES[regGroupes[regGroupe]?.[0]] || 'reglages';
 function focusReglage(n) {
   if (regPage?.touches) return focusTouches(n);
+  if (regPage?.themes) return focusThemes(n);
   if (regVue === 'tuiles') {
     const tuiles = [...$('#section').querySelectorAll('.regt-tuile')];
     regGroupe = Math.max(0, Math.min(n, tuiles.length - 1));
@@ -440,6 +442,7 @@ function chercherReglage() {
 }
 function navReglages(k) {
   if (regPage?.touches) return navTouches(k);
+  if (regPage?.themes) return navThemes(k);
   if (regVue === 'tuiles') {
     const cols = 3;
     const n = regGroupes.length;
@@ -520,4 +523,63 @@ async function rechargerJeux() {
   drawHome();
   const n = games.length - avant;
   toast(n > 0 ? `${n} nouveau${n > 1 ? 'x' : ''} jeu${n > 1 ? 'x' : ''}` : n < 0 ? `${-n} jeu${n < -1 ? 'x' : ''} en moins` : 'Pas de nouveau jeu');
+}
+
+/*
+ * Page des thèmes : une carte par thème, avec un aperçu dessiné à ses couleurs (tes jaquettes, la barre
+ * du haut, le dock). Le thème visé s'essaie sur toute l'app ; ✕ le garde, ○ revient à l'ancien.
+ */
+let themeGarde = null;
+function drawThemes() {
+  themeGarde ??= localStorage.theme || 'sombre';
+  const ids = Object.keys(THEMES);
+  regLignes = ids.map((id) => ({ id, label: THEMES[id][0] }));
+  const tuiles = [0, 1, 2].map((n) => `<span class="ap-t">${games[n] ? coverImg(games[n], 'ap-jaq', true) : ''}</span>`).join('');
+  const carte = (id) => `<button class="regth-carte${id === themeGarde ? ' garde' : ''}" data-n="${ids.indexOf(id)}">
+    <span class="ap" data-theme="${id}"><span class="ap-haut"><i></i><i class="ap-titre"></i><i></i></span><span class="ap-tuiles">${tuiles}</span><span class="ap-dock"><i></i><i class="ici"></i><i></i><i></i></span></span>
+    <b>${esc(THEMES[id][0])}</b></button>`;
+  const familles = [...new Set(ids.map((id) => THEMES[id][2]))];
+  $('#section').html = `<div class="reg regl regth">
+    <div class="regl-tete"><small class="reg-chemin">Réglages · Affichage</small><h1><span class="regl-ic">${icone(DOCK.reglages)}</span>Thèmes</h1></div>
+    <div class="reg-droite">${familles.map((f) => `<div class="titre-groupe">${esc(f)}</div><div class="regth-grille">${ids.filter((id) => THEMES[id][2] === f).map(carte).join('')}</div>`).join('')}</div>
+    <aside class="reg-panneau"><b id="reg-nom"></b><p id="reg-aide"></p></aside></div>`;
+  $('#section').querySelectorAll('.regth-carte').forEach((b) => (b.onclick = () => (focusThemes(+b.dataset.n), garderTheme())));
+  $('#titre').textContent = 'Réglages · Thèmes';
+  focusThemes(Math.max(0, regFocus || ids.indexOf(themeGarde)));
+}
+const cartesThemes = () => [...$('#section').querySelectorAll('.regth-carte')];
+function focusThemes(n) {
+  const cartes = cartesThemes();
+  regFocus = Math.max(0, Math.min(n, cartes.length - 1));
+  cartes.forEach((c, k) => c.classList.toggle('focus', k === regFocus));
+  montrer($('#section .reg-droite'), cartes[regFocus]);
+  const id = regLignes[regFocus]?.id;
+  if (!id) return;
+  theme(id, false);
+  $('#reg-nom').textContent = THEMES[id][0];
+  $('#reg-aide').textContent = THEMES[id][3];
+  $('#aide-g').innerHTML = `<div>${glyphs.b}${id === themeGarde ? 'Retour' : 'Annuler'}</div>`;
+  $('#aide-d').innerHTML = id === themeGarde ? '' : `<div>${glyphs.a}Choisir</div>`;
+}
+function garderTheme() {
+  const id = regLignes[regFocus]?.id;
+  if (!id) return;
+  theme(id);
+  themeGarde = id;
+  son('valide');
+  toast(`Thème : ${THEMES[id][0]}`);
+  cartesThemes().forEach((c, k) => c.classList.toggle('garde', k === regFocus));
+  focusThemes(regFocus);
+}
+function navThemes(k) {
+  if (['up', 'down', 'left', 'right'].includes(k)) {
+    const v = voisin(cartesThemes(), regFocus, k);
+    return v >= 0 && (son('deplace'), focusThemes(v));
+  }
+  if (k === 'a') return garderTheme();
+  if (k !== 'b') return;
+  // Retour sans choisir : le thème d'avant revient.
+  theme(themeGarde);
+  themeGarde = null;
+  navReglagesRetour();
 }

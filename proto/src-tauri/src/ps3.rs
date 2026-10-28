@@ -89,6 +89,11 @@ fn sfo_iso(path: &str) -> Option<Vec<u8>> {
 fn donnees(dir: &str) -> String {
     if cfg!(windows) { dir.to_string() } else { format!("{dir}/portable") }
 }
+/// Réglages (config.yml, input_configs) : sous « config » sur Windows seulement ; sur Mac, RPCS3 les lit
+/// directement dans « portable » (fs::get_config_dir).
+fn reglages(dir: &str) -> String {
+    if cfg!(windows) { chemin!("{}\\config", donnees(dir)) } else { donnees(dir) }
+}
 fn programme(dir: &str) -> String {
     if cfg!(windows) { crate::embed::exe(dir, "rpcs3.exe", crate::embed::EXE_PS3) } else { format!("{dir}/RPCS3.app/Contents/MacOS/rpcs3") }
 }
@@ -139,8 +144,8 @@ fn bouton(o: &crate::reglages::Opts, id: &str, defaut: &str) -> &'static str {
 /// config.yml : sans plein écran, RPCS3 se ferme avec le jeu. Et jamais son écran de bienvenue
 /// ni ses confirmations (réglages de son interface, GuiConfigs\CurrentSettings.ini).
 fn preparer(dir: &str, o: &crate::reglages::Opts) -> std::io::Result<()> {
+    let cfg = reglages(dir);
     let dir = &donnees(dir);
-    let cfg = chemin!("{dir}\\config");
     std::fs::create_dir_all(chemin!("{cfg}\\input_configs\\global"))?;
     std::fs::write(chemin!("{cfg}\\config.yml"), crate::reglages::rpcs3(o))?;
     let gui = chemin!("{dir}\\GuiConfigs\\CurrentSettings.ini");
@@ -180,7 +185,7 @@ pub fn start(dir: &str, game: &str, parent: isize, o: &crate::reglages::Opts) ->
             pad += &format!("    {cle}: {}\n", bouton(o, id, d));
         }
     }
-    std::fs::write(chemin!("{}\\config\\input_configs\\global\\Default.yml", donnees(dir)), pad).map_err(|e| e.to_string())?;
+    std::fs::write(chemin!("{}\\input_configs\\global\\Default.yml", reglages(dir)), pad).map_err(|e| e.to_string())?;
     // Dossier de disque : RPCS3 veut le dossier du jeu (celui qui contient PS3_GAME).
     let cible = if game.to_lowercase().ends_with(".iso") { game.to_string() } else { Path::new(game).parent().and_then(|p| p.parent()).ok_or("dossier du jeu introuvable")?.to_string_lossy().into_owned() };
     let mut cmd = Command::new(programme(dir));
