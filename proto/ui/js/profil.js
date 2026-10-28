@@ -231,7 +231,7 @@ function modeleProfil() {
       lignes: me ? [`Pseudo consoles : ${pseudoConsoles()}`] : ['Connecte-toi avec Discord pour ton nom et ton avatar.'],
       total: tempsTotal(), joues: joues().length, consoles: new Set(joues().map((g) => g.console)).size, captures: capturesListe.length,
       defis: ds, faits: ds.filter((d) => d.fait).length,
-      top: top.map((x) => ({ titre: x.g ? titreDe(x.g) : x.titre, c: x.console, secs: x.secs, g: x.g, id: ailleurs.get(x.cle)?.id, ailleurs: ailleurs.has(x.cle) ? appareilDe(ailleurs.get(x.cle).systeme) : undefined })),
+      top: top.map((x) => ({ titre: x.g ? titreDe(x.g) : x.titre, c: x.console, secs: x.secs, g: x.g, id: ailleurs.get(x.cle)?.id || progAutres.stats?.[x.cle]?.id, ailleurs: ailleurs.has(x.cle) ? appareilDe(ailleurs.get(x.cle).systeme) : undefined })),
       parConsole: ORDRE.map((c) => [c, joues().filter((x) => x.console === c).reduce((t, x) => t + x.secs, 0)]).filter(([, x]) => x > 0),
       jeux: [
         ...games.map((g) => ({ titre: titreDe(g), c: g.console, plus: [texteContenus(contenus[g.path]), tempsDe(g) ? heures(tempsDe(g)) : ''].filter(Boolean).join(' · ') || 'Jamais lancé', g })),

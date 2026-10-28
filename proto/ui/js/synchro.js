@@ -26,7 +26,8 @@ function maProgression() {
   const s = {};
   for (const g of games) {
     const st = stats[g.path];
-    if (st?.secs || st?.last) s[cleJeu(g)] = { secs: st.secs || 0, last: st.last || 0, c: g.console, t: titreDe(g).slice(0, 80) };
+    // id : de quoi retrouver sa jaquette sur mes autres appareils, même une fois le jeu effacé d'ici.
+    if (st?.secs || st?.last) s[cleJeu(g)] = { secs: st.secs || 0, last: st.last || 0, c: g.console, t: titreDe(g).slice(0, 80), id: idGametdb(g) || undefined };
   }
   const jeux = {};
   for (const g of games) if (compteurs.jeux?.[g.path]) jeux[cleJeu(g)] = compteurs.jeux[g.path];
@@ -175,7 +176,7 @@ async function synchroniser() {
     const fusion = { stats: {}, compteurs: {}, defisFaits: [] };
     for (const d of autres) {
       for (const [cle, st] of Object.entries(d.stats || {})) {
-        const x = fusion.stats[cle] || { secs: 0, last: 0, c: st.c, t: st.t };
+        const x = fusion.stats[cle] || { secs: 0, last: 0, c: st.c, t: st.t, id: typeof st.id === 'string' ? st.id.slice(0, 80) : undefined };
         fusion.stats[cle] = { ...x, secs: x.secs + (Number(st.secs) || 0), last: Math.max(x.last, Number(st.last) || 0) };
       }
       fusion.compteurs = additionner(fusion.compteurs, d.compteurs);
