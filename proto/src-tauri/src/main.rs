@@ -221,7 +221,8 @@ fn list_games() -> Vec<Game> {
                 ("Switch", Some(d)) if d.parent().and_then(|p| p.file_name()).is_some_and(|n| n.eq_ignore_ascii_case("Switch")) => d.file_name().map_or(name, |n| n.to_string_lossy().into_owned()),
                 _ => name,
             };
-            let name = if no_intro.is_some() { retro::titre(&name) } else { name };
+            // GameCube et Wii aussi : « Jeu (Europe) (En,Fr) (Rev 2) » devient « Jeu », même sans fiche GameTDB.
+            let name = if no_intro.is_some() || console == "GC" || console == "Wii" { retro::titre(&name) } else { name };
             let path = path.to_string_lossy().into_owned();
             let (title_id, product_code) = match console {
                 "3DS" => (embed::title_id(&path), embed::product_code(&path)),
@@ -927,6 +928,11 @@ async fn play(app: AppHandle, path: String, console: String, room: Option<embed:
     let clips = o.get("clips").and_then(|v| v.parse::<u64>().ok()).filter(|n| *n > 0);
     let qualite = o.get("clips_qualite").cloned().unwrap_or_default();
     // Ta voix dans les clips : le micro choisi pour les consoles, sinon celui de Windows.
+    // Écran principal seulement (DS, 3DS) : sa place dans la zone du jeu, en fractions « x y largeur hauteur ».
+    *clips::ZONE.lock().unwrap() = o.get("clips_zone").and_then(|z| {
+        let v: Vec<f64> = z.split_whitespace().filter_map(|n| n.parse().ok()).collect();
+        (v.len() == 4 && v.iter().all(|n| (0.0..=1.0).contains(n)) && v[2] > 0.05 && v[3] > 0.05).then(|| [v[0], v[1], v[2], v[3]])
+    });
     *clips::MICRO.lock().unwrap() = (o.get("clips_voix").map(String::as_str) == Some("oui")).then(|| reglages::micro(&o).filter(|m| !m.is_empty()).and_then(micro::nom_de));
     let parent = main_hwnd(&app).ok();
     // macOS : l'émulateur a sa fenêtre, filmée et dessinée dans l'interface comme la DS.
@@ -1329,7 +1335,25 @@ async fn cemu_packs_maj() -> Result<(), String> {
              if (Test-Path '{dest}') {{ Remove-Item -Recurse -Force '{dest}' }}; \
              Expand-Archive $z '{dest}' -Force; Set-Content '{dest}\\version.txt' $r.tag_name; Remove-Item $z"
         );
+        #[cfg(windows)]
         let ok = std::process::Command::new("powershell").args(["-NoProfile", "-Command", &script]).sans_fenetre().status().map(|s| s.success()).unwrap_or(false);
+        // macOS : curl et unzip du système.
+        #[cfg(not(windows))]
+        let ok = (|| {
+            let _ = script;
+            let dest = chemin!("{CEMU}\\portable\\graphicPacks\\downloadedGraphicPacks", CEMU = cemu());
+            let api = std::process::Command::new(plateforme::CURL).args(["-fsSL", "--max-time", "30", "https://api.github.com/repos/cemu-project/cemu_graphic_packs/releases/latest"]).output().ok()?;
+            let r: serde_json::Value = serde_json::from_slice(&api.stdout).ok()?;
+            let url = r["assets"].as_array()?.iter().filter_map(|a| a["browser_download_url"].as_str()).find(|u| u.ends_with(".zip"))?;
+            let z = std::env::temp_dir().join("enlocal-graphicpacks.zip");
+            std::process::Command::new(plateforme::CURL).args(["-fsSL", "--max-time", "600", "-o"]).arg(&z).arg(url).status().ok()?.success().then_some(())?;
+            let _ = std::fs::remove_dir_all(&dest);
+            std::fs::create_dir_all(&dest).ok()?;
+            let fait = std::process::Command::new("unzip").args(["-q", "-o"]).arg(&z).arg("-d").arg(&dest).status().ok()?.success();
+            let _ = std::fs::remove_file(&z);
+            std::fs::write(format!("{dest}/version.txt"), r["tag_name"].as_str().unwrap_or_default()).ok()?;
+            fait.then_some(())
+        })().is_some();
         if ok { Ok(()) } else { Err("Téléchargement des packs graphiques impossible".to_string()) }
     })
     .await
@@ -1673,6 +1697,27 @@ fn image_dessinee() {
     mac_capture::image_dessinee();
 }
 
+/// Windows : le bouton Home de la manette (PS, Xbox) ouvre-t-il la Game Bar ? `manette` le change.
+/// Réglage de Windows « Ouvrir la Xbox Game Bar avec ce bouton sur une manette ». None sur macOS.
+#[tauri::command]
+fn game_bar(manette: Option<bool>) -> Option<bool> {
+    #[cfg(windows)]
+    {
+        const CLE: &str = r"HKCU\Software\Microsoft\GameBar";
+        if let Some(m) = manette {
+            let _ = std::process::Command::new("reg").args(["add", CLE, "/v", "UseNexusForGameBarEnabled", "/t", "REG_DWORD", "/d", if m { "1" } else { "0" }, "/f"]).sans_fenetre().status();
+        }
+        let out = std::process::Command::new("reg").args(["query", CLE, "/v", "UseNexusForGameBarEnabled"]).sans_fenetre().output().ok()?;
+        // Valeur absente : la Game Bar s'ouvre (défaut de Windows).
+        Some(!String::from_utf8_lossy(&out.stdout).contains("0x0"))
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = manette;
+        None
+    }
+}
+
 #[tauri::command]
 fn pad_info() -> serde_json::Value {
     serde_json::json!({ "name": pad::NAME.lock().unwrap().clone(), "kind": *pad::KIND.lock().unwrap() })
@@ -1953,9 +1998,10 @@ fn ask_close(app: &AppHandle) {
 
 #[cfg(windows)]
 /// Alt+F4 en jeu : un crochet clavier le capte avant l'émulateur.
+/// Échap aussi : il ouvre le menu En Local, même quand la fenêtre de l'émulateur (Cemu…) a le clavier.
 fn watch_alt_f4(app: AppHandle) {
     use windows::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
-    use windows::Win32::UI::Input::KeyboardAndMouse::VK_F4;
+    use windows::Win32::UI::Input::KeyboardAndMouse::{VK_ESCAPE, VK_F4};
     use windows::Win32::UI::WindowsAndMessaging::*;
     static APP: std::sync::OnceLock<AppHandle> = std::sync::OnceLock::new();
     let _ = APP.set(app);
@@ -1967,6 +2013,16 @@ fn watch_alt_f4(app: AppHandle) {
                     let app = app.clone();
                     // Le crochet doit rendre la main tout de suite.
                     std::thread::spawn(move || ask_close(&app));
+                    return LRESULT(1);
+                }
+            }
+        }
+        // Menu fermé seulement : ouvert, Échap revient à l'interface (retour, fermer).
+        if code >= 0 && w.0 as u32 == WM_KEYDOWN && key.vkCode == VK_ESCAPE.0 as u32 && !MENU.load(Ordering::Relaxed) && (libretro::is_running() || embed::is_running()) {
+            if let Some(app) = APP.get() {
+                if main_hwnd(app).is_ok_and(|h| GetForegroundWindow().0 as isize == h) {
+                    let app = app.clone();
+                    std::thread::spawn(move || toggle_home(&app));
                     return LRESULT(1);
                 }
             }
@@ -2070,7 +2126,7 @@ fn main() {
                 embed::stop();
             }
         })
-        .invoke_handler(tauri::generate_handler![verifier_maj, journaux, installer_maj, ouvrir_site, micro::micros, importer_jeux, choisir_jeux, oublier_jaquettes, jaquette, journal, habillage_ds, switch_etat, switch_poser, volume_jeux, list_games, medias_liste, ouvrir_medias, dossiers_medias, choisir_dossier_media, creer_dossier_media, dossier_jeux, definir_dossier_jeux, choisir_dossier, creer_dossier_jeux, ranger_jeux, contenus_jeux, ra_connexion, ouvrir_ra, mode_ecran, materiel, switch_updates, cemu_packs, cemu_packs_maj, dolphin_mods, eden_mods, open_folder, open_games_folder, ouvrir_saves, reset_jeu, salon_en_jeu, pokedex, sprite, perf::performances, trois_ds_etat, trois_ds_poser, ps3_etat, ps3_poser, ouvrir_firmware_ps3, ps2_etat, ps2_poser, clips::clip, clips::miniature, garder_photo, nsz::preparer_switch, salon::salon_preparer, salon::salon_sonde, salon::salon_lancer, salon::salon_fermer, salon::salon_ip_locale, pad_info, open_discord_user, game_icon, save_image, capture, list_captures, load_stats, save_stats, saves_local, saves_lire, saves_poser, saves_appliquer, saves_base, game_infos, play, login, menu_shown, resume, quit_game, quit_app, home, snapshot, game_shot, apercu_jeu, appareil_id, autoplay, lien_initial, ds_friend_code, netplay, netplay_launch, netplay_stop, netplay_message, netplay_cancel, presence, presence_clear, pointer, clavier_reponse, poser_console, pad::manette_ajouter, shaders_lire, shaders_taille, shaders_ecrire, figurines::figurines, figurines::figurines_poser, distance::distance_debut, distance::distance_pad, distance::distance_fin, distance::distance_arret, pad::distance_manette, image_dessinee])
+        .invoke_handler(tauri::generate_handler![verifier_maj, journaux, installer_maj, ouvrir_site, micro::micros, importer_jeux, choisir_jeux, oublier_jaquettes, jaquette, journal, habillage_ds, switch_etat, switch_poser, volume_jeux, list_games, medias_liste, ouvrir_medias, dossiers_medias, choisir_dossier_media, creer_dossier_media, dossier_jeux, definir_dossier_jeux, choisir_dossier, creer_dossier_jeux, ranger_jeux, contenus_jeux, game_bar, ra_connexion, ouvrir_ra, mode_ecran, materiel, switch_updates, cemu_packs, cemu_packs_maj, dolphin_mods, eden_mods, open_folder, open_games_folder, ouvrir_saves, reset_jeu, salon_en_jeu, pokedex, sprite, perf::performances, trois_ds_etat, trois_ds_poser, ps3_etat, ps3_poser, ouvrir_firmware_ps3, ps2_etat, ps2_poser, clips::clip, clips::miniature, garder_photo, nsz::preparer_switch, salon::salon_preparer, salon::salon_sonde, salon::salon_lancer, salon::salon_fermer, salon::salon_ip_locale, pad_info, open_discord_user, game_icon, save_image, capture, list_captures, load_stats, save_stats, saves_local, saves_lire, saves_poser, saves_appliquer, saves_base, game_infos, play, login, menu_shown, resume, quit_game, quit_app, home, snapshot, game_shot, apercu_jeu, appareil_id, autoplay, lien_initial, ds_friend_code, netplay, netplay_launch, netplay_stop, netplay_message, netplay_cancel, presence, presence_clear, pointer, clavier_reponse, poser_console, pad::manette_ajouter, shaders_lire, shaders_taille, shaders_ecrire, figurines::figurines, figurines::figurines_poser, figurines::amiibo_catalogue, figurines::cemu_portail, figurines::skylanders_images, distance::distance_debut, distance::distance_pad, distance::distance_fin, distance::distance_arret, pad::distance_manette, image_dessinee])
         .build(tauri::generate_context!())
         .expect("En Local n'a pas pu démarrer")
         // macOS : « Quitter » (⌘Q) ferme l'app sans détruire la fenêtre ; le jeu ne doit pas lui survivre.

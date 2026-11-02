@@ -86,6 +86,41 @@
 /* DS avec habillage : même marge que le trou de l'habillage. */
 #jeu.habille { padding: clamp(12px, calc(100vh / 30), 40px); }
 
+/* Écran de lancement : dès le clic, jusqu'à la première image du jeu. Fond flouté qui dérive, jaquette qui
+   arrive en 3D avec un reflet qui passe, barre des étapes ; à la fin, la jaquette fonce vers toi et le jeu
+   apparaît derrière le noir. */
+#lancement { position: fixed; inset: 0; z-index: 70; display: none; overflow: hidden; background: #000; color: #f5f5f7; perspective: 1200px; }
+#lancement .l-fond { position: absolute; inset: -8%; opacity: 0; animation: l-fond-in 1.2s ease-out forwards, l-derive 18s ease-in-out infinite alternate; }
+#lancement .l-fond img { width: 100%; height: 100%; object-fit: cover; filter: blur(42px) saturate(1.5) brightness(.55); }
+#lancement .l-voile { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 42%, transparent 0%, rgba(0, 0, 0, .35) 45%, rgba(0, 0, 0, .9) 100%); }
+#lancement .l-centre { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0; transform-style: preserve-3d; }
+#lancement .l-jaquette { position: relative; height: min(46vh, 420px); aspect-ratio: var(--ratio, .8); border-radius: 18px; overflow: hidden; background: #16161a;
+  box-shadow: 0 40px 90px rgba(0, 0, 0, .7), 0 0 0 1px rgba(255, 255, 255, .12), 0 0 120px -10px var(--lueur, rgba(255, 255, 255, .25));
+  transform-origin: 50% 100%; animation: l-arrive .9s cubic-bezier(.16, 1, .3, 1) both, l-flotte 5s ease-in-out .9s infinite; }
+#lancement .l-jaquette img { width: 100%; height: 100%; object-fit: cover; display: block; }
+#lancement .l-sans { position: absolute; inset: 0; display: grid; place-items: center; padding: 20px; text-align: center; font-size: 22px; font-weight: 800; }
+#lancement .l-reflet { position: absolute; inset: 0; background: linear-gradient(105deg, transparent 35%, rgba(255, 255, 255, .38) 50%, transparent 65%); transform: translateX(-120%); animation: l-reflet 2.8s ease-in-out .7s infinite; pointer-events: none; }
+#lancement .l-titre { margin: 34px 0 0; max-width: 80vw; font-size: clamp(22px, 3.2vw, 38px); font-weight: 800; letter-spacing: -.01em; text-align: center; text-shadow: 0 4px 30px rgba(0, 0, 0, .6); animation: l-monte .7s cubic-bezier(.16, 1, .3, 1) .25s both; }
+#lancement .l-console { margin: 8px 0 0; font-size: 12.5px; font-weight: 700; letter-spacing: .22em; text-transform: uppercase; color: rgba(245, 245, 247, .6); animation: l-monte .7s cubic-bezier(.16, 1, .3, 1) .35s both; }
+#lancement .l-barre { position: relative; width: min(360px, 60vw); height: 4px; margin-top: 34px; border-radius: 4px; background: rgba(255, 255, 255, .12); overflow: hidden; animation: l-monte .7s cubic-bezier(.16, 1, .3, 1) .45s both; }
+#lancement .l-barre i { position: absolute; inset: 0; transform-origin: 0 50%; transform: scaleX(0); border-radius: inherit; background: linear-gradient(90deg, rgba(255, 255, 255, .7), #fff); box-shadow: 0 0 14px rgba(255, 255, 255, .7); transition: transform .6s cubic-bezier(.22, 1, .36, 1); }
+#lancement .l-barre::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .5), transparent); width: 30%; animation: l-file 1.4s linear infinite; }
+#lancement .l-etape { margin: 14px 0 0; min-height: 1.3em; font-size: 13.5px; color: rgba(245, 245, 247, .7); animation: l-monte .7s cubic-bezier(.16, 1, .3, 1) .55s both; }
+#lancement.sortie { animation: l-noir .45s ease-in forwards; }
+#lancement.sortie .l-jaquette { animation: l-fonce .45s cubic-bezier(.7, 0, .84, 0) forwards; }
+#lancement.sortie :is(.l-titre, .l-console, .l-barre, .l-etape) { animation: l-part .25s ease-in forwards; }
+@keyframes l-fond-in { to { opacity: 1; } }
+@keyframes l-derive { from { transform: scale(1.05) translate(-1.5%, -1%); } to { transform: scale(1.15) translate(1.5%, 1%); } }
+@keyframes l-arrive { from { opacity: 0; transform: translateY(60px) rotateX(38deg) scale(.82); filter: blur(8px); } to { opacity: 1; transform: none; filter: none; } }
+@keyframes l-flotte { 50% { transform: translateY(-8px) rotateX(3deg); } }
+@keyframes l-reflet { 0% { transform: translateX(-120%); } 55%, 100% { transform: translateX(120%); } }
+@keyframes l-monte { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+@keyframes l-file { from { transform: translateX(-100%); } to { transform: translateX(400%); } }
+@keyframes l-fonce { to { transform: translateZ(700px) scale(1.4); opacity: 0; filter: blur(6px) brightness(1.6); } }
+@keyframes l-part { to { opacity: 0; transform: translateY(10px); } }
+@keyframes l-noir { 60% { background: #000; } to { background: #000; opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { #lancement *, #lancement { animation-duration: .01s !important; animation-iteration-count: 1 !important; } }
+
 /* OLED : tout est noir, les éléments gardent un fin contour. */
 body.oled :is(.btn, .act, .choix, .bv-btn, .bv-choix, .touche, .prof-bouton, .joueur, .bv-b, .tile, .ctx-act, .roue, .salle-code, .bv-manette, .bv-pc span, .prof-chiffres > div):not(.focus):not(.choisi):not(.sel) { box-shadow: inset 0 0 0 1px var(--trait-fort); }
 body.oled .bienvenue::before { display: none; }

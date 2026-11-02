@@ -192,3 +192,5 @@ function rythme() {
 
 // Rien ne se traîne hors de l'app (images, textes) : les éléments de l'accueil ont leur propre glisser-déposer.
 addEventListener('dragstart', (e) => e.preventDefault());
+// Ni menu « Enregistrer l'image » ni « Inspecter » du navigateur : seuls les champs gardent le leur (copier, coller).
+addEventListener('contextmenu', (e) => !e.target.closest('input, textarea') && e.preventDefault());

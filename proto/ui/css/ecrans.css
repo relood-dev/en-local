@@ -836,7 +836,7 @@ body.reduit .bienvenue * { animation: none !important; }
 /* Menu HOME : le jeu en pause, dans la barre du haut. */
 .en-cours { display: none; border: 0; font: inherit; color: inherit; cursor: pointer; padding: 0 18px 0 5px; max-width: 380px; text-align: left; }
 .en-cours img { width: 72px; height: 40px; border-radius: 20px 8px 8px 20px; object-fit: cover; flex: none; background: var(--surface-3); }
-.en-cours small .opt { margin-left: 10px; }
+.en-cours small .opt { display: inline-flex; align-items: center; gap: 6px; margin-left: 10px; }
 
 /* Capture ou vidéo en plein écran. */
 .vue { position: fixed; inset: 0; z-index: 65; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 16px; background: #000; }
@@ -1053,11 +1053,43 @@ body.reduit .trn-debut.urgent .trn-horloge { animation: none; }
 /* Glisser-déposer de jeux : l'app s'entoure d'un cadre pendant le survol */
 body.depot::after { content: 'Dépose tes jeux ou archives : ils se rangent tout seuls'; position: fixed; inset: 14px; z-index: 9999; display: grid; place-items: center; border-radius: var(--r-l); box-shadow: inset 0 0 0 3px var(--accent); background: rgba(10, 10, 12, .72); color: var(--texte); font-size: 24px; font-weight: 800; pointer-events: none; }
 
-/* ---------- Figurines : amiibo et Skylanders ---------- */
-.figurines { z-index: 70; }
-.fig-carte { width: 980px; height: min(760px, calc(100vh - 60px)); gap: 10px; }
-.fig-texte { color: var(--doux); font-size: var(--t-petit); margin-top: -4px; }
-.fig-corps { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: none; display: flex; flex-direction: column; gap: 26px; padding: 10px 6px 24px;
+/* ---------- Figurines : amiibo et Skylanders (section du menu HOME) ---------- */
+/* À gauche le lecteur (ou le portail) avec ce qui est posé dessus, à droite toutes les figurines. */
+.fig { position: absolute; inset: 96px 60px 70px; display: grid; grid-template-columns: 300px 1fr; gap: 40px; }
+.fig-cote { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+.fig-cote h1 { font-size: 48px; letter-spacing: -.035em; line-height: 1.05; }
+.fig-cote > p { color: var(--doux); }
+.fig-cote .fig-aide { font-size: var(--t-petit); line-height: 1.5; }
+.fig-usage { font-size: var(--t-petit); line-height: 1.5; color: var(--doux); padding: 10px 12px; border-radius: var(--r-s); background: var(--bouton); }
+.fig-usage b { color: var(--texte); }
+/* Le plateau : un socle lumineux, la figurine posée dessus. */
+.fig-plateau { position: relative; display: flex; justify-content: center; align-items: flex-end; gap: 6px; min-height: 230px; margin: 8px 0; padding: 0 10px 34px; border-radius: var(--r-l);
+  background: radial-gradient(ellipse 70% 18% at 50% 86%, color-mix(in srgb, var(--accent) 55%, transparent), transparent 70%), var(--bouton); overflow: hidden; }
+.fig-plateau::after { content: ''; position: absolute; left: 14%; right: 14%; bottom: 22px; height: 22px; border-radius: 50%; box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 70%, transparent), 0 0 28px color-mix(in srgb, var(--accent) 60%, transparent); animation: fig-socle 2.4s ease-in-out infinite; }
+@keyframes fig-socle { 50% { box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 40%, transparent), 0 0 12px color-mix(in srgb, var(--accent) 30%, transparent); } }
+.fig-pose { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 0; animation: fig-arrive var(--d-3) var(--rebond) both; }
+.fig-pose img { width: 150px; height: 150px; object-fit: contain; filter: drop-shadow(0 10px 14px rgba(0, 0, 0, .35)); animation: fig-flotte 3.2s ease-in-out infinite; }
+.fig-pose b { font-size: 13px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fig-plateau.plusieurs .fig-pose img { width: 76px; height: 76px; }
+.fig-plateau.plusieurs .fig-pose b { font-size: 11px; max-width: 80px; }
+@keyframes fig-arrive { from { opacity: 0; transform: translateY(-40px) scale(.8); } }
+@keyframes fig-flotte { 50% { transform: translateY(-6px); } }
+.fig-plateau.vide { align-items: center; padding-bottom: 0; flex-direction: column; justify-content: center; color: var(--discret); font-weight: 700; }
+.fig-plateau.vide::after { opacity: .5; animation: none; }
+.fig-plateau.vide i { width: 56px; height: 56px; border-radius: 50%; border: 3px dashed var(--trait-fort); margin-bottom: 10px; }
+/* Collection : Amiibo ou Skylanders, et le compte. */
+.fig-sortes { display: flex; gap: 6px; padding: 4px; border-radius: 999px; background: var(--bouton); align-self: flex-start; }
+.fig-sorte { all: unset; cursor: pointer; padding: 7px 16px; border-radius: 999px; font-weight: 700; font-size: 14px; color: var(--doux); transition: background var(--d-1), color var(--d-1); }
+.fig-sorte.ici { background: var(--accent); color: var(--sur-accent); }
+.fig-filtre { all: unset; cursor: pointer; display: flex; align-items: center; gap: 8px; align-self: flex-start; max-width: 100%; margin-top: 4px; padding: 7px 14px 7px 8px; border-radius: 999px; background: var(--bouton); font-weight: 700; font-size: 14px; color: var(--doux); }
+.fig-filtre span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fig-filtre.actif { box-shadow: inset 0 0 0 2px var(--accent); color: var(--texte); }
+:where(body:not(.sans-souris)) .fig-filtre:hover, :where(body:not(.sans-souris)) .fig-sorte:hover:not(.ici) { background: var(--bouton-survol); }
+.fig-compte { display: grid; grid-template-columns: auto 1fr; align-items: baseline; column-gap: 10px; row-gap: 12px; margin: 18px 0 8px; }
+.fig-compte b { font-size: 64px; font-weight: 800; letter-spacing: -.04em; line-height: 1; }
+.fig-compte span { color: var(--doux); font-weight: 700; }
+.fig-compte i { grid-column: 1 / -1; height: 8px; border-radius: 4px; background: linear-gradient(90deg, var(--accent) var(--p), var(--champ) var(--p)); }
+.fig-corps { min-height: 0; overflow-y: auto; scrollbar-width: none; display: flex; flex-direction: column; gap: 26px; padding: 10px 6px 24px;
   mask-image: linear-gradient(transparent, #000 12px, #000 calc(100% - 24px), transparent); }
 .fig-section h3 { font-size: 15px; font-weight: 800; margin: 0 0 12px 4px; }
 .fig-poster { display: block; width: 100%; max-height: 150px; object-fit: cover; border-radius: var(--r-s); margin-bottom: 14px; }
@@ -1066,17 +1098,22 @@ body.depot::after { content: 'Dépose tes jeux ou archives : ils se rangent tout
   text-align: center; cursor: pointer; transition: background var(--d-1), transform var(--d-2) var(--rebond), box-shadow var(--d-1); }
 :where(body:not(.sans-souris)) .fig-el:hover:not(.focus) { background: var(--bouton-survol); }
 .fig-el img { width: 84px; height: 84px; object-fit: contain; filter: drop-shadow(0 6px 10px rgba(0, 0, 0, .3)); }
+.fig-el .fig-dessin, .fig-pose .fig-dessin { width: 84px; height: 84px; filter: drop-shadow(0 6px 10px rgba(0, 0, 0, .25)); }
+.fig-pose .fig-dessin { width: 150px; height: 150px; animation: fig-flotte 3.2s ease-in-out infinite; }
 .fig-el img.fig-sym { width: 48px; height: 48px; margin: 18px 0; }
 .fig-vide { display: grid; place-items: center; width: 84px; height: 84px; border-radius: 50%; background: var(--champ); font-size: 32px; font-weight: 800; color: var(--discret); }
 .fig-el b { font-size: 13px; line-height: 1.2; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fig-el small { font-size: 11px; font-weight: 600; color: var(--discret); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fig-el.manquant img { filter: grayscale(1); opacity: .4; }
 .fig-el.manquant b { color: var(--discret); }
+.fig-el.pas-lu:not(.focus) img { opacity: .55; }
 .fig-el.pose { box-shadow: inset 0 0 0 2px var(--accent); }
 .fig-el.pose small { color: var(--accent); font-weight: 800; }
 .fig-el.focus { background: var(--accent); color: var(--sur-accent); transform: scale(1.05); }
 .fig-el.focus small, .fig-el.focus b { color: var(--sur-accent); }
-.fig-rien { color: var(--doux); text-align: center; margin: auto; max-width: 520px; line-height: 1.6; }
+.fig-rien { display: flex; flex-direction: column; align-items: center; gap: 14px; color: var(--doux); text-align: center; margin: auto; max-width: 480px; line-height: 1.6; }
+.fig-rien img { width: 140px; }
+.fig-rien span { display: flex; align-items: center; gap: 6px; font-weight: 700; color: var(--texte); }
 
 /* Thèmes : grille de cartes, chacune un petit En Local à ses couleurs. */
 /* Colonnes fixées : la liste à gauche, le nom et la description du thème visé à droite. */
@@ -1101,3 +1138,4 @@ body.depot::after { content: 'Dépose tes jeux ou archives : ils se rangent tout
 .ap-dock { align-self: center; display: flex; gap: 6px; padding: 5px 9px; margin-bottom: 5%; border-radius: 99px; background: var(--verre); box-shadow: inset 0 0 0 1px var(--verre-bord); }
 .ap-dock i { width: 12px; height: 12px; border-radius: 4px; background: var(--doux); opacity: .55; }
 .ap-dock .ici { background: var(--accent); opacity: 1; }
+body.reduit .fig-pose, body.reduit .fig-pose img, body.reduit .fig-plateau::after { animation: none; }

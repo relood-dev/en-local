@@ -52,7 +52,7 @@ pub fn habillage_ds(parent: isize, f: f64, visible: bool) {
 }
 #[cfg(windows)]
 /// Zone du jeu dans la fenêtre (x, y, largeur, hauteur).
-fn rect_jeu(parent: isize) -> (i32, i32, i32, i32) {
+pub fn rect_jeu(parent: isize) -> (i32, i32, i32, i32) {
     let mut r = RECT::default();
     unsafe {
         let _ = GetClientRect(HWND(parent as _), &mut r);
@@ -566,15 +566,12 @@ fn fenetre_vivante(h: isize) -> bool {
 
 /// GameCube ou Wii, d'après l'en-tête du disque (aussi en RVZ/WIA). .wbfs et .wad : Wii.
 pub fn dolphin_console(path: &str) -> Option<&'static str> {
-    use std::io::Read;
     let lower = path.to_lowercase();
     if lower.ends_with(".wbfs") || lower.ends_with(".wad") {
         return Some("Wii");
     }
-    let mut hdr = [0u8; 0x100];
-    std::fs::File::open(path).ok()?.read_exact(&mut hdr).ok()?;
-    let disc = if &hdr[..3] == b"RVZ" || &hdr[..3] == b"WIA" { 0x58 } else { 0 };
-    let be = |o: usize| u32::from_be_bytes(hdr[disc + o..disc + o + 4].try_into().unwrap());
+    let hdr = entete_disque(path)?;
+    let be = |o: usize| u32::from_be_bytes(hdr[o..o + 4].try_into().unwrap());
     match (be(0x18), be(0x1C)) {
         (0x5D1C_9EA3, _) => Some("Wii"),
         (_, 0xC233_9F3D) => Some("GC"),
@@ -582,13 +579,28 @@ pub fn dolphin_console(path: &str) -> Option<&'static str> {
     }
 }
 
+/// En-tête du disque GameCube/Wii, quel que soit le format : ISO, RVZ, WIA, WBFS, CISO (pas GCZ, compressé).
+fn entete_disque(path: &str) -> Option<[u8; 0x100]> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut f = std::fs::File::open(path).ok()?;
+    let mut hdr = [0u8; 0x100];
+    f.read_exact(&mut hdr).ok()?;
+    let debut = match &hdr[..4] {
+        [b'R', b'V', b'Z', _] | [b'W', b'I', b'A', _] => 0x58,
+        // WBFS : copie de l'en-tête du premier disque au secteur 1 (taille : 2^octet 8, 512 d'habitude).
+        b"WBFS" => 1u64 << hdr[8].clamp(9, 20),
+        b"CISO" => 0x8000,
+        _ => return Some(hdr),
+    };
+    f.seek(SeekFrom::Start(debut)).ok()?;
+    f.read_exact(&mut hdr).ok()?;
+    Some(hdr)
+}
+
 /// Identifiant du jeu GameCube/Wii (ex. « GALE01 »), au début de l'en-tête du disque.
 pub fn dolphin_game_id(path: &str) -> Option<String> {
-    use std::io::Read;
-    let mut hdr = [0u8; 0x60];
-    std::fs::File::open(path).ok()?.read_exact(&mut hdr).ok()?;
-    let disc = if &hdr[..3] == b"RVZ" || &hdr[..3] == b"WIA" { 0x58 } else { 0 };
-    let id = std::str::from_utf8(hdr.get(disc..disc + 6)?).ok()?;
+    let hdr = entete_disque(path)?;
+    let id = std::str::from_utf8(&hdr[..6]).ok()?;
     id.bytes().all(|b| b.is_ascii_alphanumeric()).then(|| id.to_string())
 }
 
@@ -1003,10 +1015,12 @@ pub fn start_cemu(dir: &str, game: &str, parent: isize, o: &crate::reglages::Opt
     if let Some(m) = crate::mii::du_joueur(o) {
         crate::mii::cemu(dir, &m);
     }
+    // Portail Skylanders : notre Cemu suit ce fichier, vidé à chaque lancement (rien sur le portail).
+    crate::figurines::vider();
     let mut cmd = Command::new(exe(dir, "Cemu.exe", EXE_WIIU));
     #[cfg(not(windows))]
     suivre_cadre_injecte(&mut cmd);
-    let child = cmd.env("SDL_GAMECONTROLLERCONFIG", crate::pad::mappings()).args(["-g", game]).sans_fenetre().spawn().map(tie).map_err(|e| e.to_string())?;
+    let child = cmd.env("SDL_GAMECONTROLLERCONFIG", crate::pad::mappings()).env("ENLOCAL_SKYLANDERS", crate::figurines::fichier("skylanders")).args(["-g", game]).sans_fenetre().spawn().map(tie).map_err(|e| e.to_string())?;
     coller(child, parent, "Cemu", "Cemu", "FPS", Duration::from_secs(30))
 }
 
@@ -1320,6 +1334,28 @@ pub fn netplay_cancel() {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn id_des_disques_wii() {
+        let dir = std::env::temp_dir().join("enlocal-test-disques");
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut disque = vec![0u8; 0x100];
+        disque[..6].copy_from_slice(b"SSPP52");
+        disque[0x18..0x1C].copy_from_slice(&0x5D1C_9EA3u32.to_be_bytes());
+        let ecrire = |nom: &str, avant: &[u8], debut: usize| {
+            let mut f = avant.to_vec();
+            f.resize(debut, 0);
+            f.extend_from_slice(&disque);
+            let p = dir.join(nom);
+            std::fs::write(&p, f).unwrap();
+            p.to_string_lossy().into_owned()
+        };
+        let mut wbfs = b"WBFS\0\0\0\x10\x09".to_vec();
+        wbfs.resize(0x100, 0);
+        for p in [ecrire("a.iso", &[], 0), ecrire("b.wbfs", &wbfs, 0x200), ecrire("c.ciso", b"CISO", 0x8000)] {
+            assert_eq!(super::dolphin_game_id(&p).as_deref(), Some("SSPP52"), "{p}");
+            assert_eq!(super::dolphin_console(&p), Some("Wii"), "{p}");
+        }
+    }
     #[test]
     fn manette_pro_wii_u() {
         // A à − identiques ; croix, clics des sticks et sticks décalés d'un (HOME en 11).

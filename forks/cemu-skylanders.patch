@@ -1,0 +1,88 @@
+diff --git a/src/Cafe/OS/libs/nsyshid/BackendEmulated.cpp b/src/Cafe/OS/libs/nsyshid/BackendEmulated.cpp
+index 533d349..014b526 100644
+--- a/src/Cafe/OS/libs/nsyshid/BackendEmulated.cpp
++++ b/src/Cafe/OS/libs/nsyshid/BackendEmulated.cpp
+@@ -5,11 +5,74 @@
+ #include "Skylander.h"
+ #include "config/CemuConfig.h"
+ 
++#include <chrono>
++#include <cstdlib>
++#include <fstream>
++#include <map>
++#include <mutex>
++#include <thread>
++
+ namespace nsyshid::backend::emulated
+ {
++	// En Local : portail Skylanders piloté par le fichier ENLOCAL_SKYLANDERS (un chemin de .sky par ligne,
++	// vide = portail vide). Le portail est émulé dès que la variable existe ; les figurines suivent le fichier.
++	static void SuivreSkylandersEnLocal(std::string fichier)
++	{
++		std::map<std::string, uint8> poses; // chemin -> emplacement sur le portail
++		std::string avant = "\x01";
++		while (true)
++		{
++			std::this_thread::sleep_for(std::chrono::milliseconds(300));
++			std::ifstream f(fichier, std::ios::binary);
++			std::string tout((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
++			if (tout == avant)
++				continue;
++			avant = tout;
++			std::map<std::string, bool> voulus;
++			size_t debut = 0;
++			while (debut <= tout.size())
++			{
++				size_t fin = tout.find('\n', debut);
++				std::string ligne = tout.substr(debut, fin == std::string::npos ? std::string::npos : fin - debut);
++				if (!ligne.empty() && ligne.back() == '\r')
++					ligne.pop_back();
++				if (!ligne.empty())
++					voulus[ligne] = true;
++				if (fin == std::string::npos)
++					break;
++				debut = fin + 1;
++			}
++			for (auto it = poses.begin(); it != poses.end();)
++			{
++				if (voulus.count(it->first))
++				{
++					++it;
++					continue;
++				}
++				g_skyportal.RemoveSkylander(it->second);
++				it = poses.erase(it);
++			}
++			for (auto& [chemin, _] : voulus)
++			{
++				if (poses.count(chemin))
++					continue;
++				std::unique_ptr<FileStream> sky(FileStream::openFile2(_utf8ToPath(chemin), true));
++				std::array<uint8, SKY_FIGURE_SIZE> donnees{};
++				if (!sky || sky->readData(donnees.data(), donnees.size()) != donnees.size())
++					continue;
++				uint8 place = g_skyportal.LoadSkylander(donnees.data(), std::move(sky));
++				if (place != 0xFF)
++					poses[chemin] = place;
++			}
++		}
++	}
++
+ 	BackendEmulated::BackendEmulated()
+ 	{
+ 		cemuLog_logDebug(LogType::Force, "nsyshid::BackendEmulated: emulated backend initialised");
++		static std::once_flag suivi;
++		if (const char* fichier = std::getenv("ENLOCAL_SKYLANDERS"))
++			std::call_once(suivi, [fichier] { std::thread(SuivreSkylandersEnLocal, std::string(fichier)).detach(); });
+ 	}
+ 
+ 	BackendEmulated::~BackendEmulated() = default;
+@@ -21,7 +84,7 @@ namespace nsyshid::backend::emulated
+ 
+ 	void BackendEmulated::AttachVisibleDevices()
+ 	{
+-		if (GetConfig().emulated_usb_devices.emulate_skylander_portal && !FindDeviceById(0x1430, 0x0150))
++		if ((GetConfig().emulated_usb_devices.emulate_skylander_portal || std::getenv("ENLOCAL_SKYLANDERS")) && !FindDeviceById(0x1430, 0x0150))
+ 		{
+ 			cemuLog_logDebug(LogType::Force, "Attaching Emulated Portal");
+ 			// Add Skylander Portal

@@ -1,0 +1,85 @@
+# Publier une version d'En Local sans le PC : Actions > Publier > Run workflow (branche dev).
+# 1. Windows (GitHub) : compile l'installeur et le signe. Les émulateurs ne se compilent pas ici : ceux de
+#    la release privée « emu » de ce dépôt (dossier emu d'un installeur publié, vérifié sans clés ni jeux).
+# 2. Linux (GitHub) : rejoint le réseau Tailscale et dépose l'installeur et sa signature sur le ThinkPad,
+#    où Loc les prend pour la page de téléchargement et les mises à jour.
+# Secrets : TAURI_SIGNING_PRIVATE_KEY (cles\en-local-maj.key), TS_AUTHKEY (clé Tailscale éphémère),
+# PUBLIER_SSH (clé privée qui peut écrire sur le ThinkPad), PUBLIER_VERS (même contenu que cles\publier.txt).
+name: Publier
+on:
+  workflow_dispatch:
+    inputs:
+      envoyer:
+        description: "Envoyer sur le ThinkPad (sinon : seulement compiler, l'installeur reste dans les artefacts du run)"
+        type: boolean
+        default: false
+permissions:
+  contents: read
+jobs:
+  compiler:
+    runs-on: windows-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with: { node-version: 22 }
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - id: v
+        shell: bash
+        run: echo "version=$(node -p "require('./proto/src-tauri/installeur.json').version")" >> "$GITHUB_OUTPUT"
+      - name: Émulateurs
+        run: |
+          gh release download emu -p emu.zip -D $env:RUNNER_TEMP
+          Expand-Archive $env:RUNNER_TEMP\emu.zip dist\emu
+          "{0:N0} Mo d'émulateurs" -f ((Get-ChildItem -Recurse -File dist\emu | Measure-Object Length -Sum).Sum / 1MB)
+        env: { GH_TOKEN: "${{ github.token }}" }
+      # Les dépendances s'installent sans la clé de signature : seul le build la voit.
+      - name: Dépendances
+        working-directory: proto
+        run: npm ci --ignore-scripts
+      - name: Installeur
+        working-directory: proto
+        run: npx tauri build --config src-tauri\installeur.json
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+      - name: Nom de publication
+        shell: bash
+        run: |
+          d=proto/src-tauri/target/release/bundle/nsis
+          mkdir sortie
+          cp "$d/En Local_${{ steps.v.outputs.version }}_x64-setup.exe" "sortie/En-Local_${{ steps.v.outputs.version }}_setup.exe"
+          cp "$d/En Local_${{ steps.v.outputs.version }}_x64-setup.exe.sig" "sortie/En-Local_${{ steps.v.outputs.version }}_setup.exe.sig"
+          ls -la sortie
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with: { name: installeur, path: sortie, retention-days: 7, compression-level: 0 }
+
+  publier:
+    needs: compiler
+    if: inputs.envoyer
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with: { name: installeur, path: sortie }
+      - uses: tailscale/github-action@6cae46e2d796f265265cfcf628b72a32b4d7cade # v3
+        with: { authkey: "${{ secrets.TS_AUTHKEY }}" }
+      - name: Envoi sur le ThinkPad
+        run: |
+          v=${{ needs.compiler.outputs.version }}
+          printf '%s\n' "$PUBLIER_SSH" > "$RUNNER_TEMP/cle" && chmod 600 "$RUNNER_TEMP/cle"
+          o="-i $RUNNER_TEMP/cle -o BatchMode=yes -o StrictHostKeyChecking=accept-new"
+          # Une version déjà publiée n'est jamais écrasée : changer la version dans installeur.json.
+          hote=${PUBLIER_VERS%%:*}; dossier=${PUBLIER_VERS#*:}
+          if ssh $o "$hote" test -e "$dossier/En-Local_${v}_setup.exe"; then echo "La $v est déjà publiée : rien envoyé."; exit 1; fi
+          # La signature d'abord ; l'installeur arrive sous un autre nom puis est renommé : Loc ne voit la
+          # version qu'une fois tout arrivé.
+          # scp -O : l'ancien protocole, le seul que la clé de GitHub a le droit d'utiliser sur le ThinkPad.
+          scp -O $o "sortie/En-Local_${v}_setup.exe.sig" "$PUBLIER_VERS/En-Local_${v}_setup.exe.sig"
+          scp -O $o "sortie/En-Local_${v}_setup.exe" "$PUBLIER_VERS/En-Local_${v}_setup.exe.part"
+          ssh $o "$hote" mv "$dossier/En-Local_${v}_setup.exe.part" "$dossier/En-Local_${v}_setup.exe"
+          rm "$RUNNER_TEMP/cle"
+          echo "Publié : En-Local_${v}_setup.exe (+ .sig)"
+        env:
+          PUBLIER_SSH: ${{ secrets.PUBLIER_SSH }}
+          PUBLIER_VERS: ${{ secrets.PUBLIER_VERS }}

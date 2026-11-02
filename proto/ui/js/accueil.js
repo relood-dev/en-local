@@ -1,12 +1,12 @@
 /*
- * Accueil : 4 pages de cases où le joueur range jeux, widgets et images.
+ * Accueil : des pages de cases (4 par défaut, de 1 à 8 au choix) où le joueur range jeux, widgets et images.
  * Les images sont copiées dans data\home. Retirer un élément ne supprime aucun fichier.
  * Taille des icônes : plus de cases donne des icônes plus petites.
  */
 const DENSITES = { grandes: [8, 3], moyennes: [10, 4], petites: [12, 5] };
 const densite = () => (DENSITES[localStorage.densite] ? localStorage.densite : 'grandes');
 let [COLS, ROWS] = DENSITES[densite()];
-const PAGES = 4;
+let PAGES = Math.min(8, Math.max(1, +localStorage.pages || 4));
 document.documentElement.style.setProperty('--cols', COLS);
 document.documentElement.style.setProperty('--rows', ROWS);
 /** Change la taille des icônes et range de nouveau l'accueil dans l'ordre. */
@@ -26,6 +26,23 @@ function changerDensite(d) {
   page = 0;
   garderMaison();
   maisonPrete = true;
+  if (onglet === 'accueil') drawMaison(true);
+}
+/** Nombre de pages : les éléments des pages retirées se rangent dans celles qui restent. */
+function changerPages(n) {
+  n = +n;
+  if (!(n >= 1 && n <= 8) || n === PAGES) return;
+  const avant = PAGES, copie = JSON.stringify(maison);
+  PAGES = n;
+  const dehors = maison.filter((x) => x.page >= n);
+  for (const x of dehors) x.page = -1;
+  if (!dehors.every((x) => placer(x))) {
+    [PAGES, maison] = [avant, JSON.parse(copie)];
+    return oops(`Pas la place sur ${n} page${n > 1 ? 's' : ''} : retire ou réduis quelques éléments d'abord.`);
+  }
+  localStorage.pages = n;
+  page = Math.min(page, n - 1);
+  garderMaison();
   if (onglet === 'accueil') drawMaison(true);
 }
 const TAILLES = {
@@ -89,6 +106,8 @@ function maisonParDefaut() {
     { t: 'profil', page: 1, x: 0, y: 0, w: 4, h: 2 },
     { t: 'loc', loc: 'coucou', page: 1, x: 6, y: 1, w: 2, h: 2 },
   ].map((x) => ({ id: nouvelId(), ...x }));
+  // Moins de pages choisies : ce qui dépasse se range ailleurs, ou attend.
+  for (const x of maison.filter((o) => o.page >= PAGES)) if (!placer(Object.assign(x, { page: -1 }))) maison = maison.filter((o) => o !== x);
   const recents = [...games].sort((a, b) => (stats[b.path]?.last || 0) - (stats[a.path]?.last || 0));
   for (const g of recents) ajouterSiPlace({ id: nouvelId(), t: 'jeu', path: g.path, w: 1, h: 1 });
   ajouterSiPlace({ id: nouvelId(), t: 'captures', w: 4, h: 2 });
@@ -138,7 +157,7 @@ function iconeHtml(g, loin = false) {
   if (lue && lue !== 'aucune') return `<img class="icone-img" src="${lue}" alt=""${plus}>`;
   if (lue === undefined) lireIcone(g);
   const jaquette = coverImg(g, 'icone-img jaquette', loin);
-  return jaquette || `<div class="icone-sans">${iconeConsole(g.console, 'filigrane')}<b>${esc(g.name)}</b></div>`;
+  return jaquette || `<div class="icone-sans">${iconeConsole(g.console, 'filigrane')}<b>${esc(titreDe(g))}</b></div>`;
 }
 /** Scale2x : agrandit sans flou. */
 function scale2x(src, w, h) {
@@ -186,7 +205,7 @@ function itemHtml(x, n) {
   if (x.t === 'jeu') {
     const i = games.findIndex((g) => g.path === x.path);
     const g = games[i];
-    const titre = fiche(g)?.title || g.name;
+    const titre = titreDe(g);
     return `<div ${base('jeu', titre, `data-i="${i}"`)}><div class="icone">${iconeHtml(g)}</div>${poignee}</div>`;
   }
   if (x.t === 'image' || x.t === 'capture') {
@@ -199,7 +218,7 @@ function itemHtml(x, n) {
     const r = dernier();
     // Pas encore de partie : le widget sert à ajouter des jeux (fichiers ou archives, déposés ou choisis).
     if (!r) return `<div ${base('dossier', 'Ajouter des jeux')}><img class="w-loc" src="img/loc/loc_dossier.gif" alt=""><div class="in plat"><span class="tag">Ajouter des jeux</span><h3>Dépose un jeu ou un .zip ici</h3><span class="s">Avec ses mises à jour et DLC, tout se range tout seul</span></div>${poignee}</div>`;
-    const titre = fiche(r.g)?.title || r.g.name;
+    const titre = titreDe(r.g);
     const st = stats[r.g.path];
     const fond = derniereImage(r.g);
     return `<div ${base('jouer', titre, `data-i="${r.i}"`)}>${fond ? `<img class="bg" src="${fond}" alt="">` : coverImg(r.g, 'bg flou')}<div class="shade"></div>
@@ -317,8 +336,9 @@ function lierItems() {
         cible = c && { x: Math.max(0, Math.min(COLS - x.w, c.x - prisEn.x)), y: Math.max(0, Math.min(ROWS - x.h, c.y - prisEn.y)) };
         repere.style.display = cible ? '' : 'none';
         if (!cible) return;
-        repere.style.gridArea = `${cible.y + 1} / ${cible.x + 1} / span ${x.h} / span ${x.w}`;
-        repere.classList.toggle('non', !peutAller(x, cible.x, cible.y));
+        const ok = peutAller(x, cible.x, cible.y);
+        repere.style.gridArea = `${(ok || cible).y + 1} / ${(ok || cible).x + 1} / span ${x.h} / span ${x.w}`;
+        repere.classList.toggle('non', !ok);
       };
       const pose = () => {
         clearTimeout(versPage.t);
@@ -349,7 +369,8 @@ function lierItems() {
 /** Molette : une page par geste. */
 function suivreMolette() {
   $('#board').addEventListener('wheel', (e) => {
-    const d = onglet === 'accueil' && !modif ? cran(e, true) : 0;
+    // Aussi en mode Personnaliser : l'élément pris suit vers l'autre page.
+    const d = onglet === 'accueil' && !shown('#sheet') ? cran(e, true) : 0;
     if (d) changerPage(page + d);
   }, { passive: true });
 }
@@ -478,17 +499,29 @@ function prendre() {
 }
 /** Déplace un élément, ou l'échange avec un élément de même taille. */
 /** Place libre, ou occupée par un élément de même taille (ils s'échangent) : null si impossible. */
+/**
+ * Place visée libre, ou échange avec le seul élément qu'elle touche (même s'il n'a pas la même taille) :
+ * x prend sa place (ou la case visée), l'autre celle de x. null si rien ne marche.
+ */
 function peutAller(x, nx, ny) {
-  if (libre(page, nx, ny, x.w, x.h, x)) return { libre: true };
-  const autre = surPage().find((o) => o !== x && o.x === nx && o.y === ny && o.w === x.w && o.h === x.h);
-  return autre ? { autre } : null;
+  if (libre(page, nx, ny, x.w, x.h, x)) return { x: nx, y: ny };
+  const touche = (ax, ay, aw, ah, bx, by, bw, bh) => ax < bx + bw && bx < ax + aw && ay < by + bh && by < ay + ah;
+  const autres = surPage().filter((o) => o !== x && touche(o.x, o.y, o.w, o.h, nx, ny, x.w, x.h));
+  if (autres.length !== 1) return null;
+  const [autre] = autres;
+  const bx = Math.min(x.x, COLS - autre.w), by = Math.min(x.y, ROWS - autre.h);
+  const p = autre.page;
+  autre.page = -1; // hors de la page le temps de vérifier
+  const place = [[autre.x, autre.y], [nx, ny]].find(([ax, ay]) => libre(page, ax, ay, x.w, x.h, x) && libre(page, bx, by, autre.w, autre.h, x) && !touche(ax, ay, x.w, x.h, bx, by, autre.w, autre.h));
+  autre.page = p;
+  return place && { x: place[0], y: place[1], autre, ax: bx, ay: by };
 }
 function deplacerVers(x, nx, ny) {
   if (!x) return;
   const ok = peutAller(x, nx, ny);
   if (!ok) return refus();
-  if (ok.autre) Object.assign(ok.autre, { x: x.x, y: x.y });
-  Object.assign(x, { x: nx, y: ny });
+  if (ok.autre) Object.assign(ok.autre, { x: ok.ax, y: ok.ay });
+  Object.assign(x, { x: ok.x, y: ok.y });
   garderMaison();
   const k = surPage().indexOf(x);
   if (prise >= 0) prise = k;
@@ -548,7 +581,7 @@ function ajouter() {
     { label: 'Une image ou un GIF de ton PC', fn: () => choisirFichier((src) => poser({ t: 'image', src, w: 2, h: 2 })) },
     { label: 'Une de tes captures', fn: ajouterCapture },
     { label: 'Un widget', fn: () => sheet('Un widget', '', [...WIDGETS.map(([t, label]) => ({ label, fn: () => poser({ t, w: TAILLES[t][0][0], h: TAILLES[t][0][1], ...(t === 'loc' ? { loc: 'coucou' } : {}) }) })), { label: 'Annuler', cancel: true }]) },
-    ...(jeux.length ? [{ label: `Un jeu (${jeux.length} pas encore sur l'accueil)`, fn: () => sheet('Un jeu', '', [...jeux.map((g) => ({ label: fiche(g)?.title || g.name, fn: () => poser({ t: 'jeu', path: g.path, w: 1, h: 1 }) })), { label: 'Annuler', cancel: true }]) }] : []),
+    ...(jeux.length ? [{ label: `Un jeu (${jeux.length} pas encore sur l'accueil)`, fn: () => sheet('Un jeu', '', [...jeux.map((g) => ({ label: titreDe(g), fn: () => poser({ t: 'jeu', path: g.path, w: 1, h: 1 }) })), { label: 'Annuler', cancel: true }]) }] : []),
     { label: 'Annuler', cancel: true },
   ]);
 }
@@ -562,7 +595,7 @@ function poser(x) {
   item.page = -1;
   const place = trouverPlace(page, item.w, item.h, 0, 0);
   if (place) Object.assign(item, { page }, place);
-  else if (!placer(item, page)) return oops('Les 4 pages sont pleines : retire ou réduis un élément pour faire de la place.');
+  else if (!placer(item, page)) return oops(`Les ${PAGES} pages sont pleines : retire ou réduis un élément pour faire de la place.`);
   maison.push(item);
   page = item.page;
   garderMaison();
@@ -628,7 +661,7 @@ async function capturer() {
   if (!current) return;
   son('photo', true);
   try {
-    const opts = { headers: { jeu: encodeURIComponent(fiche(current)?.title || current.name) } };
+    const opts = { headers: { jeu: encodeURIComponent(titreDe(current)) } };
     if (current.console === 'DS') {
       const blob = await new Promise((r) => canvas.toBlob(r, 'image/png'));
       await invoke('capture', new Uint8Array(await blob.arrayBuffer()), opts);
@@ -654,7 +687,7 @@ async function enregistrerClip(avant = 0) {
   son('photo', true);
   bulleJeu(`Clip des ${dureeClips()} dernières secondes…`);
   try {
-    const fichier = await invoke('clip', { jeu: fiche(current)?.title || current.name, avant });
+    const fichier = await invoke('clip', { jeu: titreDe(current), avant });
     clipsPartie++;
     compter('clips');
     mediasLu = null;

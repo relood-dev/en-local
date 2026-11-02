@@ -693,11 +693,38 @@ fn lire_pack(texte: &str) -> Option<PackLu> {
 
 /// Title ID d'un jeu Wii U décompressé (meta\meta.xml).
 pub fn wiiu_title_id(rpx: &str) -> Option<String> {
+    if rpx.to_lowercase().ends_with(".wua") {
+        return wua_title_id(rpx);
+    }
     let meta = std::fs::read_to_string(std::path::Path::new(rpx).parent()?.parent()?.join("meta").join("meta.xml")).ok()?;
     let i = meta.find("<title_id")?;
     let from = i + meta[i..].find('>')? + 1;
     let to = from + meta[from..].find('<')?;
     Some(meta[from..to].trim().to_string()).filter(|s| s.len() == 16)
+}
+
+/// Jeu dans un .wua (ZArchive de Cemu) : ses dossiers s'appellent « <title ID>_v<version> ».
+/// La table des noms n'est pas compressée : pied de 144 octets (big-endian), noms en 3e section.
+fn wua_title_id(path: &str) -> Option<String> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut f = std::fs::File::open(path).ok()?;
+    let mut pied = [0u8; 144];
+    f.seek(SeekFrom::End(-144)).ok()?;
+    f.read_exact(&mut pied).ok()?;
+    let u64be = |o: usize| u64::from_be_bytes(pied[o..o + 8].try_into().unwrap());
+    if u32::from_be_bytes(pied[140..144].try_into().unwrap()) != 0x169f_52d6 {
+        return None;
+    }
+    let (debut, taille) = (u64be(32), u64be(40).min(16 << 20));
+    let mut noms = vec![0u8; taille as usize];
+    f.seek(SeekFrom::Start(debut)).ok()?;
+    f.read_exact(&mut noms).ok()?;
+    titre_wua(&noms)
+}
+/// Premier « 00050000xxxxxxxx_v » (le jeu, pas sa mise à jour 0005000E ni ses DLC 0005000C).
+fn titre_wua(noms: &[u8]) -> Option<String> {
+    noms.windows(18).find(|w| w[16..] == *b"_v" && w[..8].eq_ignore_ascii_case(b"00050000") && w[..16].iter().all(u8::is_ascii_hexdigit))
+        .map(|w| String::from_utf8_lossy(&w[..16]).to_uppercase())
 }
 
 /* ---------- Switch : Eden ---------- */
@@ -859,6 +886,23 @@ pub fn eden_mods(eden: &str, title_id: &str) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn title_id_d_un_wua() {
+        // Noms : mise à jour, puis le jeu ; pied de 144 octets avec la section des noms en 3e.
+        let noms = b"\x130005000e10128f00_v80\x130005000010128f00_v0\x04code".to_vec();
+        let mut f = vec![0u8; 100];
+        let debut = f.len() as u64;
+        f.extend_from_slice(&noms);
+        let mut pied = [0u8; 144];
+        pied[32..40].copy_from_slice(&debut.to_be_bytes());
+        pied[40..48].copy_from_slice(&(noms.len() as u64).to_be_bytes());
+        pied[140..].copy_from_slice(&0x169f_52d6u32.to_be_bytes());
+        f.extend_from_slice(&pied);
+        let p = std::env::temp_dir().join("enlocal-test.wua");
+        std::fs::write(&p, f).unwrap();
+        assert_eq!(super::wiiu_title_id(&p.to_string_lossy()).as_deref(), Some("0005000010128F00"));
+    }
+
     use super::*;
     fn opts(l: &[(&str, &str)]) -> Opts {
         l.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()

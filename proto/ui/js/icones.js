@@ -5,6 +5,7 @@
 const icone = (d, cls = '') => `<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
 
 const DOCK = {
+  figurines: '<circle cx="12" cy="6" r="3"/><path d="M8 18v-3.5a4 4 0 0 1 8 0V18"/><ellipse cx="12" cy="19" rx="8" ry="2.2"/>',
   quitter: '<path d="M12 3v8"/><path d="M6.3 6.8a8 8 0 1 0 11.4 0"/>',
   collections: '<rect x="3" y="6" width="13" height="15" rx="2"/><path d="M7 3h12a2 2 0 0 1 2 2v12"/>',
   succes: '<path d="M8 4h8v6a4 4 0 0 1-8 0V4ZM8 6H4.5a3 3 0 0 0 3.5 4M16 6h3.5a3 3 0 0 1-3.5 4M12 14v4M8.5 20h7"/>',

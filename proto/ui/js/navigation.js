@@ -1,7 +1,7 @@
 /* Navigation : dock, changement de section, menu d'actions et aide des touches. */
 
 /** Sections, des plus utilisées aux moins utilisées. */
-const SECTIONS = [
+const SECTIONS_FIXES = [
   { id: 'accueil', nom: 'Accueil', rang: 1 },
   { id: 'jeux', nom: 'Bibliothèque', rang: 1 },
   { id: 'collections', nom: 'Collections', rang: 3 },
@@ -13,7 +13,14 @@ const SECTIONS = [
   // Quitter En Local (utile en plein écran).
   { id: 'quitter', nom: 'Quitter', rang: 4, apres: true, action: true },
 ];
-const section = (id) => SECTIONS.find((s) => s.id === id);
+/** Figurines : juste après l'accueil pendant un jeu qui en lit (amiibo, Skylanders), sinon la collection. */
+function sections() {
+  const f = current && figurinesDe(current);
+  // Sans jeu à figurines : la collection, après Médias.
+  const i = f ? 1 : SECTIONS_FIXES.findIndex((x) => x.id === 'medias') + 1;
+  return [...SECTIONS_FIXES.slice(0, i), { id: 'figurines', nom: f === 'amiibo' ? 'Amiibo' : f ? 'Skylanders' : 'Figurines', rang: f ? 1 : 3 }, ...SECTIONS_FIXES.slice(i)];
+}
+const section = (id) => sections().find((s) => s.id === id);
 
 let dockOuvert = false;
 let dockFocus = 0;
@@ -26,10 +33,10 @@ let dockSurvol = null; // icône sous la souris : gardée visée quand le dock s
  * et pendant une transition il suit la section qui arrive (L1/R1 enchaînés).
  */
 function drawDock() {
-  const ici = (dockIci = SECTIONS.findIndex((s) => s.id === (ongletVise || onglet)));
+  const ici = (dockIci = sections().findIndex((s) => s.id === (ongletVise || onglet)));
   const vise = dockOuvert ? dockFocus : dockSurvol ?? ici;
   const d = $('#dock');
-  const items = SECTIONS.map((s, n) => {
+  const items = sections().map((s, n) => {
     const contenu = s.id === 'profil'
       ? (me ? `<img class="av" src="${esc(me.avatar || 'img/hang-coucou.png')}" alt="">` : icone(DOCK.profil))
       : icone(DOCK[s.id]);
@@ -40,7 +47,7 @@ function drawDock() {
     d._html = html;
     d.innerHTML = html;
     d.querySelectorAll('.ic').forEach((el) => {
-      el.onclick = () => { fermerDock(); allerA(SECTIONS[+el.dataset.n].id); };
+      el.onclick = () => { fermerDock(); allerA(sections()[+el.dataset.n].id); };
       el.onmouseenter = () => viserDock((dockSurvol = +el.dataset.n), dockIci);
     });
   }
@@ -84,14 +91,14 @@ function suivreSouris() {
     const bas = e.clientY > innerHeight - 90 * (parseFloat($('#accueil').style.getPropertyValue('--s')) || 1);
     if (bas === sourisEnBas || view() !== 'biblio') return;
     sourisEnBas = bas;
-    if (!bas) (dockSurvol = null), (dockFocus = Math.max(0, SECTIONS.findIndex((s) => s.id === onglet)));
+    if (!bas) (dockSurvol = null), (dockFocus = Math.max(0, sections().findIndex((s) => s.id === onglet)));
     drawDock();
   });
 }
 
 function ouvrirDock() {
   dockOuvert = true;
-  dockFocus = Math.max(0, SECTIONS.findIndex((s) => s.id === onglet));
+  dockFocus = Math.max(0, sections().findIndex((s) => s.id === onglet));
   drawDock();
   drawAide();
 }
@@ -109,9 +116,9 @@ function apercuDock() {
 }
 
 function navDock(k) {
-  if (k === 'left' || k === 'right') dockFocus = (dockFocus + (k === 'left' ? -1 : 1) + SECTIONS.length) % SECTIONS.length;
+  if (k === 'left' || k === 'right') dockFocus = (dockFocus + (k === 'left' ? -1 : 1) + sections().length) % sections().length;
   if (k === 'a') {
-    const id = SECTIONS[dockFocus].id;
+    const id = sections()[dockFocus].id;
     fermerDock();
     return allerA(id);
   }
@@ -120,7 +127,7 @@ function navDock(k) {
 }
 
 function sectionVoisine(d) {
-  const vraies = SECTIONS.filter((s) => !s.action);
+  const vraies = sections().filter((s) => !s.action);
   // Pendant une transition, on part de la section demandée : R1 R1 R1 avance de trois.
   const n = vraies.findIndex((s) => s.id === (ongletVise || onglet));
   allerA(vraies[(n + d + vraies.length) % vraies.length].id);
@@ -141,6 +148,7 @@ function quitterApp() {
 async function allerA(id, vu = null) {
   // Thème en essai (page des thèmes) quitté sans le choisir : l'ancien revient.
   if (themeGarde) (theme(themeGarde), (themeGarde = null));
+  if (contexte) fermerContexte();
   if (id === 'quitter') return quitterApp();
   if (id === 'profil') {
     profilVu = vu;
@@ -221,6 +229,8 @@ function fermerContexte() {
   $('#contexte').style.display = 'none';
   drawAide();
 }
+// Clic ou molette ailleurs : le menu se ferme, comme un menu du système.
+for (const t of ['pointerdown', 'wheel']) addEventListener(t, (e) => contexte && !e.target.closest('#contexte') && fermerContexte(), { capture: true, passive: true });
 function choisirContexte(n) {
   const a = contexte?.actions[n];
   fermerContexte();
@@ -283,6 +293,7 @@ function drawSection() {
   if (onglet === 'reglages') return (lireMicros(), drawReglages());
   if (onglet === 'medias') return drawMedias();
   if (onglet === 'profil') return drawProfil();
+  if (onglet === 'figurines') return drawFigurines();
   const lignes = lignesDe(onglet);
   const s = section(onglet);
   const info = {
@@ -307,6 +318,7 @@ function navSection(k) {
   if (onglet === 'reglages') return navReglages(k);
   if (onglet === 'medias') return navMedias(k);
   if (onglet === 'profil') return navProfil(k);
+  if (onglet === 'figurines') return navFigurines(k);
   const lignes = lignesDe(onglet);
   if (k === 'up' || k === 'down') {
     sectionFocus = Math.max(0, Math.min(lignes.length - 1, sectionFocus + (k === 'up' ? -1 : 1)));
@@ -337,7 +349,9 @@ function drawAide() {
       return;
     }
     const act = el?.dataset.act;
-    $('#aide-g').innerHTML = `<div>${glyphs.y}Personnaliser</div>${actionsDe(el).length ? `<div>${glyphs.minus}Actions</div>` : ''}`;
+    // Jeu à figurines en cours : R1 mène à leur section, juste après l'accueil.
+    const f = current && enAccueil && figurinesDe(current);
+    $('#aide-g').innerHTML = `<div>${glyphs.y}Personnaliser</div>${actionsDe(el).length ? `<div>${glyphs.minus}Actions</div>` : ''}${f ? `<div>${glyphs.rb}${f === 'amiibo' ? 'Amiibo' : 'Skylanders'}</div>` : ''}`;
     $('#aide-d').innerHTML = `${['jeu', 'jouer', 'session', 'sessions', 'profil', 'login', 'dossier', 'code'].includes(act) ? `<div>${glyphs.a}${act === 'jouer' ? 'Jouer' : act === 'session' ? 'Rejoindre' : act === 'jeu' ? 'Jouer' : 'Ouvrir'}</div>` : ''}<div>${glyphs.plus}${current && enAccueil ? 'Quitter le jeu' : 'Menu'}</div>`;
     return;
   }
@@ -347,6 +361,7 @@ function drawAide() {
   if (onglet === 'reglages') return focusReglage(regVue === 'tuiles' ? regGroupe : regFocus);
   if (onglet === 'medias') return aideMedias();
   if (onglet === 'profil') return focusProfil(profFocus);
+  if (onglet === 'figurines') return aideFigurines();
   if (onglet === 'jeux') return; // l'écran Jeux a sa barre d'actions et sa propre aide
   $('#aide-g').innerHTML = `<div>${glyphs.b}Accueil</div><div>${glyphs.plus}${current && enAccueil ? 'Quitter le jeu' : 'Menu'}</div>`;
   $('#aide-d').innerHTML = `<div>${glyphs.a}Valider</div>`;

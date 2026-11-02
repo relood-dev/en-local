@@ -5,26 +5,76 @@
  * Loc ne passe que les messages de connexion (/sessions/:code/signal).
  */
 const ICE_DISTANCE = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun.cloudflare.com:3478'] }];
+/**
+ * Serveurs de connexion d'une partie : STUN pour se trouver en direct, et le relais TURN du Local (Loc,
+ * identifiants de 12 h) quand le direct est impossible (4G, box strictes). WebRTC prend toujours le direct
+ * s'il marche : le relais n'ajoute de latence qu'à ceux qui en ont besoin.
+ */
+async function serveursIce() {
+  const turn = await api('GET', '/turn').catch(() => null);
+  return [...ICE_DISTANCE, ...(turn?.iceServers || [])];
+}
 let distance = null; // { role: 'hote' | 'invite', code, … }
 
 const attendre = (ms) => new Promise((ok) => setTimeout(ok, ms));
 const signal = (d, to, data) => api('POST', `/sessions/${d.code}/signal`, { to, data });
 const journal = (texte) => invoke('journal', { texte: `jeu à distance : ${texte}` }).catch(() => {});
 
-/** Toutes les 30 s dans le journal : ping, images/s, et chez l'hôte ce qui freine l'encodeur (cpu, bandwidth). */
+/**
+ * Toutes les 5 s : ping, images/s, débit, et chez l'hôte ce qui freine l'encodeur (cpu, bandwidth).
+ * Dans le journal toutes les 30 s ; chez l'invité, aussi dans le menu Home (`distance.qualite`).
+ */
 function mesurer(pc, qui) {
+  let tour = 0;
+  let octets = 0;
   const t = setInterval(async () => {
     if (['closed', 'failed'].includes(pc.connectionState)) return clearInterval(t);
     const m = [];
-    (await pc.getStats()).forEach((x) => {
-      if (x.type === 'candidate-pair' && x.nominated && x.currentRoundTripTime != null) m.push(`ping ${Math.round(x.currentRoundTripTime * 1000)} ms`);
+    const stats = await pc.getStats();
+    stats.forEach((x) => {
+      if (x.type === 'candidate-pair' && x.nominated && x.currentRoundTripTime != null) {
+        const relais = stats.get(x.localCandidateId)?.candidateType === 'relay' || stats.get(x.remoteCandidateId)?.candidateType === 'relay';
+        m.push(`ping ${Math.round(x.currentRoundTripTime * 1000)} ms${relais ? ' (via le relais du Local)' : ''}`);
+      }
       if (x.type === 'outbound-rtp' && x.kind === 'video') m.push(`${x.framesPerSecond ?? 0} i/s ${x.frameHeight ?? '?'}p, frein ${x.qualityLimitationReason}`);
-      if (x.type === 'inbound-rtp' && x.kind === 'video') m.push(`${x.framesPerSecond ?? 0} i/s ${x.frameHeight ?? '?'}p, ${x.framesDropped ?? 0} perdues, tampon ${x.jitterBufferEmittedCount ? Math.round((x.jitterBufferDelay / x.jitterBufferEmittedCount) * 1000) : '?'} ms`);
+      if (x.type === 'inbound-rtp' && x.kind === 'video') {
+        const mbits = octets ? ((x.bytesReceived - octets) * 8) / 5e6 : 0;
+        octets = x.bytesReceived;
+        m.push(`${x.framesPerSecond ?? 0} i/s ${x.frameHeight ?? '?'}p, ${mbits.toFixed(1)} Mb/s, ${x.framesDropped ?? 0} perdues, tampon ${x.jitterBufferEmittedCount ? Math.round((x.jitterBufferDelay / x.jitterBufferEmittedCount) * 1000) : '?'} ms`);
+      }
     });
-    journal(`${qui} : ${m.join(', ')}`);
-  }, 30_000);
+    if (distance?.role === 'invite') distance.qualite = m.join(', ');
+    if (++tour % 6 === 0) journal(`${qui} : ${m.join(', ')}`);
+  }, 5000);
 }
 const nomMembre = (id) => session?.members?.find((m) => m.id === id)?.name || 'Un joueur';
+
+/**
+ * Réponse de l'invité, retouchée par l'hôte avant de l'appliquer (ce sont ses paramètres qui règlent
+ * l'envoi) : la vidéo démarre tout de suite à 20 Mb/s au lieu de monter en douceur depuis 0,3 (l'image
+ * pixelisée des premières secondes), ne descend jamais sous 6 Mb/s et peut monter à 50 ; le son passe
+ * en stéréo, 256 kb/s, avec de quoi rattraper un paquet perdu.
+ */
+function sdpQualite(sdp) {
+  const types = (motif) => [...sdp.matchAll(new RegExp(`a=rtpmap:(\\d+) ${motif}/`, 'gi'))].map((m) => m[1]);
+  const ajouter = (pt, params) => {
+    const ligne = new RegExp(`(a=fmtp:${pt} [^\\r\\n]*)`);
+    const existant = sdp.match(ligne)?.[1] ?? '';
+    const nouveaux = params.split(';').filter((p) => !existant.includes(`${p.split('=')[0]}=`)).join(';');
+    if (!nouveaux) return;
+    sdp = existant ? sdp.replace(ligne, `$1;${nouveaux}`) : sdp.replace(new RegExp(`(a=rtpmap:${pt} [^\\r\\n]*)`), `$1\r\na=fmtp:${pt} ${nouveaux}`);
+  };
+  for (const pt of types('(H264|VP8|VP9|AV1)')) ajouter(pt, 'x-google-start-bitrate=20000;x-google-min-bitrate=6000;x-google-max-bitrate=50000');
+  for (const pt of types('opus')) ajouter(pt, 'stereo=1;sprop-stereo=1;maxaveragebitrate=256000;useinbandfec=1');
+  return sdp;
+}
+
+/** H.264 « High » d'abord (meilleure image au même débit), puis les autres H.264, puis le reste. */
+function codecsVideo() {
+  const codecs = RTCRtpSender.getCapabilities('video').codecs;
+  const rang = (c) => (!/h264/i.test(c.mimeType) ? 2 : /profile-level-id=64/i.test(c.sdpFmtpLine || '') ? 0 : 1);
+  return [...codecs].sort((a, b) => rang(a) - rang(b));
+}
 
 /** Description locale avec tous ses candidats : un seul message dans chaque sens. */
 async function descriptionComplete(pc) {
@@ -64,13 +114,13 @@ const invitesEnSession = (g) => Boolean(session && !session.distance && INVITES_
  */
 function distanceHote() {
   if (!session || distance) return;
-  distance = { role: 'hote', code: session.code, pairs: new Map() };
+  distance = { role: 'hote', code: session.code, pairs: new Map(), ice: serveursIce() };
   compter('distance');
   boucleSignaux(distance);
 }
 async function capturer(d) {
   try {
-    d.capture = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: { ideal: 60 }, width: { max: 1920 }, height: { max: 1080 } }, audio: false });
+    d.capture = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: { ideal: 60, max: 60 }, width: { ideal: 1920, max: 1920 }, height: { ideal: 1080, max: 1080 } }, audio: false });
     const image = d.capture.getVideoTracks()[0];
     image.contentHint = 'motion';
     d.ctx = new AudioContext({ sampleRate: 48000, latencyHint: 'interactive' });
@@ -97,7 +147,7 @@ async function capturer(d) {
 }
 
 async function messageHote(d, { from, data }) {
-  if (data?.type === 'reponse') return d.pairs.get(from)?.pc.setRemoteDescription({ type: 'answer', sdp: data.sdp });
+  if (data?.type === 'reponse') return d.pairs.get(from)?.pc.setRemoteDescription({ type: 'answer', sdp: sdpQualite(String(data.sdp)) });
   if (data?.type === 'aurevoir') return fermerPair(d, from);
   if (data?.type === 'clavier') return d.pairs.has(from) && repondreClavier(Boolean(data.ok), String(data.texte ?? '').slice(0, 500));
   if (data?.type !== 'bonjour') return;
@@ -106,16 +156,18 @@ async function messageHote(d, { from, data }) {
   fermerPair(d, from); // il revient : nouvelle connexion
   const slot = [0, 1, 2, 3, 4, 5, 6].find((k) => ![...d.pairs.values()].some((p) => p.slot === k));
   if (slot === undefined) return signal(d, from, { type: 'complet' });
-  const pc = new RTCPeerConnection({ iceServers: ICE_DISTANCE });
+  const pc = new RTCPeerConnection({ iceServers: await d.ice });
   const p = { pc, slot, n: 0 };
   d.pairs.set(from, p);
   for (const flux of d.flux) for (const t of flux.getTracks()) {
-    const tr = pc.addTransceiver(t, { direction: 'sendonly', streams: [flux], sendEncodings: t.kind === 'video' ? [{ maxBitrate: 12_000_000, maxFramerate: 60 }] : undefined });
+    // Priorité haute : la box et Windows font passer ces paquets avant le reste (téléchargements…).
+    const encodage = { priority: 'high', networkPriority: 'high' };
+    const tr = pc.addTransceiver(t, {
+      direction: 'sendonly', streams: [flux],
+      sendEncodings: [t.kind === 'video' ? { ...encodage, maxBitrate: 50_000_000, maxFramerate: 60, scaleResolutionDownBy: 1 } : encodage],
+    });
     // H.264 d'abord : encodé par la carte graphique, le processeur reste au jeu.
-    if (t.kind === 'video') {
-      const codecs = RTCRtpSender.getCapabilities('video').codecs;
-      tr.setCodecPreferences([...codecs.filter((c) => /h264/i.test(c.mimeType)), ...codecs.filter((c) => !/h264/i.test(c.mimeType))]);
-    }
+    if (t.kind === 'video') tr.setCodecPreferences(codecsVideo());
   }
   // Manette : sans ordre ni renvoi, l'état complet arrive en continu (un paquet perdu ne retarde rien).
   const dc = pc.createDataChannel('manette', { ordered: false, maxRetransmits: 0 });
@@ -127,6 +179,12 @@ async function messageHote(d, { from, data }) {
   };
   pc.onconnectionstatechange = () => {
     if (pc.connectionState === 'connected') {
+      // Si le réseau faiblit : garder les 60 images/s, quitte à baisser un peu la définition (jamais de saccades).
+      for (const s of pc.getSenders()) if (s.track?.kind === 'video') {
+        const params = s.getParameters();
+        params.degradationPreference = 'maintain-framerate';
+        s.setParameters(params).catch((e) => journal(`réglage de l'envoi : ${e.message || e}`));
+      }
       son('arrivee', true);
       toast(`${nomMembre(from)} joue avec toi : manette ${slot + 2}`);
       mesurer(pc, `vers ${nomMembre(from)}`);
@@ -155,7 +213,7 @@ function fermerPair(d, id) {
 
 /** L'invité ne lance rien : il voit l'écran de l'hôte et joue avec sa manette. */
 async function distanceInvite(s, ecran = s.host) {
-  const d = { role: 'invite', code: s.code, hote: ecran, n: 0 };
+  const d = { role: 'invite', code: s.code, hote: ecran, n: 0, ice: serveursIce() };
   distance = d;
   compter('distance');
   if (!musique.paused) musique.pause();
@@ -187,7 +245,7 @@ async function messageInvite(d, { from, data }) {
   if (data?.type === 'clavier-fin') return saisieOuverte() && fermerSaisie();
   if (data?.type !== 'offre') return;
   d.pc?.close();
-  const pc = new RTCPeerConnection({ iceServers: ICE_DISTANCE });
+  const pc = new RTCPeerConnection({ iceServers: await d.ice });
   d.pc = pc;
   const flux = new MediaStream();
   pc.ontrack = (e) => {
@@ -228,7 +286,8 @@ const volumeDistance = () => distance?.el && (distance.el.querySelector('video')
 function navDistance(k, focus = 0) {
   if (k !== 'home') return;
   const son = (d) => () => (changerVolume('jeux', d), navDistance('home', d < 0 ? 1 : 2));
-  sheet('Jeu à distance', `Tu joues sur l'écran de ${esc(distance.hote.name)}.<br>Son du jeu : ${Math.round(vol('jeux') * 100)} %`, [
+  const qualite = distance.qualite ? `<br><small>${esc(distance.qualite)}</small>` : '';
+  sheet('Jeu à distance', `Tu joues sur l'écran de ${esc(distance.hote.name)}.<br>Son du jeu : ${Math.round(vol('jeux') * 100)} %${qualite}`, [
     { label: 'Continuer', cancel: true },
     { label: 'Baisser le son', fn: son(-1) },
     { label: 'Monter le son', fn: son(1) },

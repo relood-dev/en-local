@@ -125,6 +125,8 @@ function optsDe(g) {
   if (dureeClips()) o.clips = String(dureeClips()); // durée du tampon des clips, en secondes
   if (dureeClips()) o.clips_qualite = localStorage.clipsQualite || 'haute';
   if (dureeClips()) o.clips_voix = localStorage.clipsVoix || 'oui'; // ta voix (micro) dans les clips
+  const zone = dureeClips() && zoneClip(g, o);
+  if (zone) o.clips_zone = zone.join(' '); // DS, 3DS : l'écran principal seulement
   if (SUCCES && (g.console === 'GC' || g.console === 'Wii') && ra.token) Object.assign(o, { ra_user: ra.user, ra_token: ra.token, ra_hardcore: ra.hardcore ? 'oui' : 'non' });
   const f = formatJeu(g, o);
   if (f) o.format_jeu = String(f);
@@ -143,6 +145,36 @@ function ecransJeu(g, o) {
   if (g.console !== '3DS' || (o.disposition ?? '0') !== '0') return null;
   const haut = [0, 0, 1, 0.5], bas = [0.1, 0.5, 0.8, 0.5];
   return o.inverser === 'oui' ? [[0.1, 0, 0.8, 0.5], [0, 0.5, 1, 0.5]] : [haut, bas];
+}
+/**
+ * Clips de la DS et de la 3DS : la place de l'écran principal (celui du haut) dans l'image du jeu,
+ * en fractions [x, y, largeur, hauteur]. null : toute l'image (« Les deux écrans » dans Réglages, un seul
+ * écran affiché, ou une disposition où sa place n'est pas sûre).
+ */
+function zoneClip(g, o) {
+  if (localStorage.clipsEcrans === 'deux') return null;
+  if (g.console === '3DS') {
+    const inv = o.inverser === 'oui';
+    const d = o.disposition ?? '0';
+    // Empilés (haut 400×240 au-dessus du bas 320×240) ; côte à côte (720×240).
+    if (d === '0') return [0, inv ? 0.5 : 0, 1, 0.5];
+    if (d === '3') return [inv ? 320 / 720 : 0, 0, 400 / 720, 1];
+    if (d === '2' && !inv) {
+      const k = Number(o.proportion) || 4;
+      return [0, 0, (400 * k) / (400 * k + 320), 1];
+    }
+    return null;
+  }
+  if (g.console === 'DS') {
+    // Deux écrans de 256×192, séparés de l'écart choisi (en pixels de la DS).
+    const e = Number(o.ecart) || 0;
+    const v = 192 / (384 + e), h = 256 / (512 + e);
+    return {
+      'top-bottom': [0, 0, 1, v], 'bottom-top': [0, 1 - v, 1, v],
+      'left-right': [0, 0, h, 1], 'right-left': [1 - h, 0, h, 1],
+    }[o.disposition || 'top-bottom'] || null;
+  }
+  return null;
 }
 function formatJeu(g, o) {
   if (localStorage.habillage === 'noir') return 0;
@@ -231,11 +263,13 @@ function lignesTouches(c, ou, defaut, parent) {
 }
 
 /** Attend l'appui d'une touche pour un bouton de la console (10 s au plus). */
-let captureTouche = null;
+let captureTouche = null, finCapture = 0;
 function capturerTouche(nom, actuelle, fn, perso) {
   let minuterie = null;
   const fin = () => {
     captureTouche = null;
+    // La touche choisie arrive aussi en « pad » juste après : elle ne doit pas naviguer (B ferait Retour).
+    finCapture = performance.now();
     clearTimeout(minuterie);
     $('#sheet').style.display = 'none';
     drawReglages();

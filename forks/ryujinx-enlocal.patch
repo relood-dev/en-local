@@ -1,7 +1,7 @@
 From a32150fcddc7d9c26c6767909c8c22c903a58e0f Mon Sep 17 00:00:00 2001
 From: Relood <147659633+relood-dev@users.noreply.github.com>
 Date: Fri, 23 Oct 2026 09:02:32 +0200
-Subject: [PATCH 01/10] En Local : compile avec LibHac 0.20.0 de nuget.org
+Subject: [PATCH 01/14] En Local : compile avec LibHac 0.20.0 de nuget.org
  (serveur de Ryubing hors ligne)
 
 ---
@@ -131,7 +131,7 @@ index 00000000..d71ee546
 From 789343c346adf474bcd439879bba412dc8a2d8bc Mon Sep 17 00:00:00 2001
 From: Relood <147659633+relood-dev@users.noreply.github.com>
 Date: Fri, 23 Oct 2026 09:24:17 +0200
-Subject: [PATCH 02/10] =?UTF-8?q?En=20Local=20:=20fen=C3=AAtre=20dans=20le?=
+Subject: [PATCH 02/14] =?UTF-8?q?En=20Local=20:=20fen=C3=AAtre=20dans=20le?=
  =?UTF-8?q?=20cadre,=20pause=20du=20menu,=20manette,=20langue,=20pseudo,?=
  =?UTF-8?q?=20MAJ/DLC=20et=20sauvegardes=20partag=C3=A9es=20avec=20Eden?=
 MIME-Version: 1.0
@@ -674,7 +674,7 @@ index db490f3f..539395fe 100644
 From dfb6dab27eb28bbbf298580acf857bf9fccbe20d Mon Sep 17 00:00:00 2001
 From: Relood <147659633+relood-dev@users.noreply.github.com>
 Date: Fri, 23 Oct 2026 09:26:28 +0200
-Subject: [PATCH 03/10] =?UTF-8?q?En=20Local=20:=20arr=C3=AAt=20imm=C3=A9di?=
+Subject: [PATCH 03/14] =?UTF-8?q?En=20Local=20:=20arr=C3=AAt=20imm=C3=A9di?=
  =?UTF-8?q?at=20=C3=A0=20la=20demande=20d'En=20Local?=
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
@@ -731,7 +731,7 @@ index 90398583..73f91988 100644
 From b00d60eabcc9793e14c28fbe22eaea6a0411b8d0 Mon Sep 17 00:00:00 2001
 From: Relood <147659633+relood-dev@users.noreply.github.com>
 Date: Fri, 23 Oct 2026 09:39:23 +0200
-Subject: [PATCH 04/10] En Local : pas de marge de barre de titre
+Subject: [PATCH 04/14] En Local : pas de marge de barre de titre
 
 ---
  src/Ryujinx/EnLocal.cs | 2 ++
@@ -757,7 +757,7 @@ index 73f91988..5867fa39 100644
 From 118e80152d77df568b6882bfc7fca788c3af3f59 Mon Sep 17 00:00:00 2001
 From: Relood <147659633+relood-dev@users.noreply.github.com>
 Date: Fri, 23 Oct 2026 09:59:11 +0200
-Subject: [PATCH 05/10] =?UTF-8?q?En=20Local=20:=20fen=C3=AAtre=20noire=20j?=
+Subject: [PATCH 05/14] =?UTF-8?q?En=20Local=20:=20fen=C3=AAtre=20noire=20j?=
  =?UTF-8?q?usqu'au=20premier=20rendu?=
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
@@ -799,7 +799,7 @@ index 5867fa39..1be3aced 100644
 From cf9dd1803fc24be6c5d068c6ed1a4caeff57affb Mon Sep 17 00:00:00 2001
 From: Relood <147659633+relood-dev@users.noreply.github.com>
 Date: Fri, 23 Oct 2026 10:12:37 +0200
-Subject: [PATCH 06/10] En Local : Ryujinx rejoint les salons d'Eden (ENet, LDN
+Subject: [PATCH 06/14] En Local : Ryujinx rejoint les salons d'Eden (ENet, LDN
  d'Eden, paquets du jeu en zstd), graine fixe en salon
 
 ---
@@ -1715,7 +1715,7 @@ index 6c2e68e3..9f7b46db 100644
 From 9180b6f1b3183f7b7544567868ac8335fa5e13ef Mon Sep 17 00:00:00 2001
 From: Relood <147659633+relood-dev@users.noreply.github.com>
 Date: Fri, 23 Oct 2026 10:16:06 +0200
-Subject: [PATCH 07/10] =?UTF-8?q?En=20Local=20:=20pseudo=20=C2=AB=20-mac?=
+Subject: [PATCH 07/14] =?UTF-8?q?En=20Local=20:=20pseudo=20=C2=AB=20-mac?=
  =?UTF-8?q?=20=C2=BB=20si=20le=20m=C3=AAme=20compte=20est=20d=C3=A9j=C3=A0?=
  =?UTF-8?q?=20dans=20le=20salon?=
 MIME-Version: 1.0
@@ -1789,7 +1789,7 @@ index dbebe1ed..8fce6591 100644
 From 1dbd565454fc3c1402e50eea7f633866624bae26 Mon Sep 17 00:00:00 2001
 From: Relood <147659633+relood-dev@users.noreply.github.com>
 Date: Fri, 23 Oct 2026 10:23:49 +0200
-Subject: [PATCH 08/10] =?UTF-8?q?En=20Local=20:=20pseudo=20toujours=20en?=
+Subject: [PATCH 08/14] =?UTF-8?q?En=20Local=20:=20pseudo=20toujours=20en?=
  =?UTF-8?q?=20=C2=AB=20-mac=20=C2=BB=20dans=20les=20salons?=
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
@@ -1835,7 +1835,7 @@ index 8fce6591..b60c7726 100644
 From 20f44000a9ab36dc7a1bfe69d24cbd2e3f6fdda4 Mon Sep 17 00:00:00 2001
 From: Relood <147659633+relood-dev@users.noreply.github.com>
 Date: Fri, 23 Oct 2026 10:33:57 +0200
-Subject: [PATCH 09/10] =?UTF-8?q?En=20Local=20:=20paquets=20du=20salon=20e?=
+Subject: [PATCH 09/14] =?UTF-8?q?En=20Local=20:=20paquets=20du=20salon=20e?=
  =?UTF-8?q?nvoy=C3=A9s=20en=201=20ms?=
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
@@ -1866,7 +1866,7 @@ index b60c7726..7f7342c8 100644
 From 7c0e8c5f229fa2d14325fd16fd398ccb16c91113 Mon Sep 17 00:00:00 2001
 From: Relood <147659633+relood-dev@users.noreply.github.com>
 Date: Fri, 23 Oct 2026 11:47:13 +0200
-Subject: [PATCH 10/10] En Local : volume des jeux en direct
+Subject: [PATCH 10/14] En Local : volume des jeux en direct
 
 ---
  src/Ryujinx/EnLocal.cs | 12 ++++++++++++
@@ -1902,6 +1902,251 @@ index a9d0fc19..d89d3f83 100644
              IntPtr ns = NsWindow(fenetre);
              if (ns == IntPtr.Zero)
              {
+-- 
+2.54.0 (Apple Git-157)
+
+
+From 715ddc77c177cac984f119c52b59f9232b9d9420 Mon Sep 17 00:00:00 2001
+From: Relood <147659633+relood-dev@users.noreply.github.com>
+Date: Thu, 29 Oct 2026 17:54:48 +0100
+Subject: [PATCH 11/14] =?UTF-8?q?En=20Local=20:=20amiibo=20pos=C3=A9=20dep?=
+ =?UTF-8?q?uis=20En=20Local=20(ENLOCAL=5FAMIIBO),=20simul=C3=A9=20par=20so?=
+ =?UTF-8?q?n=20identifiant?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ src/Ryujinx/EnLocal.cs | 43 ++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 43 insertions(+)
+
+diff --git a/src/Ryujinx/EnLocal.cs b/src/Ryujinx/EnLocal.cs
+index d89d3f83..3924b7d7 100644
+--- a/src/Ryujinx/EnLocal.cs
++++ b/src/Ryujinx/EnLocal.cs
+@@ -35,6 +35,9 @@ namespace Ryujinx.Ava
+         private static readonly string _menu = Environment.GetEnvironmentVariable("ENLOCAL_MENU");
+         private static readonly string _volume = Environment.GetEnvironmentVariable("ENLOCAL_VOLUME_FICHIER");
+         private static DateTime _volumeLu;
++        private static readonly string _amiibo = Environment.GetEnvironmentVariable("ENLOCAL_AMIIBO");
++        private static DateTime _amiiboLu;
++        private static string _amiiboId;
+         public static bool Actif => !string.IsNullOrEmpty(_cadre);
+ 
+         /// <summary>Première image du jeu : la fenêtre, transparente pendant le chargement de Ryujinx, devient visible.</summary>
+@@ -160,6 +163,33 @@ namespace Ryujinx.Ava
+             minuterie.Start();
+         }
+ 
++        /// <summary>
++        /// Identifiant d'un amiibo (16 chiffres hexa) : à 0x54 dans une copie de la puce, à 0x1DC dans une copie
++        /// déchiffrée (amiitool). null si le fichier n'en est pas une.
++        /// </summary>
++        private static string IdAmiibo(string chemin)
++        {
++            try
++            {
++                if (string.IsNullOrEmpty(chemin) || !File.Exists(chemin) || new FileInfo(chemin).Length is < 520 or > 600)
++                {
++                    return null;
++                }
++                byte[] b = File.ReadAllBytes(chemin);
++                foreach (int o in new[] { 0x54, 0x1DC })
++                {
++                    if (b.AsSpan(o, 8).IndexOfAnyExcept((byte)0) >= 0)
++                    {
++                        return Convert.ToHexString(b, o, 8).ToLowerInvariant();
++                    }
++                }
++            }
++            catch (IOException)
++            {
++            }
++            return null;
++        }
++
+         private static void Tour(MainWindow fenetre)
+         {
+             if (fenetre.ViewModel.ShowMenuAndStatusBar)
+@@ -199,6 +229,19 @@ namespace Ryujinx.Ava
+                 }
+             }
+ 
++            // Amiibo posé dans En Local (fichier ENLOCAL_AMIIBO : son chemin, vide s'il est retiré). Il reste sur
++            // le lecteur : le jeu le trouve chaque fois qu'il en cherche un. Ryujinx le simule par son identifiant,
++            // sans les clés des amiibo.
++            if (!string.IsNullOrEmpty(_amiibo) && File.Exists(_amiibo) && File.GetLastWriteTimeUtc(_amiibo) != _amiiboLu)
++            {
++                _amiiboLu = File.GetLastWriteTimeUtc(_amiibo);
++                _amiiboId = IdAmiibo(File.ReadAllText(_amiibo).Trim());
++            }
++            if (_amiiboId != null && hote?.Device?.System is { } systeme && systeme.SearchingForAmiibo(out int lecteur))
++            {
++                systeme.ScanAmiibo(lecteur, _amiiboId, false);
++            }
++
+             IntPtr ns = NsWindow(fenetre);
+             if (ns == IntPtr.Zero)
+             {
+-- 
+2.54.0 (Apple Git-157)
+
+
+From 5584eb71726934866df89f42f4a15ae85c8db883 Mon Sep 17 00:00:00 2001
+From: Relood <147659633+relood-dev@users.noreply.github.com>
+Date: Thu, 29 Oct 2026 18:07:17 +0100
+Subject: [PATCH 12/14] En Local : surnom de l'amiibo = son nom
+
+---
+ src/Ryujinx.HLE/HOS/Horizon.cs |  3 +++
+ src/Ryujinx/EnLocal.cs         | 10 +++++++++-
+ 2 files changed, 12 insertions(+), 1 deletion(-)
+
+diff --git a/src/Ryujinx.HLE/HOS/Horizon.cs b/src/Ryujinx.HLE/HOS/Horizon.cs
+index bcce72d1..e157728f 100644
+--- a/src/Ryujinx.HLE/HOS/Horizon.cs
++++ b/src/Ryujinx.HLE/HOS/Horizon.cs
+@@ -343,6 +343,9 @@ namespace Ryujinx.HLE.HOS
+             AppletState.MessageEvent.ReadableEvent.Signal();
+         }
+ 
++        /// <summary>En Local : surnom donné à l'amiibo à sa prochaine lecture (le nom de la figurine).</summary>
++        public static void SurnomAmiibo(string nom) => VirtualAmiibo.NickName = nom;
++
+         public void ScanAmiibo(int nfpDeviceId, string amiiboId, bool useRandomUuid)
+         {
+             if (VirtualAmiibo.ApplicationBytes.Length > 0)
+diff --git a/src/Ryujinx/EnLocal.cs b/src/Ryujinx/EnLocal.cs
+index 3924b7d7..8e10dcc0 100644
+--- a/src/Ryujinx/EnLocal.cs
++++ b/src/Ryujinx/EnLocal.cs
+@@ -235,7 +235,15 @@ namespace Ryujinx.Ava
+             if (!string.IsNullOrEmpty(_amiibo) && File.Exists(_amiibo) && File.GetLastWriteTimeUtc(_amiibo) != _amiiboLu)
+             {
+                 _amiiboLu = File.GetLastWriteTimeUtc(_amiibo);
+-                _amiiboId = IdAmiibo(File.ReadAllText(_amiibo).Trim());
++                string chemin = File.ReadAllText(_amiibo).Trim();
++                _amiiboId = IdAmiibo(chemin);
++                // Surnom : le nom de l'amiibo (« Wario (…, Decrypted).bin » : Wario), 10 lettres au plus, la
++                // première fois seulement (le joueur peut le changer dans le jeu ensuite).
++                if (_amiiboId != null && !File.Exists(Path.Join(Ryujinx.Common.Configuration.AppDataManager.BaseDirPath, "system", "amiibo", $"{_amiiboId}.json")))
++                {
++                    string nom = Path.GetFileNameWithoutExtension(chemin).Split(" (")[0].Trim();
++                    HLE.HOS.Horizon.SurnomAmiibo(nom.Length > 10 ? nom[..10] : nom);
++                }
+             }
+             if (_amiiboId != null && hote?.Device?.System is { } systeme && systeme.SearchingForAmiibo(out int lecteur))
+             {
+-- 
+2.54.0 (Apple Git-157)
+
+
+From a18c128b9c5cbea677faf1a1c2290e6e1e36137b Mon Sep 17 00:00:00 2001
+From: Relood <147659633+relood-dev@users.noreply.github.com>
+Date: Fri, 30 Oct 2026 14:23:07 +0100
+Subject: [PATCH 13/14] =?UTF-8?q?En=20Local=20:=20fen=C3=AAtre=20de=20jeu?=
+ =?UTF-8?q?=20repos=C3=A9e=20quand=20elle=20bouge=20sans=20En=20Local?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ src/Ryujinx/EnLocal.cs | 15 +++++++--------
+ 1 file changed, 7 insertions(+), 8 deletions(-)
+
+diff --git a/src/Ryujinx/EnLocal.cs b/src/Ryujinx/EnLocal.cs
+index 8e10dcc0..4448bb8e 100644
+--- a/src/Ryujinx/EnLocal.cs
++++ b/src/Ryujinx/EnLocal.cs
+@@ -45,7 +45,6 @@ namespace Ryujinx.Ava
+ 
+         private static bool _enPause;
+         private static PosixSignalRegistration _arret;
+-        private static string _place;
+ 
+         /// <summary>Réglages imposés par En Local, avant le lancement du jeu.</summary>
+         public static void Regler()
+@@ -271,14 +270,14 @@ namespace Ryujinx.Ava
+             {
+                 return;
+             }
+-            string place = string.Join(' ', v.Take(4));
+-            if (place != _place)
++            // Points comptés depuis le haut de l'écran principal ; macOS compte depuis le bas. Reposée aussi
++            // quand la fenêtre a bougé sans En Local (redimensionnée à la souris, boîte d'erreur du jeu…).
++            IntPtr ecran = Objc.Envoyer(Objc.Envoyer(Objc.Classe("NSScreen"), "screens"), "objectAtIndex:", 0);
++            Objc.Rect voulu = new(x, Objc.Cadre(ecran, "frame").H - y - h, l, h);
++            Objc.Rect actuel = Objc.Cadre(ns, "frame");
++            if (Math.Abs(actuel.X - voulu.X) > 1 || Math.Abs(actuel.Y - voulu.Y) > 1 || Math.Abs(actuel.L - voulu.L) > 1 || Math.Abs(actuel.H - voulu.H) > 1)
+             {
+-                _place = place;
+-                // Points comptés depuis le haut de l'écran principal ; macOS compte depuis le bas.
+-                IntPtr ecran = Objc.Envoyer(Objc.Envoyer(Objc.Classe("NSScreen"), "screens"), "objectAtIndex:", 0);
+-                Objc.Rect cadre = Objc.Cadre(ecran, "frame");
+-                Objc.PoserCadre(ns, new Objc.Rect(x, cadre.H - y - h, l, h));
++                Objc.PoserCadre(ns, voulu);
+             }
+ 
+             long principale = v.Length > 5 && long.TryParse(v[5], out long n) ? n : 0;
+-- 
+2.54.0 (Apple Git-157)
+
+
+From 85e7fc130449b13e191a62d196d66c2567ddb6ea Mon Sep 17 00:00:00 2001
+From: Relood <147659633+relood-dev@users.noreply.github.com>
+Date: Mon, 2 Nov 2026 17:49:17 +0100
+Subject: [PATCH 14/14] =?UTF-8?q?En=20Local=20:=20fen=C3=AAtre=20cach?=
+ =?UTF-8?q?=C3=A9e=20d=C3=A8s=20son=20ouverture?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ src/Ryujinx/EnLocal.cs                     | 12 ++++++++++++
+ src/Ryujinx/UI/Windows/MainWindow.axaml.cs |  5 +++++
+ 2 files changed, 17 insertions(+)
+
+diff --git a/src/Ryujinx/EnLocal.cs b/src/Ryujinx/EnLocal.cs
+index 4448bb8e..970e2c52 100644
+--- a/src/Ryujinx/EnLocal.cs
++++ b/src/Ryujinx/EnLocal.cs
+@@ -141,8 +141,20 @@ namespace Ryujinx.Ava
+             return [];
+         }
+ 
++        /// <summary>Cachée et derrière tout dès son ouverture : sinon elle se voyait un instant au lancement.</summary>
++        public static void Cacher(Window fenetre)
++        {
++            IntPtr ns = NsWindow(fenetre);
++            if (ns != IntPtr.Zero)
++            {
++                Objc.Envoyer(ns, "setAlphaValue:", 0.0);
++                Objc.Envoyer(ns, "setLevel:", -2147483623L + 1);
++            }
++        }
++
+         public static void Suivre(MainWindow fenetre)
+         {
++            Cacher(fenetre);
+             // Ni barre de titre ni marge réservée pour elle : le jeu remplit toute la fenêtre.
+             fenetre.TitleBar.ExtendsContentIntoTitleBar = false;
+             fenetre.WindowDecorations = WindowDecorations.None;
+diff --git a/src/Ryujinx/UI/Windows/MainWindow.axaml.cs b/src/Ryujinx/UI/Windows/MainWindow.axaml.cs
+index 539395fe..10023417 100644
+--- a/src/Ryujinx/UI/Windows/MainWindow.axaml.cs
++++ b/src/Ryujinx/UI/Windows/MainWindow.axaml.cs
+@@ -499,6 +499,11 @@ namespace Ryujinx.Ava.UI.Windows
+ 
+         protected override void OnOpened(EventArgs e)
+         {
++            if (EnLocal.Actif)
++            {
++                EnLocal.Cacher(this);
++            }
++
+             base.OnOpened(e);
+ 
+             if (EnLocal.Actif)
 -- 
 2.54.0 (Apple Git-157)
 

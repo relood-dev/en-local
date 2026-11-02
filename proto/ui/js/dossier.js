@@ -82,23 +82,30 @@ async function rangerDossier() {
 /** Jeux, archives (.zip, .7z, .rar) ou dossiers : chacun va dans le dossier de sa console. */
 async function ajouterJeux(chemins) {
   if (!chemins?.length) return;
-  if (current) return toast('Quitte ton jeu pour ajouter des jeux.');
+  if (current) return toast('Quitte ton jeu pour ajouter des jeux ou des figurines.');
   sheet('Ajout des jeux', 'Préparation…', []);
   const fin = await listen('import', ({ payload }) => ($('#sheet-texte').textContent = String(payload)));
   const b = await invoke('importer_jeux', { chemins }).catch((e) => ({ ajoutes: [], ignores: 0, erreurs: [String(e)] }));
   fin();
   await rechargerJeux();
-  const parConsole = {};
+  // Amiibo et Skylanders : rangés à part, dans Médias.
+  const estFig = ([c]) => c === 'Amiibo' || c === 'Skylanders';
+  const figs = b.ajoutes.filter(estFig);
+  b.ajoutes = b.ajoutes.filter((x) => !estFig(x));
+  const parConsole = {}, parSorte = {};
   for (const [c] of b.ajoutes) parConsole[c] = (parConsole[c] || 0) + 1;
+  for (const [c] of figs) parSorte[c] = (parSorte[c] || 0) + 1;
   const resume = Object.entries(parConsole).map(([c, n]) => `${NOMS[c] || c} : ${n}`).join(' · ');
   if (b.messages?.length) await chargerPs2();
+  if (figs.length) fig = null; // la section Figurines relit ses fichiers
   const texte = [
     ...(b.messages || []),
-    b.ajoutes.length ? `${b.ajoutes.length} fichier${b.ajoutes.length > 1 ? 's' : ''} rangé${b.ajoutes.length > 1 ? 's' : ''} (${resume}). Les mises à jour et DLC sont avec leur jeu.` : b.messages?.length ? '' : 'Aucun jeu trouvé dans ce que tu as déposé.',
+    ...Object.entries(parSorte).map(([c, n]) => `${n} ${c === 'Amiibo' ? `amiibo` : `Skylander${n > 1 ? 's' : ''}`} dans Médias, ${c}. Pose-les depuis le menu HOME (R1) pendant un jeu qui les lit.`),
+    b.ajoutes.length ? `${b.ajoutes.length} fichier${b.ajoutes.length > 1 ? 's' : ''} rangé${b.ajoutes.length > 1 ? 's' : ''} (${resume}). Les mises à jour et DLC sont avec leur jeu.` : b.messages?.length || figs.length ? '' : 'Aucun jeu trouvé dans ce que tu as déposé.',
     b.ignores ? `${b.ignores} fichier${b.ignores > 1 ? 's' : ''} laissé${b.ignores > 1 ? 's' : ''} de côté (pas des jeux).` : '',
     ...(b.erreurs || []).slice(0, 4),
   ].filter(Boolean).map(esc).join('<br>');
-  sheet(b.ajoutes.length ? 'Jeux ajoutés' : b.messages?.length ? 'C\'est installé' : 'Rien à ajouter', texte, [{ label: 'OK' }]);
+  sheet(b.ajoutes.length ? 'Jeux ajoutés' : figs.length ? 'Figurines ajoutées' : b.messages?.length ? 'C\'est installé' : 'Rien à ajouter', texte, [{ label: 'OK' }]);
 }
 function menuAjouterJeux() {
   sheet('Ajouter des jeux', 'Choisis tes jeux, ou dépose-les sur En Local : un jeu seul, avec ses mises à jour et DLC, ou une archive (.zip, .7z, .rar). Tout se range tout seul.', [

@@ -34,6 +34,18 @@ fn zone(parent: isize) -> Option<(u32, i32, i32, i32, i32)> {
         GetClientRect(HWND(parent as _), &mut r).ok()?;
         let mut o = POINT::default();
         let _ = ClientToScreen(HWND(parent as _), &mut o);
+        // La zone du jeu (sans le décor autour), et dedans l'écran principal si demandé.
+        let (mut gx, mut gy, mut gw, mut gh) = crate::embed::rect_jeu(parent);
+        if gw <= 0 || gh <= 0 {
+            (gx, gy, gw, gh) = (0, 0, r.right, r.bottom);
+        }
+        if let Some([fx, fy, fw, fh]) = *ZONE.lock().unwrap() {
+            (gx, gy, gw, gh) = (gx + (fx * gw as f64) as i32, gy + (fy * gh as f64) as i32, (fw * gw as f64) as i32, (fh * gh as f64) as i32);
+        }
+        o.x += gx;
+        o.y += gy;
+        r.right = gw;
+        r.bottom = gh;
         let (cx, cy) = (o.x + r.right / 2, o.y + r.bottom / 2);
         // ddagrab filme l'écran qui contient la fenêtre.
         let f: IDXGIFactory1 = CreateDXGIFactory1().ok()?;
@@ -59,6 +71,9 @@ fn format_son() -> Option<(u32, u16)> {
     let cfg = cpal::default_host().default_output_device()?.default_output_config().ok()?;
     (cfg.sample_format() == cpal::SampleFormat::F32).then(|| (cfg.sample_rate().0, cfg.channels()))
 }
+
+/// Écran principal seulement (DS, 3DS) : sa place dans la zone du jeu, en fractions (x, y, largeur, hauteur).
+pub static ZONE: std::sync::Mutex<Option<[f64; 4]>> = std::sync::Mutex::new(None);
 
 /// Micro à mêler au son des clips : None = pas de micro, Some(None) = celui de Windows, Some(Some(nom)) = celui-là.
 pub static MICRO: std::sync::Mutex<Option<Option<String>>> = std::sync::Mutex::new(None);

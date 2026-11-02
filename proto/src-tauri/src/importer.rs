@@ -42,6 +42,24 @@ fn amener(de: &Path, vers: &Path) -> std::io::Result<()> {
     }
 }
 
+/// Dossiers en lecture seule (archives faites sous Windows) : rendus modifiables, sinon leurs fichiers
+/// ne peuvent ni en sortir ni être effacés.
+fn modifiable(d: &Path) {
+    let Ok(m) = std::fs::symlink_metadata(d) else { return };
+    if !m.is_dir() {
+        return;
+    }
+    let mut p = m.permissions();
+    if p.readonly() {
+        #[allow(clippy::permissions_set_readonly_false)]
+        p.set_readonly(false);
+        let _ = std::fs::set_permissions(d, p);
+    }
+    for e in std::fs::read_dir(d).into_iter().flatten().flatten() {
+        modifiable(&e.path());
+    }
+}
+
 /// Un nom libre dans `dossier` (« Nom », « Nom (2) »…).
 fn libre(dossier: &Path, nom: &str) -> PathBuf {
     let p = dossier.join(nom);
@@ -53,6 +71,72 @@ fn libre(dossier: &Path, nom: &str) -> PathBuf {
         _ => (nom.to_string(), String::new()),
     };
     (2..).map(|n| dossier.join(format!("{base} ({n}){ext}"))).find(|p| !p.exists()).unwrap()
+}
+
+/// Copie d'amiibo : 540 octets (NTAG215), 532 ou 572 selon l'outil.
+fn est_amiibo(f: &Path) -> bool {
+    f.extension().is_some_and(|e| e.eq_ignore_ascii_case("bin")) && std::fs::metadata(f).is_ok_and(|m| (520..=600).contains(&m.len()))
+}
+/// Amiibo dans Médias\Amiibo (avec leur dossier de série), Skylanders dans Médias\Skylanders
+/// en gardant « jeu\élément » (les deux derniers dossiers) comme le lit figurines.rs. Les posters
+/// et symboles des dossiers de Skylanders les suivent.
+fn figurines(travail: &Path, fichiers: &[PathBuf], pris: &mut std::collections::HashSet<PathBuf>, b: &mut Bilan) {
+    // Dossiers de l'archive, sans « .import-…\<n> ».
+    let dossiers = |f: &Path| -> Vec<String> {
+        f.parent().and_then(|p| p.strip_prefix(travail).ok()).map(|p| p.components().skip(1).map(|c| c.as_os_str().to_string_lossy().into_owned()).collect()).unwrap_or_default()
+    };
+    let mut dossiers_sky = std::collections::HashSet::new();
+    let restants: Vec<&PathBuf> = fichiers.iter().filter(|f| !pris.contains(*f)).collect();
+    for f in restants {
+        let sky = f.extension().is_some_and(|e| e.eq_ignore_ascii_case("sky"));
+        if !sky && !est_amiibo(f) {
+            continue;
+        }
+        let d = dossiers(f);
+        // Skylanders : depuis le dossier du jeu (« Skylanders Giants\\Air\\Alternate types »), sinon les deux derniers.
+        let jeu = d.iter().position(|x| x.to_lowercase().starts_with("skylanders "));
+        let garde = match jeu {
+            Some(i) if sky => &d[i..],
+            _ => &d[d.len().saturating_sub(if sky { 2 } else { 1 })..],
+        };
+        let mut cible = crate::figurines::dossier(if sky { "skylanders" } else { "amiibo" });
+        for x in garde {
+            cible.push(x);
+        }
+        let nom = f.file_name().map(|x| x.to_string_lossy().into_owned()).unwrap_or_default();
+        // Déjà là (même nom, même contenu) : rien à faire.
+        if std::fs::read(cible.join(&nom)).ok().is_some_and(|x| std::fs::read(f).ok().as_ref() == Some(&x)) {
+            pris.insert(f.clone());
+            continue;
+        }
+        match std::fs::create_dir_all(&cible).and_then(|_| amener(f, &libre(&cible, &nom))) {
+            Ok(()) => b.ajoutes.push((if sky { "Skylanders" } else { "Amiibo" }.into(), nom)),
+            Err(e) => b.erreurs.push(format!("{nom} : {e}")),
+        }
+        pris.insert(f.clone());
+        if sky {
+            // Tous ses dossiers (élément, jeu…) : leurs posters et symboles le suivent.
+            for d in f.ancestors().skip(1).take_while(|d| d.starts_with(travail) && *d != travail) {
+                dossiers_sky.insert(Some(d.to_path_buf()));
+            }
+        }
+    }
+    let images: Vec<&PathBuf> = fichiers.iter().filter(|f| !pris.contains(*f) && dossiers_sky.contains(&f.parent().map(Path::to_path_buf))).collect();
+    for f in images {
+        let nom = f.file_name().map(|x| x.to_string_lossy().to_lowercase()).unwrap_or_default();
+        if !(nom.contains("poster") || nom.contains("symbol")) || !(nom.ends_with(".png") || nom.ends_with(".jpg")) {
+            continue;
+        }
+        let d = dossiers(f);
+        let mut cible = crate::figurines::dossier("skylanders");
+        let debut = d.iter().position(|x| x.to_lowercase().starts_with("skylanders ")).unwrap_or(d.len().saturating_sub(if nom.contains("poster") { 1 } else { 2 }));
+        for x in &d[debut..] {
+            cible.push(x);
+        }
+        if std::fs::create_dir_all(&cible).and_then(|_| amener(f, &cible.join(f.file_name().unwrap_or_default()))).is_ok() {
+            pris.insert(f.clone());
+        }
+    }
 }
 
 /// Nom lisible d'un jeu Wii U décompressé : celui de meta.xml (français, sinon anglais), sinon le dossier.
@@ -146,6 +230,7 @@ fn importer_dans(racine: &Path, chemins: &[String], classer: Classer, etape: &dy
     }
     // Zone de travail sur le même disque que les jeux : la suite n'est que des déplacements.
     let travail = racine.join(format!(".import-{}", std::process::id()));
+    modifiable(&travail);
     let _ = std::fs::remove_dir_all(&travail);
     if std::fs::create_dir_all(&travail).is_err() {
         b.erreurs.push("Impossible de préparer l'import.".into());
@@ -155,6 +240,7 @@ fn importer_dans(racine: &Path, chemins: &[String], classer: Classer, etape: &dy
     for e in std::fs::read_dir(&racine).into_iter().flatten().flatten() {
         let nom = e.file_name().to_string_lossy().into_owned();
         if nom.starts_with(".import-") && e.path() != travail {
+            modifiable(&e.path());
             let _ = std::fs::rename(e.path(), travail.join(&nom[1..]));
         }
     }
@@ -172,6 +258,7 @@ fn importer_dans(racine: &Path, chemins: &[String], classer: Classer, etape: &dy
             if !decompresser(&p, &ici) {
                 b.erreurs.push(format!("{nom} : archive abîmée ou incomplète, seule une partie a pu être sortie (re-télécharge-la, ou répare-la avec WinRAR)"));
             }
+            modifiable(&ici);
         } else {
             etape(format!("Copie de {nom}…"));
             if let Err(e) = amener(&p, &ici.join(&nom)) {
@@ -241,6 +328,8 @@ fn importer_dans(racine: &Path, chemins: &[String], classer: Classer, etape: &dy
         }
         b.ajoutes.push((console.into(), nom));
     }
+    // Figurines du joueur (amiibo .bin, Skylanders .sky) : dans Médias, avec leurs posters et symboles.
+    figurines(&travail, &fichiers, &mut pris, &mut b);
     // Autres fichiers : les jeux, MAJ et DLC reconnus vont à la racine, puis le rangement les place.
     for f in fichiers.into_iter().filter(|f| !pris.contains(f)) {
         let nom = f.file_name().map(|x| x.to_string_lossy().into_owned()).unwrap_or_default();
@@ -265,6 +354,7 @@ fn importer_dans(racine: &Path, chemins: &[String], classer: Classer, etape: &dy
             None => b.ignores += 1,
         }
     }
+    modifiable(&travail);
     let _ = std::fs::remove_dir_all(&travail);
     dossier::ranger(&dossier::a_ranger(&racine, classer));
     b
@@ -290,6 +380,41 @@ mod tests {
         trier(&d, 3, &mut w, &mut f);
         assert_eq!((w.len(), f.len()), (1, 1));
         assert!(est_archive(Path::new("x.ZIP")) && !est_archive(Path::new("x.nsp")));
+    }
+    #[test]
+    fn figurines_des_archives() {
+        let t = std::env::temp_dir().join("enlocal-import-fig");
+        let _ = std::fs::remove_dir_all(&t);
+        // Médias du test : à côté de l'exécutable du test (target), jamais ceux du joueur.
+        assert!(crate::root().contains("target"));
+        let _ = std::fs::remove_dir_all(crate::figurines::dossier("amiibo"));
+        let _ = std::fs::remove_dir_all(crate::figurines::dossier("skylanders"));
+        let base = t.join("0").join("Pack");
+        for d in ["Smash", "Skylanders Giants/Fire/Alternate types"] {
+            std::fs::create_dir_all(base.join(d)).unwrap();
+        }
+        let mario = base.join("Smash/Mario.bin");
+        std::fs::write(&mario, vec![0u8; 540]).unwrap();
+        std::fs::write(base.join("Smash/gros.bin"), vec![0u8; 4096]).unwrap();
+        let hot = base.join("Skylanders Giants/Fire/Alternate types/Hot Dog.sky");
+        std::fs::write(&hot, b"x").unwrap();
+        let poster = base.join("Skylanders Giants/poster.jpg");
+        std::fs::write(&poster, b"x").unwrap();
+        let fichiers = vec![mario.clone(), base.join("Smash/gros.bin"), hot.clone(), poster.clone()];
+        let (mut pris, mut b) = (std::collections::HashSet::new(), Bilan::default());
+        figurines(&t, &fichiers, &mut pris, &mut b);
+        assert_eq!(b.ajoutes.len(), 2, "{:?}", b.erreurs);
+        assert!(pris.contains(&mario) && pris.contains(&hot) && pris.contains(&poster) && !pris.contains(&base.join("Smash/gros.bin")));
+        let sky = crate::figurines::dossier("skylanders");
+        assert!(sky.join("Skylanders Giants/Fire/Alternate types/Hot Dog.sky").exists() && sky.join("Skylanders Giants/poster.jpg").exists());
+        assert!(crate::figurines::dossier("amiibo").join("Smash/Mario.bin").exists());
+        for p in [sky.join("Skylanders Giants/Fire/Alternate types/Hot Dog.sky"), sky.join("Skylanders Giants/poster.jpg"), crate::figurines::dossier("amiibo").join("Smash/Mario.bin")] {
+            let _ = std::fs::remove_file(p);
+        }
+        // Dossiers créés par le test, s'ils sont vides.
+        for d in [sky.join("Skylanders Giants/Fire/Alternate types"), sky.join("Skylanders Giants/Fire"), sky.join("Skylanders Giants"), crate::figurines::dossier("amiibo").join("Smash")] {
+            let _ = std::fs::remove_dir(d);
+        }
     }
     #[test]
     fn noms_de_dossier_sans_chemin() {
@@ -396,5 +521,24 @@ mod tests {
         assert_eq!((b.ajoutes.len(), b.ignores), (4, 1));
         assert!(src.join("pack.zip").exists(), "l'archive d'origine reste");
         assert!(!std::fs::read_dir(&jeux).unwrap().flatten().any(|e| e.file_name().to_string_lossy().starts_with(".import")));
+    }
+}
+
+#[cfg(test)]
+mod lecture_seule {
+    #[test]
+    fn dossiers_en_lecture_seule_effacables() {
+        let d = std::env::temp_dir().join("enlocal-lecture-seule");
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(d.join("a/b")).unwrap();
+        std::fs::write(d.join("a/b/x.sky"), b"x").unwrap();
+        for p in [d.join("a/b"), d.join("a")] {
+            let mut m = std::fs::metadata(&p).unwrap().permissions();
+            m.set_readonly(true);
+            std::fs::set_permissions(&p, m).unwrap();
+        }
+        assert!(std::fs::remove_dir_all(&d).is_err());
+        super::modifiable(&d);
+        std::fs::remove_dir_all(&d).unwrap();
     }
 }

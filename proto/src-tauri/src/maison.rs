@@ -21,7 +21,7 @@ pub fn propre(p: &Path) -> String {
 
 /// Dossiers lisibles par l'interface, avec leur vrai chemin.
 pub fn dossiers_lisibles() -> Vec<PathBuf> {
-    ["home", "captures", "jaquettes", "sprites", "miniatures"].iter().flat_map(|n| {
+    ["home", "captures", "jaquettes", "sprites", "miniatures", "skylanders-images"].iter().flat_map(|n| {
         let d = dossier(n);
         let vrai = PathBuf::from(propre(&d));
         [d, vrai]

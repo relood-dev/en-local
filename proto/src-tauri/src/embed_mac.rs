@@ -99,7 +99,17 @@ fn attendre_image() {
             }
         }
         if ATTENTE.load(Relaxed) == n {
+            // L'écran de lancement d'En Local joue sa sortie, puis le jeu apparaît, contours compris.
+            if let Some(a) = APP.get() {
+                use tauri::Emitter;
+                let _ = a.emit("jeu-pret", ());
+            }
+            std::thread::sleep(Duration::from_millis(450));
+            if ATTENTE.load(Relaxed) != n {
+                return;
+            }
             PRET.store(true, Relaxed);
+            placer_habillage(0, !HIDDEN.load(Relaxed));
             poser_cadre(!HIDDEN.load(Relaxed));
             // L'émulateur a pu prendre la main en ouvrant sa fenêtre (Ryujinx) : En Local la reprend,
             // sinon l'habillage (contours arrondis) reste caché jusqu'à un clic.
@@ -206,12 +216,21 @@ fn garder_habillage(app: &tauri::AppHandle) {
     if !HABILLAGE_VISIBLE.load(Relaxed) {
         return;
     }
-    if main.is_minimized().unwrap_or(false) {
-        let _ = h.hide();
+    // Caché aussi quand une autre app passe devant : il restait par-dessus elle (Cmd-Tab vers le Terminal,
+    // le contour du jeu autour de sa fenêtre). Il revient quand En Local reprend la main.
+    if main.is_minimized().unwrap_or(false) || !AU_PREMIER_PLAN.load(Relaxed) {
+        if h.is_visible().unwrap_or(false) {
+            let _ = h.hide();
+        }
         return;
     }
     if !h.is_visible().unwrap_or(true) {
         let _ = h.show();
+        // macOS le repousse sous l'encoche en l'affichant : remis à sa place.
+        if let (Ok(p), Ok(t)) = (main.inner_position(), main.inner_size()) {
+            let _ = h.set_position(p);
+            let _ = h.set_size(t);
+        }
     }
     let mut cible = NUMERO_PRINCIPALE.load(Relaxed);
     if direct() && PRET.load(Relaxed) {
@@ -261,17 +280,22 @@ fn placer_habillage(_parent: isize, visible: bool) {
     use tauri::Manager;
     let Some(app) = APP.get() else { return };
     let (Some(main), Some(h)) = (app.get_webview_window("main"), app.get_webview_window("habillage")) else { return };
+    // Pas de contours tant que le jeu n'a pas sa première image : ils restaient sur l'écran de lancement.
+    let visible = visible && (PRET.load(std::sync::atomic::Ordering::Relaxed) || !FORK.load(std::sync::atomic::Ordering::Relaxed) || DS.load(std::sync::atomic::Ordering::Relaxed));
     HABILLAGE_VISIBLE.store(visible, std::sync::atomic::Ordering::Relaxed);
     if !visible {
         let _ = h.hide();
         return;
     }
     // Toute la fenêtre, bande de l'encoche comprise : le décor y passe, le jeu reste dessous (trou()).
-    if let (Ok(p), Ok(t)) = (main.inner_position(), main.inner_size()) {
+    // Placée après l'affichage aussi : macOS repousse sous l'encoche une fenêtre qu'il affiche.
+    let placer = || if let (Ok(p), Ok(t)) = (main.inner_position(), main.inner_size()) {
         let _ = h.set_position(p);
         let _ = h.set_size(t);
-    }
+    };
+    placer();
     let _ = h.show();
+    placer();
 }
 fn freeze(child: &Child, _render: isize, frozen: bool) {
     signal(child.id(), if frozen { "-STOP" } else { "-CONT" });
@@ -490,7 +514,8 @@ pub fn start_ryujinx(dir: &str, game: &str, eden: &str, contenu: &[std::path::Pa
         .env("ENLOCAL_CONTENUS", contenus)
         .env("ENLOCAL_EDEN_SAVES", format!("{user}/nand/user/save/0000000000000000"))
         .env("ENLOCAL_EDEN_PROFIL", crate::saves::profil_eden().map(|p| p.0).unwrap_or_default())
-        .env("SDL_GAMECONTROLLERCONFIG", crate::pad::mappings());
+        .env("SDL_GAMECONTROLLERCONFIG", crate::pad::mappings())
+        .env("ENLOCAL_AMIIBO", crate::figurines::fichier("amiibo"));
     // Comme Eden : portable pour les jeux faits pour, sinon le mode choisi (dock par défaut).
     if (title_id.is_some_and(crate::reglages::en_main) && !distance) || o.get("mode").is_some_and(|m| m == "0") {
         cmd.env("ENLOCAL_EN_MAIN", "1");

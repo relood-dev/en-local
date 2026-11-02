@@ -8,7 +8,9 @@ let colElements = []; // action de ✕ pour chaque élément
 const IDEES = ['Favoris', 'À terminer', 'Jeux coop', 'Jeux du week-end', 'RPG', 'Soirées Smash', 'Pokémon', 'Mario'];
 
 const indicesDe = (c) => c.jeux.map((p) => games.findIndex((g) => g.path === p)).filter((i) => i >= 0);
-const titreDe = (g) => fiche(g)?.title || g.name;
+/** Nom affiché d'un jeu : son vrai titre, sinon le nom du fichier sans régions, langues ni « Decrypted ». */
+const nomPropre = (n) => n.replace(/\s*[([][^)\]]*[)\]]/g, '').replace(/\b(decrypted|encrypted|trimmed|dumped)\b/gi, '').replace(/[\s_]+/g, ' ').trim() || n;
+const titreDe = (g) => fiche(g)?.title || nomPropre(g?.name || '');
 const colActuelle = () => collections.find((c) => c.id === colOuverte);
 
 function drawCollections() {

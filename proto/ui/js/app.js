@@ -9,7 +9,12 @@ function drawGlyphs() {
 }
 const { listen } = window.__TAURI__.event;
 const $ = (s) => document.querySelector(s);
-const status = (t) => ($('#status').textContent = t);
+const status = (t) => {
+  $('#status').textContent = t;
+  // Pendant l'écran de lancement, ses messages (préparation, attente de l'hôte…) s'y affichent.
+  const e = t && document.querySelector('#lancement.ouvert .l-etape');
+  if (e) e.textContent = t;
+};
 let toastTimer = null;
 function toast(t) {
   status(t);
@@ -69,7 +74,7 @@ addEventListener('focus', repos);
 addEventListener('blur', repos);
 setInterval(repos, 500);
 const shown = (s) => $(s).style.display === 'grid';
-const view = () => (shown('#menu') ? 'menu' : shown('#sheet') ? 'sheet' : saisieOuverte() ? 'saisie' : figurinesOuvertes() ? 'figurines' : vueOuverte() ? 'vue' : distanceVisible() ? 'distance' : salle ? 'salle' : current && !enAccueil ? 'jeu' : bienvenueOuverte() ? 'bienvenue' : 'biblio');
+const view = () => (shown('#menu') ? 'menu' : shown('#sheet') ? 'sheet' : saisieOuverte() ? 'saisie' : vueOuverte() ? 'vue' : distanceVisible() ? 'distance' : salle ? 'salle' : current && !enAccueil ? 'jeu' : bienvenueOuverte() ? 'bienvenue' : 'biblio');
 // Les noms viennent aussi des autres membres : jamais de HTML brut.
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
@@ -164,7 +169,7 @@ const oops = (e) => sheet('Oups', esc(e), [{ label: 'OK' }]);
 function choose(i) {
   const g = games[i];
   if (!me || !enSession(g)) return play(i);
-  sheet(g.name, 'Seul, ou avec les membres du Local ?', [
+  sheet(titreDe(g), 'Seul, ou avec les membres du Local ?', [
     { label: 'Jouer seul', fn: () => play(i) },
     { label: 'Créer une session', fn: () => host(i) },
     { label: 'Annuler' },
@@ -213,7 +218,7 @@ async function editFriendCode(g, current = '') {
         sheet('Code ami', esc(e), [{ label: 'Réessayer', fn: () => editFriendCode(g).then(done) }, { label: 'Plus tard', fn: done }]);
       }
     };
-    sheet('Ton code ami', `Les autres joueurs en ont besoin pour te trouver dans <b>${esc(g.name)}</b>. Il apparaît dans le jeu une fois connecté au Wi-Fi (Pokémon : Carnet d'amis, ta propre fiche).`, [
+    sheet('Ton code ami', `Les autres joueurs en ont besoin pour te trouver dans <b>${esc(titreDe(g))}</b>. Il apparaît dans le jeu une fois connecté au Wi-Fi (Pokémon : Carnet d'amis, ta propre fiche).`, [
       { label: 'Enregistrer', fn: save },
       { label: 'Plus tard', fn: done },
     ], '<input id="fc" maxlength="14" placeholder="0000-0000-0000" spellcheck="false" autocomplete="off" inputmode="numeric">');
@@ -516,7 +521,7 @@ async function netplayLobby(i, hostCode) {
       netplay.relaunchTarget = 0;
       if (hosting && session) api('PUT', `/sessions/${session.code}/running`, { running: true }).catch(() => {});
       updatePresence();
-      status(`${g.name} : partie en ligne`);
+      status(`${titreDe(g)} : partie en ligne`);
       return;
     }
     if (!l.playing && playing) {
@@ -617,7 +622,7 @@ function updatePresence() {
   // « Montrer à quoi je joue » sur Non : jeu caché, sauf en session.
   const g = session || partage('montrerJeu') ? current || lobbyPresence : null;
   if (!g) return invoke('presence', { p: { details: 'Dans les menus', start: appStart } }).catch(() => {});
-  const p = { details: g.name, state: CONSOLES[g.console] || g.console, start: playStart };
+  const p = { details: titreDe(g), state: CONSOLES[g.console] || g.console, start: playStart };
   if (session) {
     Object.assign(p, {
       state: `Session ${session.code}`,
@@ -1165,7 +1170,7 @@ async function chargerFiches() {
   for (const g of games) {
     const cle = `wiki:${g.console}:${g.name}`;
     if (fiche(g)?.synopsis || cle in fiches) continue;
-    fiches[cle] = await wikipedia(fiche(g)?.title || g.name);
+    fiches[cle] = await wikipedia(titreDe(g));
     localStorage.fiches = JSON.stringify(fiches);
   }
   if (onglet === 'jeux' && view() === 'biblio') drawJeux();
@@ -1221,7 +1226,7 @@ function basculerSessions(g) {
   if (sessionsForcees[g.path]) delete sessionsForcees[g.path];
   else sessionsForcees[g.path] = true;
   localStorage.sessionsForcees = JSON.stringify(sessionsForcees);
-  toast(`${fiche(g)?.title || g.name} : sessions ${sessionsForcees[g.path] ? 'proposées' : 'masquées (un seul joueur)'}`);
+  toast(`${titreDe(g)} : sessions ${sessionsForcees[g.path] ? 'proposées' : 'masquées (un seul joueur)'}`);
   drawJeux();
 }
 
@@ -1284,7 +1289,7 @@ function drawJeux() {
   const reel = $('#reel');
   if (reel.dataset.c !== conSel) {
     reel.dataset.c = conSel;
-    reel.innerHTML = liste.map((x) => `<div class="g" data-i="${x.i}"><div class="sans">${iconeConsole(conSel, 'filigrane')}<span class="tag">${NOMS[conSel]}</span><b>${esc(x.g.name)}</b></div>${coverImg(x.g, '')}</div>`).join('');
+    reel.innerHTML = liste.map((x) => `<div class="g" data-i="${x.i}"><div class="sans">${iconeConsole(conSel, 'filigrane')}<span class="tag">${NOMS[conSel]}</span><b>${esc(titreDe(x.g))}</b></div>${coverImg(x.g, '')}</div>`).join('');
     reel.querySelectorAll('.g').forEach((el, k) => (el.onclick = () => {
       if (zone === 'jeux' && k === choix[conSel]) return play(+el.dataset.i);
       zone = 'jeux';
@@ -1309,7 +1314,7 @@ function drawJeux() {
     ['Développeur', f.developer],
     ['Éditeur', f.publisher !== f.developer ? f.publisher : ''],
   ].filter(([, v]) => v) : [];
-  const nom = f?.title || g.name;
+  const nom = titreDe(g);
   $('#info').innerHTML = `<h1 class="${nom.length > 22 ? 'long' : ''}">${esc(nom)}</h1>
     <div class="meta"><span>${LONG[g.console]}</span>${majAffichee(g) ? `<span>MAJ <b>${esc(majAffichee(g))}</b></span>` : contenus[g.path]?.maj ? `<span>MAJ <b>${esc(contenus[g.path].maj === '?' ? 'oui' : contenus[g.path].maj)}</b></span>` : ''}${contenus[g.path]?.dlc ? `<span><b>${+contenus[g.path].dlc}</b> DLC</span>` : ''}${resumeSucces(g)}${tempsDe(g) ? `<span>Temps de jeu <b>${duree(tempsDe(g)).replace(' de jeu', '')}</b></span>` : ''}${st?.last ? `<span>${quand(st.last).replace('Joué', 'Dernière partie')}</span>` : '<span>Jamais lancé</span>'}</div>
     ${f?.synopsis ? `<p>${esc(f.synopsis.split('\n')[0])}</p>` : wikiDe(g) ? `<p>${esc(wikiDe(g).texte)}</p><div class="source">Texte : Wikipédia, CC BY-SA</div>` : ''}
@@ -1499,6 +1504,11 @@ function paint(buf) {
 }
 function onFrame(buf) {
   paint(buf);
+  // Consoles dessinées par l'app : la première image du jeu qui ne soit pas toute noire.
+  if (lanceur && lanceur.g === current && dansApp(current)) {
+    const px = new Uint8Array(buf, 4);
+    for (let k = 0; k < px.length; k += 4 * 97) if (px[k] > 24 || px[k + 1] > 24 || px[k + 2] > 24) { fermerLancement(); break; }
+  }
   // Mac : image filmée, la suivante n'est envoyée qu'une fois celle-ci dessinée.
   if (MAC && current?.console !== 'DS') invoke('image_dessinee').catch(() => {});
 }
@@ -1539,8 +1549,8 @@ function reglerMaj(i) {
   const g = games[i];
   const l = majsDe[g.path] || [];
   const actuelle = majDe(g) ?? l[0]?.path;
-  const choisir = (p) => { localStorage['maj:' + g.path] = p; toast(`${fiche(g)?.title || g.name} : ${p ? nomMaj(l.find((m) => m.path === p)) : 'sans mise à jour'}`); drawJeux(); };
-  sheet('Mise à jour', `Celle que ${esc(fiche(g)?.title || g.name)} utilise. Les DLC sont gardés dans tous les cas. Pour jouer en session, prenez la même.`, [
+  const choisir = (p) => { localStorage['maj:' + g.path] = p; toast(`${titreDe(g)} : ${p ? nomMaj(l.find((m) => m.path === p)) : 'sans mise à jour'}`); drawJeux(); };
+  sheet('Mise à jour', `Celle que ${esc(titreDe(g))} utilise. Les DLC sont gardés dans tous les cas. Pour jouer en session, prenez la même.`, [
     ...l.map((m, k) => ({ label: `${m.path === actuelle ? '✓ ' : ''}${nomMaj(m)}${k === 0 ? ' (la plus récente)' : ''}`, fn: () => choisir(m.path) })),
     { label: `${actuelle === '' ? '✓ ' : ''}Sans mise à jour`, fn: () => choisir('') },
     { label: 'Fermer', cancel: true },
@@ -1610,7 +1620,7 @@ async function recevoirShaders(g, emu = 'eden') {
   const local = await invoke('shaders_taille', { titre: t, emu }).catch(() => 0);
   const info = await api('GET', `/${routeShaders(emu)}/${t}`);
   if (!info.taille || info.taille <= local * 1.02) return;
-  status(`Shaders des membres pour ${g.name}…`);
+  status(`Shaders des membres pour ${titreDe(g)}…`);
   const res = await fetch(`${API}/${routeShaders(emu)}/${t}/cache`, { headers: { Authorization: `Bearer ${localStorage.token}` } });
   if (!res.ok) return;
   const brut = await new Response(res.body.pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
@@ -1625,12 +1635,71 @@ async function netplayRetro(g) {
   for (let k = 0; k < 60; k++) {
     const r = await api('GET', `/sessions/${encodeURIComponent(session.code)}/relais`).catch(() => null);
     if (r?.session) return { netplay: 'invite', relais: r.session };
-    status(`Session ${session.code} : en attente de l'hôte, il doit lancer ${g.name}…`);
+    status(`Session ${session.code} : en attente de l'hôte, il doit lancer ${titreDe(g)}…`);
     await new Promise((ok) => setTimeout(ok, 3000));
     if (!session) throw new Error('Session quittée.');
   }
   throw new Error('L\'hôte n\'a pas lancé la partie : réessaie quand il est en jeu.');
 }
+
+/*
+ * Écran de lancement : affiché dès le clic, il reste jusqu'à la première vraie image du jeu (Mac : signal
+ * « jeu-pret », l'émulateur n'apparaît qu'après sa sortie ; consoles dans l'app : la première image reçue).
+ */
+let lanceur = null; // { g, montee }
+function ouvrirLancement(g) {
+  const el = $('#lancement');
+  const fond = shotOf(g);
+  el.innerHTML = `<div class="l-fond">${fond ? `<img src="${esc(fond)}" alt="">` : coverImg(g, 'l-fond-img')}</div><div class="l-voile"></div>
+    <div class="l-centre"><div class="l-jaquette" style="--ratio:${JAQUETTES[g.console]?.ratio || 0.8}">${coverImg(g, 'l-img') || `<span class="l-sans">${esc(titreDe(g))}</span>`}<i class="l-reflet"></i></div>
+    <h1 class="l-titre">${esc(titreDe(g))}</h1><p class="l-console">${esc(LONG[g.console] || g.console)}</p><div class="l-barre"><i></i></div><p class="l-etape">Préparation…</p></div>`;
+  el.className = 'ouvert';
+  el.style.display = 'block';
+  // La lueur autour de la jaquette prend sa couleur.
+  const img = el.querySelector('.l-img');
+  if (img) img.addEventListener('load', () => {
+    try {
+      const c = document.createElement('canvas');
+      c.width = c.height = 1;
+      const x = c.getContext('2d');
+      x.drawImage(img, 0, 0, 1, 1);
+      const [rr, vv, bb] = x.getImageData(0, 0, 1, 1).data;
+      el.querySelector('.l-jaquette')?.style.setProperty('--lueur', `rgba(${rr}, ${vv}, ${bb}, .55)`);
+    } catch {}
+  }, { once: true });
+  clearInterval(lanceur?.montee);
+  lanceur = { g, p: 0 };
+  progresLancement(0.06);
+  // Au plus 2 minutes, quoi qu'il arrive.
+  const moi = lanceur;
+  setTimeout(() => lanceur === moi && fermerLancement(), 120000);
+}
+function progresLancement(p, texte) {
+  if (!lanceur) return;
+  lanceur.p = Math.max(lanceur.p, p);
+  const el = $('#lancement');
+  el.querySelector('.l-barre i').style.transform = `scaleX(${lanceur.p})`;
+  if (texte) el.querySelector('.l-etape').textContent = texte;
+}
+/** Le jeu charge : la barre avance d'elle-même, de moins en moins vite, sans jamais finir seule. */
+function attenteLancement(texte) {
+  if (!lanceur) return;
+  progresLancement(0.8, texte);
+  clearInterval(lanceur.montee);
+  lanceur.montee = setInterval(() => progresLancement(lanceur.p + (0.97 - lanceur.p) * 0.05), 250);
+}
+function fermerLancement(reussi = true) {
+  if (!lanceur) return;
+  clearInterval(lanceur.montee);
+  const el = $('#lancement');
+  const fin = () => ((el.style.display = 'none'), (el.innerHTML = ''), (el.className = ''));
+  if (!reussi) return ((lanceur = null), fin());
+  progresLancement(1, 'C\'est parti !');
+  lanceur = null;
+  el.classList.add('sortie');
+  setTimeout(() => !lanceur && fin(), 500);
+}
+listen('jeu-pret', () => fermerLancement());
 
 /** Un lancement à la fois : un deuxième clic pendant la préparation (journaux, sauvegardes) lançait un second émulateur. */
 let enLancement = false;
@@ -1647,9 +1716,11 @@ async function lancer(i, room) {
   if (current && enAccueil) return games[i] === current ? closeMenu() : libererJeu(() => play(i, room));
   const g = games[i];
   dernierLancement = { i, room };
+  son('lancer');
+  ouvrirLancement(g);
   // Switch .nsz / .xcz : décompressé une fois, l'original supprimé.
   if (g.console === 'Switch') {
-    if (/\.(nsz|xcz)$/i.test(g.path)) status(`Préparation de ${g.name} (une seule fois, quelques minutes au plus)…`);
+    if (/\.(nsz|xcz)$/i.test(g.path)) status(`Préparation de ${titreDe(g)} (une seule fois, quelques minutes au plus)…`);
     try {
       const chemin = await invoke('preparer_switch', { path: g.path });
       if (chemin !== g.path) {
@@ -1658,6 +1729,7 @@ async function lancer(i, room) {
       }
     } catch (e) {
       status('');
+      fermerLancement(false);
       return oops(e);
     }
     status('');
@@ -1667,15 +1739,26 @@ async function lancer(i, room) {
     netRetro = await netplayRetro(g);
   } catch (e) {
     status('');
+    fermerLancement(false);
     return oops(e);
   }
-  await envoyerJournaux();
-  await pokedexAvantPartie(g);
+  // Chaque étape avant le jeu : dans le journal si elle prend plus d'une demi-seconde.
+  const etape = async (nom, f) => {
+    const t = performance.now();
+    await f();
+    const ms = Math.round(performance.now() - t);
+    if (ms > 500) invoke('journal', { texte: `lancement de ${g.name} : ${nom} en ${ms} ms` }).catch(() => {});
+  };
+  // Les journaux partent pendant le lancement, sans le retarder.
+  envoyerJournaux();
+  progresLancement(0.15, 'Préparation…');
+  await etape('pokédex', () => pokedexAvantPartie(g));
   // La sauvegarde la plus récente de tes appareils avant de jouer.
-  await synchroSaves();
-  if (partageShaders(g)) for (const emu of EMUS_SHADERS) await recevoirShaders(g, emu).catch(() => {});
+  progresLancement(0.25, 'Synchronisation de tes sauvegardes…');
+  await etape('sauvegardes', synchroSaves);
+  progresLancement(0.5);
+  if (partageShaders(g)) (progresLancement(0.5, 'Shaders des membres…'), await etape('shaders', async () => { for (const emu of EMUS_SHADERS) await recevoirShaders(g, emu).catch(() => {}); }));
   if (!musique.paused) musique.pause();
-  son('lancer');
   const update = majDe(g);
   current = g;
   const frames = new Channel();
@@ -1683,13 +1766,16 @@ async function lancer(i, room) {
   // Écran de chargement le temps que l'émulateur démarre.
   const ds = dansApp(g);
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  $('#chargement').textContent = ds ? '' : `Chargement de ${g.name}…`;
+  $('#chargement').textContent = '';
   $('#jeu').style.display = 'grid';
-  status(`Lancement de ${g.name}…`);
+  progresLancement(0.62, `Démarrage de la ${LONG[g.console] || g.console}…`);
   try {
     canvas.classList.toggle('lisse', lissageDs(g));
-    await invoke('play', { path: g.path, console: g.console, room, update, opts: { ...optsDe(g), ...netRetro, ...(session?.distance ? { distance: 'oui' } : invitesEnSession(g) ? { invites: 'oui' } : {}) }, frames });
+    await etape('démarrage de l\'émulateur', () => invoke('play', { path: g.path, console: g.console, room, update, opts: { ...optsDe(g), ...netRetro, ...(session?.distance ? { distance: 'oui' } : invitesEnSession(g) ? { invites: 'oui' } : {}) }, frames }));
     status('');
+    attenteLancement('Chargement du jeu…');
+    // Windows : le jeu est déjà dans sa fenêtre. Mac : « jeu-pret », ou sa première image (voir plus bas).
+    if (!MAC) fermerLancement();
     if (session?.distance || invitesEnSession(g)) distanceHote();
     for (const ms of [0, 2000, 6000, 15000, 40000]) setTimeout(() => current === g && volumeJeu(), ms);
     for (const ms of [0, 1500]) setTimeout(() => current === g && envoyerHabillage(), ms);
@@ -1700,6 +1786,7 @@ async function lancer(i, room) {
     dernierCompte = Date.now();
     updatePresence();
   } catch (e) {
+    fermerLancement(false);
     leaveSession();
     current = null;
     updatePresence();
@@ -1738,7 +1825,7 @@ async function setMenu(open) {
   if (open && enAccueil) return fermerOptions();
   $('#menu').classList.remove('sortie');
   $('#menu').style.display = open ? 'grid' : 'none';
-  $('#menu-titre').textContent = current ? current.name + (session ? ` · session ${session.code}` : '') : 'En pause';
+  $('#menu-titre').textContent = current ? titreDe(current) + (session ? ` · session ${session.code}` : '') : 'En pause';
   // DS : codes ami des joueurs de la session.
   const ds = open && session?.members && current?.console === 'DS';
   // Le code ami vient peut-être d'être créé : on le relit dans la sauvegarde.
@@ -1862,10 +1949,12 @@ function drawEnCours() {
   const b = $('#en-cours');
   b.style.display = enAccueil && current ? 'flex' : 'none';
   if (!enAccueil || !current) return;
-  b.querySelector('b').textContent = current.name;
-  b.querySelector('small').innerHTML = `${glyphs.home} Reprendre${session ? ` · ${esc(session.code)}` : ''}<span class="opt">${glyphs.plus} Quitter</span>`;
+  b.querySelector('b').textContent = titreDe(current);
+  // Jeu à figurines : leur section en un clic, depuis la barre du jeu en cours.
+  const f = figurinesDe(current);
+  b.querySelector('small').innerHTML = `${glyphs.home} Reprendre${session ? ` · ${esc(session.code)}` : ''}<span class="opt">${glyphs.plus} Quitter</span>${f ? `<span class="opt fig-lien">${glyphs.rb} ${f === 'amiibo' ? 'Amiibo' : 'Skylanders'}</span>` : ''}`;
 }
-$('#en-cours').onclick = (e) => (e.target.closest('.opt') ? act('quit') : closeMenu());
+$('#en-cours').onclick = (e) => (e.target.closest('.fig-lien') ? allerA('figurines') : e.target.closest('.opt') ? act('quit') : closeMenu());
 /** Menu HOME : le jeu en cours garde ses actions habituelles (−), avec Reprendre et la chasse. */
 function actionsEnCours(base) {
   const chasse = chasseActive(current), n = +localStorage[`resets:${current.path}`] || 0;
@@ -1875,7 +1964,7 @@ function actionsEnCours(base) {
     ...base.slice(1).filter((a) => !(session && a.label === 'Créer une session')),
     ...(attente.length ? [{ label: `Relancer avec ${attente.map((w) => w.name).join(', ')}`, fn: () => act('relaunch') }] : []),
     ...(session?.members && current.console === 'DS' ? [{ label: 'Mon code ami', fn: () => act('fc') }] : []),
-    ...(figurinesDe(current) ? [{ label: figurinesDe(current) === 'amiibo' ? 'Amiibo' : 'Skylanders', fn: () => ouvrirFigurines(figurinesDe(current)) }] : []),
+    ...(figurinesDe(current) ? [{ label: figurinesDe(current) === 'amiibo' ? 'Amiibo' : 'Skylanders', fn: () => allerA('figurines') }] : []),
     ...(estPokemon(current) ? [{ label: chasse ? `Chasse aux chromatiques : activée (${n} resets)` : 'Chasse aux chromatiques', fn: basculerChasse }] : []),
     ...(chasse ? [{ label: 'Relancer le jeu (R1, F5)', fn: resetJeu }] : []),
     ...(chasse && n ? [{ label: 'Compteur à zéro', fn: () => act('zero') }] : []),
@@ -1900,7 +1989,7 @@ async function rejoindreDepuisAccueil(code) {
   libererJeu(() => join(code));
 }
 function libererJeu(suite) {
-  sheet(`Quitter ${esc(current.name)} ?`, 'Un seul jeu à la fois : le tien s\'arrête. Pense à sauvegarder avant.', [
+  sheet(`Quitter ${esc(titreDe(current))} ?`, 'Un seul jeu à la fois : le tien s\'arrête. Pense à sauvegarder avant.', [
     { label: 'Retour', cancel: true },
     { label: 'Quitter et continuer', fn: async () => { await act('quitter'); suite(); } },
   ]);
@@ -1926,6 +2015,7 @@ async function refreshShot() {
     await new Promise((r) => setTimeout(r, n ? 500 : 400));
     buf = await invoke('game_shot');
   }
+  if (lanceur?.g === g && buf.byteLength > 4) fermerLancement();
   if (seq !== menuSeq || shown('#menu') || buf.byteLength <= 4) return;
   paint(buf);
   canvas.classList.add('photo');
@@ -1999,12 +2089,14 @@ listen('pad-connected', (e) => {
   if (view() === 'biblio') toast(`Manette : ${e.payload.name}`);
   utiliser(typeManette);
 });
+// Windows : le bouton Home de la manette ouvre En Local, pas la Game Bar (sauf si le joueur l'a choisie).
+if (!MAC && localStorage.gameBar !== 'xbox') invoke('game_bar', { manette: false }).catch(() => {});
 invoke('pad_info').then((p) => p.kind && ((typeManette = p.kind), utiliser(p.kind))).catch(() => {});
 addEventListener('keydown', (e) => (utiliser('clavier'), view() !== 'jeu' && (sansSouris(true), e.repeat || rythme())), true);
 drawGlyphs();
 listen('pad', async (e) => {
   const k = e.payload;
-  if (captureTouche) return;
+  if (captureTouche || performance.now() - finCapture < 400) return;
   if (view() !== 'jeu') sansSouris(true), rythme();
   if (!typeManette) typeManette = (await invoke('pad_info').catch(() => ({}))).kind || '';
   utiliser(typeManette);
@@ -2027,8 +2119,6 @@ listen('pad', async (e) => {
     if (k === 'b') cancelSheet();
   } else if (view() === 'saisie') {
     navSaisie(k);
-  } else if (view() === 'figurines') {
-    navFigurines(k);
   } else if (view() === 'vue') {
     navVue(k);
   } else if (view() === 'salle') {
@@ -2085,11 +2175,6 @@ window.onkeydown = (e) => {
   if (captureTouche && e.key === 'Escape') return ($('#sheet').style.display = 'none'), (captureTouche = null), drawReglages();
   if (e.key === 'F11') return (e.preventDefault(), modeEcran(localStorage.ecran === 'plein' ? localStorage.ecranAvant || 'fenetre' : ((localStorage.ecranAvant = localStorage.ecran || 'fenetre'), 'plein')));
   if (view() === 'distance') return e.key === 'Escape' && navDistance('home');
-  if (view() === 'figurines') {
-    const k = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', Enter: 'a', Escape: 'b', r: 'x' }[e.key];
-    if (k) e.preventDefault(), navFigurines(k);
-    return;
-  }
   if (view() === 'vue') {
     const k = { ArrowLeft: 'left', ArrowRight: 'right', Enter: 'a', ' ': 'a', Escape: 'b', Backspace: 'b' }[e.key];
     if (k) e.preventDefault(), navVue(k);

@@ -30,7 +30,7 @@ function drawSalle() {
   if (!salle) return;
   if (salle.mode === 'code') return drawCode();
   const g = games[salle.i];
-  const titre = fiche(g)?.title || g.name;
+  const titre = titreDe(g);
   const parId = new Map(membres.map((m) => [m.id, m]));
   const joueurs = (session?.members || []).map((m) => ({ ...m, avatar: parId.get(m.id)?.avatar || (m.id === me?.id ? me.avatar : '') }));
   if (!joueurs.length && me) joueurs.push({ id: me.id, name: me.name, avatar: me.avatar });

@@ -74,7 +74,7 @@ function drawMembres() {
       ${f('data-a="code" title="Rejoindre avec un code"', icone('<path d="M4 7h16M4 12h10M4 17h7"/>'), 'bouton-rond')}
       ${f('data-a="creer" title="Créer une session"', icone('<path d="M12 5v14M5 12h14"/>'), 'bouton-rond plein')}
     </div>
-    ${session ? `<div class="titre-groupe">Ta session</div>${f('data-a="ma-session"', `<span class="t"><b>${esc(current?.name || 'Session')} · ${esc(session.code)}</b><small>${+session.players || 1}/${+session.slots || 0} · invite des membres ci-dessous</small></span><span class="tag live">Gérer</span>`, 'ligne-m')}` : ''}
+    ${session ? `<div class="titre-groupe">Ta session</div>${f('data-a="ma-session"', `<span class="t"><b>${esc(current ? titreDe(current) : 'Session')} · ${esc(session.code)}</b><small>${+session.players || 1}/${+session.slots || 0} · invite des membres ci-dessous</small></span><span class="tag live">Gérer</span>`, 'ligne-m')}` : ''}
     ${sess.length ? `<div class="titre-groupe">Amis en jeu</div>${[...sess].sort((a, b) => (ownGame(b) >= 0) - (ownGame(a) >= 0) || b.createdAt - a.createdAt).map((s) => f(`data-s="${esc(s.code)}"`, `<img class="av" src="${esc(s.host?.avatar || 'img/hang-coucou.png')}" alt=""><span class="t"><b>${esc(s.game)}</b><small>${esc(s.host?.name || '')} · ${+s.players || 0}/${+s.slots || 0}${ownGame(s) < 0 ? ' · tu n\'as pas ce jeu' : ''}</small></span><span class="tag live">${ownGame(s) >= 0 ? (session?.code === s.code ? 'Tu y es' : 'Rejoindre') : 'Voir'}</span>`, 'ligne-m')).join('')}` : ''}
     ${GROUPES.map(([cle, titre]) => {
       const g = liste.filter((m) => (m.app || (enLigne(m) ? 'en-ligne' : 'hors-ligne')) === cle);
