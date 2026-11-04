@@ -1,48 +1,44 @@
-<p align="center"><img src="docs/logo.png" width="96" alt=""></p>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/banniere-sombre.png">
+    <img src="docs/banniere.png" width="860" alt="En Local · Partout, comme en local.">
+  </picture>
+</p>
 
-<h1 align="center">En Local</h1>
+<p align="center"><b>Partout, comme en local.</b><br>Quinze consoles Nintendo et PlayStation dans une seule app, à la manette comme sur une console.<br>Un code, et tes potes jouent avec toi comme sur le même canapé, où qu'ils soient.</p>
 
-<p align="center">L'app du serveur Discord <b>Le Local</b> pour jouer ensemble à vos jeux Nintendo sur PC.</p>
-
-<p align="center"><img src="docs/accueil.jpg" width="820" alt="L'accueil d'En Local"></p>
+<p align="center"><a href="https://loc-lab.fr/">Site</a> · <a href="https://loc-lab.fr/rejoindre">Discord</a> · <a href="https://github.com/relood-dev/en-local/releases/latest">Dernière version</a></p>
 
 ## Ce que c'est
 
-En Local réunit quinze consoles dans une seule app pour Windows, pensée comme le menu d'une console et pilotable à la manette.
+En Local est une app pour Windows, pensée comme le menu d'une console et pilotable à la manette, au clavier ou à la souris.
 
-- **NES, Super Nintendo, N64, Game Boy, Game Boy Color, GBA, DS, 3DS, GameCube, Wii, Wii U, Switch, PlayStation, PS2 et PS3** : les jeux se lancent dans la fenêtre d'En Local, sans ouvrir d'émulateur à part.
-- **Sessions avec un code** : on crée une session, les autres la rejoignent avec un code à 6 caractères, même en pleine partie.
-- **Tournois** : un membre organise, les autres s'inscrivent, chaque match se joue dans une session avec son code.
-- **Ajouter des jeux** : dépose un jeu ou une archive (.zip, .7z, .rar) sur l'app, il se range tout seul avec ses mises à jour et DLC.
-- **Le Local intégré** : qui est en ligne, qui joue à quoi, les jeux de chacun, les invitations et les défis dans un centre de notifications.
-- **Profil** : temps de jeu, 49 défis, jeux les plus joués, et un Pokédex qui suit tout ce qui est attrapé dans les jeux Pokémon.
-- **Captures et clips** : photo ou clip des dernières secondes avec le bouton de partage de la manette.
-- **Réglages simples** : graphismes recommandés selon le PC, touches de la manette, langue, son, par console ou par jeu.
-
-<p align="center">
-<img src="docs/jeux.jpg" width="410" alt="La bibliothèque">
-<img src="docs/tournois.jpg" width="410" alt="Un tournoi">
-</p>
-<p align="center">
-<img src="docs/depot.jpg" width="410" alt="Ajouter des jeux par glisser-déposer">
-<img src="docs/profil.jpg" width="410" alt="Le profil">
-</p>
+- **Quinze consoles, une seule app** : NES, Super Nintendo, N64, Game Boy, Game Boy Color, GBA, DS, 3DS, GameCube, Wii, Wii U, Switch, PlayStation, PS2 et PS3. Les jeux se lancent dans la fenêtre d'En Local, sans émulateur ouvert à côté.
+- **Sessions avec un code** : crée une session, tes amis la rejoignent avec son code ou en un clic depuis Discord. Local sans fil sur Switch, 3DS et DS, netplay sur GameCube, Wii et les anciennes consoles, sans ouvrir de port.
+- **Jeu à distance** : les jeux sans mode en ligne (Mario Party…) se jouent quand même ensemble. Tes amis voient ton écran et jouent avec leur manette, jusqu'à 8.
+- **Menu HOME** : en pleine partie, le jeu se met en pause et En Local s'ouvre par-dessus. Captures, clips, figurines amiibo et Skylanders, session, réglages.
+- **Amis** : chacun a un code ami à 8 chiffres, lié à son compte Discord. Ajoute tes amis, vois à quoi ils jouent, rejoins-les.
+- **Mii** : crée jusqu'à 100 Mii dans En Local. Ils partent tout seuls sur la 3DS, la Wii, la Wii U et la Switch.
+- **Communautés** : une par jeu, avec des messages écrits ou dessinés à la main, des « Ouais ! » et des commentaires.
+- **Profil** : temps de jeu par console, 104 défis, un Pokédex qui lit tes vraies sauvegardes, et le même profil sur tous tes appareils, sauvegardes comprises.
+- **Tournois** : un membre organise, les autres s'inscrivent, chaque match se joue dans une session.
+- **18 thèmes** : des couleurs des consoles (Game Boy, GameCube Indigo, Wii, PS2…) aux ambiances animées (Sakura, Neige, Minuit…).
 
 ## Installer
 
-1. Rejoins le serveur Discord **Le Local** : https://loc-lab.fr/rejoindre
-2. Télécharge l'installeur sur https://loc-lab.fr/en-local/ (connexion Discord, membres vérifiés du Local).
+1. Rejoins le serveur Discord d'En Local : https://loc-lab.fr/rejoindre
+2. Télécharge l'installeur sur https://loc-lab.fr/ (connexion avec Discord).
 3. Lance-le. Windows ne connaît pas encore En Local et affiche un avertissement SmartScreen : clique sur « Informations complémentaires », puis « Exécuter quand même ».
-4. Au premier lancement, Loc, la mascotte du serveur, te guide : connexion Discord, dossier des jeux, manette, graphismes.
+4. Au premier lancement, Loc, la mascotte d'En Local, te guide : connexion Discord, dossier des jeux, manette, graphismes.
 
 En Local se met ensuite à jour tout seul.
 
 ### Ce qu'il te faut
 
 - Windows 10 ou 11 (64 bits), et une manette de préférence.
-- Un compte Discord membre vérifié du Local.
+- Un compte Discord, membre du serveur Discord d'En Local.
 - Tes propres jeux : les copies de tes cartouches et de tes disques.
-- Switch : les clés (`prod.keys`) et le firmware de ta console. 3DS : le `boot9.bin` de ta console pour les jeux chiffrés. En Local les range pour toi.
+- Switch : les clés (`prod.keys`) et le firmware de ta console. 3DS : le `boot9.bin` de ta console pour les jeux chiffrés. PS2 et PS3 : le BIOS et le firmware officiel de Sony. En Local les range pour toi.
 
 **En Local ne fournit aucun jeu, aucune clé, aucun firmware ni aucun BIOS.**
 
@@ -65,7 +61,7 @@ Les émulateurs utilisés :
 - **NES, Super Nintendo, N64, Game Boy, GBA, PlayStation et PS2** : RetroArch, avec Mesen, Snes9x, Mupen64Plus-Next, Gambatte, mGBA, PCSX ReARMed et LRPS2
 - **PS3** : RPCS3
 
-L'app parle à **Loc**, le bot du serveur, pour la connexion Discord, les sessions et les mises à jour.
+L'app parle à **Loc**, le serveur d'En Local, pour la connexion Discord, les amis, les sessions, les communautés et les mises à jour.
 
 ### Compiler
 
