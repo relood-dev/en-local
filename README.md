@@ -7,7 +7,9 @@
 
 <p align="center"><b>Partout, comme en local.</b><br>Quinze consoles Nintendo et PlayStation dans une seule app, à la manette comme sur une console.<br>Un code, et tes potes jouent avec toi comme sur le même canapé, où qu'ils soient.</p>
 
-<p align="center"><a href="https://loc-lab.fr/">Site</a> · <a href="https://loc-lab.fr/rejoindre">Discord</a> · <a href="https://github.com/relood-dev/en-local/releases/latest">Dernière version</a></p>
+<p align="center"><a href="https://loc-lab.fr/">Site</a> · <a href="https://loc-lab.fr/rejoindre">Discord</a> · <a href="https://www.tiktok.com/@enlocal.app">TikTok</a></p>
+
+<p align="center"><b>Prochainement.</b></p>
 
 ## Ce que c'est
 
@@ -26,12 +28,7 @@ En Local est une app pour Windows, pensée comme le menu d'une console et pilota
 
 ## Installer
 
-1. Rejoins le serveur Discord d'En Local : https://loc-lab.fr/rejoindre
-2. Télécharge l'installeur sur https://loc-lab.fr/ (connexion avec Discord).
-3. Lance-le. Windows ne connaît pas encore En Local et affiche un avertissement SmartScreen : clique sur « Informations complémentaires », puis « Exécuter quand même ».
-4. Au premier lancement, Loc, la mascotte d'En Local, te guide : connexion Discord, dossier des jeux, manette, graphismes.
-
-En Local se met ensuite à jour tout seul.
+**Prochainement.** En Local n'est pas encore ouvert à tous. Abonne-toi sur [TikTok](https://www.tiktok.com/@enlocal.app) et rejoins le [serveur Discord](https://loc-lab.fr/rejoindre) pour être prévenu de la sortie.
 
 ### Ce qu'il te faut
 
